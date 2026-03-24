@@ -22,6 +22,13 @@ public struct NodeIndex: Sendable {
         self.nodesById = [root.id: root]
     }
 
+    /// Bulk initializer for constructing a NodeIndex from a pre-built node dictionary.
+    /// Used by `StructuralIndex.buildNodeIndex()` after Phase 1 parsing.
+    public init(rootID: NodeID, allNodes: [NodeID: DocumentNode]) {
+        self.rootID = rootID
+        self.nodesById = allNodes
+    }
+
     // MARK: - Query API
 
     /// The root node.
