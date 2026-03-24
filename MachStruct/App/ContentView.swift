@@ -11,6 +11,9 @@ struct ContentView: View {
 
     @ObservedObject var document: StructDocument
 
+    /// Lifted here so StatusBar can observe selection changes.
+    @State private var selectedNodeID: NodeID?
+
     var body: some View {
         Group {
             if document.isLoading {
@@ -18,7 +21,15 @@ struct ContentView: View {
             } else if let error = document.loadError {
                 errorView(error)
             } else if let index = document.nodeIndex {
-                TreeView(nodeIndex: index)
+                TreeView(nodeIndex: index, selection: $selectedNodeID)
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
+                        StatusBar(
+                            nodeIndex: index,
+                            selectedID: selectedNodeID,
+                            fileSize: document.fileSize,
+                            formatName: document.formatName
+                        )
+                    }
             } else {
                 placeholderView
             }

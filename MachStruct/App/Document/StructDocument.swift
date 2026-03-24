@@ -25,6 +25,12 @@ final class StructDocument: ReferenceFileDocument {
     /// Display name used in the window title (derived from the FileWrapper filename).
     @Published var fileName: String = "Untitled"
 
+    /// Raw byte size of the opened file (set once loading completes).
+    @Published var fileSize: Int64 = 0
+
+    /// Human-readable format identifier shown in the status bar.
+    var formatName: String = "JSON"
+
     // MARK: - Init (called by DocumentGroup when a file is opened)
 
     required init(configuration: ReadConfiguration) throws {
@@ -32,9 +38,11 @@ final class StructDocument: ReferenceFileDocument {
             throw StructDocumentError.noFileContent
         }
         fileName = configuration.file.filename ?? "document.json"
+        let byteCount = Int64(data.count)
 
         // Kick off async parsing without blocking the current call.
         Task { @MainActor [weak self] in
+            self?.fileSize = byteCount
             await self?.load(data: data)
         }
     }

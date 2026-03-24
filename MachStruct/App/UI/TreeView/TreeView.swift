@@ -13,7 +13,8 @@ struct TreeView: View {
 
     let nodeIndex: NodeIndex
 
-    @State private var selection: NodeID?
+    /// Selection is owned by the parent (ContentView) so the StatusBar can observe it.
+    @Binding var selection: NodeID?
 
     // MARK: - Body
 
@@ -66,6 +67,6 @@ struct TreeView: View {
     addScalar(key: "age",    value: .integer(30),       parent: rootNode.id, pos: 1)
     addScalar(key: "active", value: .boolean(true),     parent: rootNode.id, pos: 2)
 
-    return TreeView(nodeIndex: idx)
+    return TreeView(nodeIndex: idx, selection: .constant(nil))
         .frame(width: 500, height: 300)
 }
