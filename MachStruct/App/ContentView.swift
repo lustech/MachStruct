@@ -1,8 +1,52 @@
 import SwiftUI
+import MachStructCore
 
-// Placeholder window. Replaced by TreeView + StatusBar in P1-08 / P1-09.
+// MARK: - ContentView
+
+/// Root content view for a single document window.
+///
+/// Delegates to `TreeView` once the document has been parsed.
+/// Shows a progress indicator while parsing and an error view on failure.
 struct ContentView: View {
+
+    @ObservedObject var document: StructDocument
+
     var body: some View {
+        Group {
+            if document.isLoading {
+                loadingView
+            } else if let error = document.loadError {
+                errorView(error)
+            } else if let index = document.nodeIndex {
+                TreeView(nodeIndex: index)
+            } else {
+                placeholderView
+            }
+        }
+        .frame(minWidth: 400, minHeight: 300)
+    }
+
+    // MARK: - State views
+
+    private var loadingView: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+                .scaleEffect(1.2)
+            Text("Parsing \(document.fileName)…")
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func errorView(_ error: Error) -> some View {
+        ContentUnavailableView(
+            "Failed to Open File",
+            systemImage: "exclamationmark.triangle",
+            description: Text(error.localizedDescription)
+        )
+    }
+
+    private var placeholderView: some View {
         VStack(spacing: 16) {
             Image(systemName: "curlybraces")
                 .font(.system(size: 56, weight: .thin))
@@ -16,7 +60,6 @@ struct ContentView: View {
     }
 }
 
-#Preview {
-    ContentView()
-        .frame(width: 960, height: 640)
+#Preview("Placeholder") {
+    ContentView(document: StructDocument())
 }
