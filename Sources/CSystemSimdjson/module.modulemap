@@ -1,0 +1,9 @@
+// System library module map for simdjson (Homebrew install on Apple Silicon).
+// Swift targets should never import this directly — it is exposed to CSimdjsonBridge
+// (a C++ target) via compiler flags. The module map satisfies SPM's requirement
+// for a systemLibrary target but simdjson is a C++ library, so Swift code only
+// reaches it through the extern "C" interface in CSimdjsonBridge.
+module CSystemSimdjson [system] {
+    header "/opt/homebrew/include/simdjson.h"
+    export *
+}
