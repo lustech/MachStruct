@@ -47,4 +47,6 @@ ehthumbs.db
 # Build artefacts
 *.o
 *.a
-*.dylib (local build)
+
+# Claude Code local config
+.claude/
