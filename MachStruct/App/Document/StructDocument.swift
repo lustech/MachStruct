@@ -2,6 +2,17 @@ import SwiftUI
 import UniformTypeIdentifiers
 import MachStructCore
 
+// MARK: - DocumentSnapshot
+
+/// A lightweight snapshot of the document for `ReferenceFileDocument`.
+///
+/// `NodeIndex` is a value type (COW) so capturing it is cheap.
+/// `MappedFile` is reference-typed but safe to share across threads (`@unchecked Sendable`).
+struct DocumentSnapshot: Sendable {
+    let index: NodeIndex
+    let mappedFile: MappedFile?
+}
+
 // MARK: - StructDocument
 
 /// Reference-type document model for the SwiftUI `DocumentGroup` scene.
@@ -10,6 +21,11 @@ import MachStructCore
 /// memory-mapped even though the `DocumentGroup` protocol delivers content as
 /// `FileWrapper` data rather than a file URL.  Parsing runs asynchronously on
 /// a detached task so the UI thread is never blocked.
+///
+/// The `MappedFile` is kept alive as a stored property so that:
+///   - Large-file (simdjson) scalar nodes with `.unparsed` value can be
+///     re-parsed from source bytes when the document is saved (P2-06).
+///   - The raw-text view (P2-09) can re-serialize the full document.
 final class StructDocument: ReferenceFileDocument {
 
     // MARK: - DocumentGroup protocol
@@ -31,6 +47,11 @@ final class StructDocument: ReferenceFileDocument {
     /// Human-readable format identifier shown in the status bar.
     var formatName: String = "JSON"
 
+    // MARK: - Internal state
+
+    /// Kept alive so unparsed scalar nodes can be re-read for save / raw view.
+    var mappedFile: MappedFile?
+
     // MARK: - Init (called by DocumentGroup when a file is opened)
 
     required init(configuration: ReadConfiguration) throws {
@@ -47,17 +68,25 @@ final class StructDocument: ReferenceFileDocument {
         }
     }
 
-    // MARK: - Empty document (new file — read-only for Phase 1)
+    // MARK: - Empty document (new file / placeholder)
 
     init() {}
 
-    // MARK: - Snapshot / write (read-only in Phase 1)
+    // MARK: - Snapshot / write (P2-06)
 
-    func snapshot(contentType: UTType) throws -> Void {}
+    func snapshot(contentType: UTType) throws -> DocumentSnapshot {
+        guard let idx = nodeIndex else {
+            throw StructDocumentError.noContent
+        }
+        return DocumentSnapshot(index: idx, mappedFile: mappedFile)
+    }
 
-    func fileWrapper(snapshot: Void, configuration: WriteConfiguration) throws -> FileWrapper {
-        // Phase 1 is view-only.  Saving is disabled.
-        throw StructDocumentError.readOnly
+    func fileWrapper(snapshot: DocumentSnapshot,
+                     configuration: WriteConfiguration) throws -> FileWrapper {
+        let serializer = JSONDocumentSerializer(index: snapshot.index,
+                                                mappedFile: snapshot.mappedFile)
+        let data = try serializer.serialize(pretty: true)
+        return FileWrapper(regularFileWithContents: data)
     }
 
     // MARK: - Edit API (P2-05)
@@ -83,6 +112,31 @@ final class StructDocument: ReferenceFileDocument {
         undoManager?.setActionName(tx.description)
     }
 
+    // MARK: - Serialization helper (P2-09 raw view, P2-08 copy)
+
+    /// Serialize the subtree rooted at `nodeID` to JSON data.
+    ///
+    /// Returns `nil` if the node is not found or serialization fails.
+    func serializeNode(_ nodeID: NodeID, pretty: Bool = true) -> Data? {
+        guard let idx = nodeIndex else { return nil }
+        return try? JSONDocumentSerializer(index: idx, mappedFile: mappedFile)
+            .serialize(nodeID: nodeID, pretty: pretty)
+    }
+
+    /// Serialize the entire document to a UTF-8 JSON string.
+    ///
+    /// This is an `async` throwing function so that callers can dispatch it
+    /// off the main thread for large documents.
+    func serializeDocument(pretty: Bool = true) async throws -> String {
+        guard let idx = nodeIndex else { return "{}" }
+        let file = mappedFile
+        return try await Task.detached(priority: .userInitiated) {
+            let data = try JSONDocumentSerializer(index: idx, mappedFile: file)
+                .serialize(pretty: pretty)
+            return String(data: data, encoding: .utf8) ?? "{}"
+        }.value
+    }
+
     // MARK: - Async load
 
     @MainActor
@@ -98,6 +152,7 @@ final class StructDocument: ReferenceFileDocument {
             let file = try MappedFile(url: tmp)
             try? FileManager.default.removeItem(at: tmp)    // unlink is safe post-mmap
 
+            mappedFile = file   // Keep alive for save / Phase 2 value parsing.
             let si = try await JSONParser().buildIndex(from: file)
             nodeIndex = si.buildNodeIndex()
         } catch {
@@ -111,12 +166,12 @@ final class StructDocument: ReferenceFileDocument {
 
 enum StructDocumentError: LocalizedError {
     case noFileContent
-    case readOnly
+    case noContent
 
     var errorDescription: String? {
         switch self {
         case .noFileContent: return "The file could not be read."
-        case .readOnly:      return "MachStruct is view-only in this version."
+        case .noContent:     return "The document has no content to save."
         }
     }
 }

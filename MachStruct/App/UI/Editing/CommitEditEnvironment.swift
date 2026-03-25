@@ -19,5 +19,24 @@ extension EnvironmentValues {
     }
 }
 
+// MARK: - SerializeNode Environment Key
+
+/// An environment-injectable closure that serializes a single node's subtree
+/// to JSON `Data`.  Set by `ContentView`.  Used by `NodeRow` for copy-as-JSON
+/// (P2-08) without a direct reference to `StructDocument`.
+///
+/// Parameters: `(nodeID: NodeID, pretty: Bool) -> Data?`
+private struct SerializeNodeKey: EnvironmentKey {
+    static let defaultValue: ((NodeID, Bool) -> Data?)? = nil
+}
+
+extension EnvironmentValues {
+    /// Call this closure to serialize a node's subtree to JSON bytes.
+    var serializeNode: ((NodeID, Bool) -> Data?)? {
+        get { self[SerializeNodeKey.self] }
+        set { self[SerializeNodeKey.self] = newValue }
+    }
+}
+
 // parseScalarValue is defined in MachStructCore/Model/ScalarValue.swift
 // and re-exported via `import MachStructCore` above.

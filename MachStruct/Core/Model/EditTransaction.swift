@@ -234,6 +234,179 @@ public extension EditTransaction {
         )
     }
 
+    // MARK: Move array item (P2-04)
+
+    /// Moves an item within an array from one position to another.
+    ///
+    /// Only valid when both indices are within bounds and `fromIndex ≠ toIndex`.
+    static func moveArrayItem(in parentID: NodeID,
+                               fromIndex: Int,
+                               toIndex: Int,
+                               in index: NodeIndex) -> EditTransaction? {
+        guard let parent = index.node(for: parentID),
+              parent.type == .array,
+              fromIndex != toIndex,
+              parent.childIDs.indices.contains(fromIndex),
+              parent.childIDs.indices.contains(toIndex) else { return nil }
+
+        var updatedParent = parent
+        let movedID = updatedParent.childIDs.remove(at: fromIndex)
+        updatedParent.childIDs.insert(movedID, at: toIndex)
+
+        let direction = toIndex < fromIndex ? "Up" : "Down"
+        return EditTransaction(
+            description: "Move Item \(direction)",
+            affectedNodeIDs: [parentID],
+            beforeSnapshot: [parentID: parent],
+            afterSnapshot:  [parentID: updatedParent]
+        )
+    }
+
+    // MARK: Insert from clipboard (P2-08)
+
+    /// Builds a node subtree from a Foundation-parsed JSON value and inserts it
+    /// into a container node.
+    ///
+    /// - For **objects**: a dictionary's key-value pairs are merged in; a
+    ///   non-dictionary value is wrapped under the key `"pasted"`.
+    /// - For **arrays**: the value is appended as a new item.
+    static func insertFromClipboard(_ json: Any,
+                                     into parentID: NodeID,
+                                     in index: NodeIndex) -> EditTransaction? {
+        guard let parent = index.node(for: parentID),
+              parent.type == .object || parent.type == .array else { return nil }
+
+        var insertedNodes: [NodeID: DocumentNode] = [:]
+        var updatedParent = parent
+
+        switch parent.type {
+        case .object:
+            if let dict = json as? [String: Any] {
+                for key in dict.keys.sorted() {
+                    guard let value = dict[key] else { continue }
+                    let kvID = NodeID.generate()
+                    let childID = buildSubtree(from: value, parentID: kvID,
+                                               depth: parent.depth + 2, key: nil,
+                                               into: &insertedNodes)
+                    let kvNode = DocumentNode(id: kvID, type: .keyValue,
+                                              depth: parent.depth + 1,
+                                              parentID: parentID,
+                                              childIDs: [childID], key: key,
+                                              value: .unparsed)
+                    insertedNodes[kvID] = kvNode
+                    updatedParent.childIDs.append(kvID)
+                }
+            } else {
+                // Non-dict pasted into object: wrap under "pasted".
+                let kvID = NodeID.generate()
+                let childID = buildSubtree(from: json, parentID: kvID,
+                                            depth: parent.depth + 2, key: nil,
+                                            into: &insertedNodes)
+                let kvNode = DocumentNode(id: kvID, type: .keyValue,
+                                          depth: parent.depth + 1,
+                                          parentID: parentID,
+                                          childIDs: [childID], key: "pasted",
+                                          value: .unparsed)
+                insertedNodes[kvID] = kvNode
+                updatedParent.childIDs.append(kvID)
+            }
+
+        case .array:
+            let itemIndex = updatedParent.childIDs.count
+            let itemID = buildSubtree(from: json, parentID: parentID,
+                                       depth: parent.depth + 1,
+                                       key: String(itemIndex),
+                                       into: &insertedNodes)
+            updatedParent.childIDs.append(itemID)
+
+        default:
+            return nil
+        }
+
+        guard !insertedNodes.isEmpty else { return nil }
+
+        return EditTransaction(
+            description: "Paste from Clipboard",
+            affectedNodeIDs: Set(insertedNodes.keys).union([parentID]),
+            beforeSnapshot: [parentID: parent],
+            afterSnapshot:  insertedNodes.merging([parentID: updatedParent]) { a, _ in a },
+            insertedIDs:     Set(insertedNodes.keys)
+        )
+    }
+
+    // MARK: - Private subtree builder
+
+    /// Recursively builds `DocumentNode`s from a Foundation-parsed JSON value.
+    ///
+    /// Returns the root node's ID; all created nodes are stored in `result`.
+    @discardableResult
+    private static func buildSubtree(from value: Any,
+                                      parentID: NodeID,
+                                      depth: UInt16,
+                                      key: String?,
+                                      into result: inout [NodeID: DocumentNode]) -> NodeID {
+        if let dict = value as? [String: Any] {
+            let nodeID = NodeID.generate()
+            var childIDs: [NodeID] = []
+            for k in dict.keys.sorted() {
+                guard let v = dict[k] else { continue }
+                let kvID = NodeID.generate()
+                let childID = buildSubtree(from: v, parentID: kvID,
+                                            depth: depth + 2, key: nil, into: &result)
+                let kvNode = DocumentNode(id: kvID, type: .keyValue,
+                                          depth: depth + 1, parentID: nodeID,
+                                          childIDs: [childID], key: k, value: .unparsed)
+                result[kvID] = kvNode
+                childIDs.append(kvID)
+            }
+            result[nodeID] = DocumentNode(id: nodeID, type: .object, depth: depth,
+                                           parentID: parentID, childIDs: childIDs, key: key,
+                                           value: .container(childCount: childIDs.count))
+            return nodeID
+
+        } else if let arr = value as? [Any] {
+            let nodeID = NodeID.generate()
+            var childIDs: [NodeID] = []
+            for (i, v) in arr.enumerated() {
+                let childID = buildSubtree(from: v, parentID: nodeID,
+                                            depth: depth + 1, key: String(i), into: &result)
+                childIDs.append(childID)
+            }
+            result[nodeID] = DocumentNode(id: nodeID, type: .array, depth: depth,
+                                           parentID: parentID, childIDs: childIDs, key: key,
+                                           value: .container(childCount: childIDs.count))
+            return nodeID
+
+        } else {
+            // Scalar leaf.
+            let sv: ScalarValue
+            if let b = value as? Bool {
+                sv = .boolean(b)
+            } else if let n = value as? NSNumber {
+                // Check Bool again — NSNumber bridges Bool on Foundation side.
+                if CFGetTypeID(n as CFTypeRef) == CFBooleanGetTypeID() {
+                    sv = .boolean(n.boolValue)
+                } else if n.doubleValue.truncatingRemainder(dividingBy: 1) == 0,
+                          n.doubleValue >= Double(Int64.min),
+                          n.doubleValue <= Double(Int64.max) {
+                    sv = .integer(n.int64Value)
+                } else {
+                    sv = .float(n.doubleValue)
+                }
+            } else if let s = value as? String {
+                sv = .string(s)
+            } else if value is NSNull {
+                sv = .null
+            } else {
+                sv = .string(String(describing: value))
+            }
+            let nodeID = NodeID.generate()
+            result[nodeID] = DocumentNode(id: nodeID, type: .scalar, depth: depth,
+                                           parentID: parentID, key: key, value: .scalar(sv))
+            return nodeID
+        }
+    }
+
     // MARK: - Helpers
 
     private static func collectSubtree(_ id: NodeID,

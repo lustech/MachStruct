@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import MachStructCore
 
 // MARK: - NodeRow
@@ -11,13 +12,16 @@ import MachStructCore
 /// - **Key** (P2-02): double-click the key label on a keyValue row to rename it.
 ///   Press Return to commit, Escape to cancel.
 /// - **Context menu** (P2-03): right-click any row for Add / Delete actions.
+/// - **Move Up / Down** (P2-04): reorder items within an array via context menu.
+/// - **Copy / Paste** (P2-08): copy node as JSON; paste JSON into containers.
 struct NodeRow: View {
 
     let node: TreeNode
 
     // MARK: - Environment
 
-    @Environment(\.commitEdit) private var commitEdit
+    @Environment(\.commitEdit)   private var commitEdit
+    @Environment(\.serializeNode) private var serializeNode
 
     // MARK: - Editing state
 
@@ -105,12 +109,13 @@ struct NodeRow: View {
         }
     }
 
-    // MARK: - Context menu (P2-03)
+    // MARK: - Context menu (P2-03, P2-04, P2-08)
 
     @ViewBuilder
     private var contextMenuItems: some View {
         let vn = node.valueNode
 
+        // Add children (P2-03)
         if vn.type == .object {
             Button("Add Key-Value") { addKeyValue(to: vn.id) }
         }
@@ -118,11 +123,31 @@ struct NodeRow: View {
             Button("Add Item") { addArrayItem(to: vn.id) }
         }
 
-        if (vn.type == .object || vn.type == .array) && canDelete {
+        // Move Up / Move Down within parent array (P2-04)
+        if let (parentID, idx, count) = arrayItemInfo {
             Divider()
+            Button("Move Up") {
+                moveItem(fromIndex: idx, toIndex: idx - 1, in: parentID)
+            }
+            .disabled(idx == 0)
+
+            Button("Move Down") {
+                moveItem(fromIndex: idx, toIndex: idx + 1, in: parentID)
+            }
+            .disabled(idx == count - 1)
         }
 
+        // Copy / Paste (P2-08)
+        Divider()
+        Button("Copy as JSON") { copyNodeAsJSON() }
+
+        if vn.type == .object || vn.type == .array {
+            Button("Paste from Clipboard") { pasteFromClipboard(into: vn.id) }
+        }
+
+        // Delete (P2-03)
         if canDelete {
+            Divider()
             Button("Delete", role: .destructive) { deleteNode() }
         }
     }
@@ -130,6 +155,17 @@ struct NodeRow: View {
     // MARK: - Helpers
 
     private var canDelete: Bool { node.documentNode.parentID != nil }
+
+    /// Returns `(parentID, itemIndex, totalCount)` when this node is a direct
+    /// child of an array — used to enable Move Up / Move Down.
+    private var arrayItemInfo: (parentID: NodeID, index: Int, count: Int)? {
+        guard let parentID = node.documentNode.parentID,
+              let parent = node.nodeIndex.node(for: parentID),
+              parent.type == .array,
+              let idx = parent.childIDs.firstIndex(of: node.documentNode.id)
+        else { return nil }
+        return (parentID, idx, parent.childIDs.count)
+    }
 
     private func scalarColor(_ sv: ScalarValue) -> Color {
         switch sv {
@@ -217,6 +253,36 @@ struct NodeRow: View {
             node.documentNode.id, in: node.nodeIndex) else { return }
         commitEdit?(tx)
     }
+
+    // MARK: - Move Up / Down (P2-04)
+
+    private func moveItem(fromIndex: Int, toIndex: Int, in parentID: NodeID) {
+        guard let tx = EditTransaction.moveArrayItem(
+            in: parentID, fromIndex: fromIndex, toIndex: toIndex,
+            in: node.nodeIndex) else { return }
+        commitEdit?(tx)
+    }
+
+    // MARK: - Copy / Paste (P2-08)
+
+    private func copyNodeAsJSON() {
+        let targetID = node.valueNode.id
+        guard let data = serializeNode?(targetID, true),
+              let json = String(data: data, encoding: .utf8) else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(json, forType: .string)
+    }
+
+    private func pasteFromClipboard(into containerID: NodeID) {
+        guard let text = NSPasteboard.general.string(forType: .string),
+              let data = text.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data,
+                                                           options: [.allowFragments])
+        else { return }
+        guard let tx = EditTransaction.insertFromClipboard(
+            json, into: containerID, in: node.nodeIndex) else { return }
+        commitEdit?(tx)
+    }
 }
 
 // MARK: - EditField
@@ -243,4 +309,5 @@ private enum EditField: Equatable {
     return List(rows, children: \.children) { row in NodeRow(node: row) }
         .frame(width: 400, height: 120)
         .environment(\.commitEdit) { _ in }
+        .environment(\.serializeNode) { _, _ in nil }
 }
