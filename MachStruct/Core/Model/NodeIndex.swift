@@ -126,6 +126,19 @@ public struct NodeIndex: Sendable {
         removeSubtree(id)
     }
 
+    /// Bulk-apply a snapshot from an `EditTransaction`.
+    ///
+    /// - `updates`   — nodes to add or overwrite.
+    /// - `deletions` — node IDs to remove (entries only; does not recurse).
+    ///
+    /// The caller is responsible for ensuring parent `childIDs` are consistent
+    /// (i.e. the snapshot should include updated parent nodes where needed).
+    public mutating func applySnapshot(_ updates: [NodeID: DocumentNode],
+                                        deletions: Set<NodeID> = []) {
+        for (id, node) in updates { nodesById[id] = node }
+        for id in deletions { nodesById.removeValue(forKey: id) }
+    }
+
     private mutating func removeSubtree(_ id: NodeID) {
         guard let node = nodesById[id] else { return }
         for childID in node.childIDs {

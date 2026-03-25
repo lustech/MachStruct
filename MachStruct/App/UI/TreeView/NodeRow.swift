@@ -5,17 +5,27 @@ import MachStructCore
 
 /// A single row in the document tree.
 ///
-/// Layout (left → right):
-///   [key in muted text]  [colon separator]  [value, truncated]  [Spacer]  [TypeBadge]
-///
-/// Examples:
-///   "name"  :  "John Doe"                                          str
-///   "count"  :  42                                                  int
-///   "items"  :  [3 items]                                           arr
-///   [0]  :  "first"                                                str
+/// ## Editing interactions
+/// - **Value** (P2-01): click the value label on a scalar row to enter edit mode.
+///   Press Return to commit, Escape to cancel.  Type is auto-detected.
+/// - **Key** (P2-02): double-click the key label on a keyValue row to rename it.
+///   Press Return to commit, Escape to cancel.
+/// - **Context menu** (P2-03): right-click any row for Add / Delete actions.
 struct NodeRow: View {
 
     let node: TreeNode
+
+    // MARK: - Environment
+
+    @Environment(\.commitEdit) private var commitEdit
+
+    // MARK: - Editing state
+
+    @State private var editingField: EditField? = nil
+    @State private var editText: String = ""
+    @FocusState private var isFocused: Bool
+
+    // MARK: - Body
 
     var body: some View {
         HStack(spacing: 6) {
@@ -25,88 +35,212 @@ struct NodeRow: View {
             TypeBadge(style: node.badgeInfo.style)
         }
         .font(.system(.body, design: .monospaced))
+        .contextMenu { contextMenuItems }
+        .onChange(of: editingField) { _, newValue in
+            isFocused = (newValue != nil)
+        }
     }
 
-    // MARK: - Key
+    // MARK: - Key view (P2-02: double-click to rename)
 
     @ViewBuilder
     private var keyView: some View {
         if let key = node.displayKey {
-            Group {
-                // Array indices like "0", "1" use bracket notation.
-                if node.documentNode.type == .scalar,
-                   node.nodeIndex.parent(of: node.id)?.type == .array {
-                    Text("[\(key)]")
-                } else {
-                    Text("\"\(key)\"")
+            if editingField == .key {
+                TextField("Key", text: $editText)
+                    .textFieldStyle(.plain)
+                    .focused($isFocused)
+                    .onSubmit { commitKeyEdit() }
+                    .onKeyPress(.escape) { cancelEdit(); return .handled }
+                    .fixedSize()
+            } else {
+                Group {
+                    if node.documentNode.type == .scalar,
+                       node.nodeIndex.parent(of: node.id)?.type == .array {
+                        Text("[\(key)]")
+                    } else {
+                        Text("\"\(key)\"")
+                    }
+                }
+                .foregroundStyle(.secondary)
+                .onTapGesture(count: 2) {
+                    if node.documentNode.type == .keyValue { startKeyEdit(key) }
                 }
             }
-            .foregroundStyle(.secondary)
 
             Text(":")
                 .foregroundStyle(.tertiary)
         }
     }
 
-    // MARK: - Value
+    // MARK: - Value view (P2-01: single click to edit scalar)
 
     @ViewBuilder
     private var valueView: some View {
         let vn = node.valueNode
-        switch vn.value {
-        case .scalar(let sv):
-            Text(sv.displayText)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .foregroundStyle(scalarColor(sv))
+        if editingField == .value {
+            TextField("Value", text: $editText)
+                .textFieldStyle(.plain)
+                .focused($isFocused)
+                .onSubmit { commitValueEdit() }
+                .onKeyPress(.escape) { cancelEdit(); return .handled }
+        } else {
+            switch vn.value {
+            case .scalar(let sv):
+                Text(sv.displayText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .foregroundStyle(scalarColor(sv))
+                    .onTapGesture { startValueEdit(sv) }
 
-        case .container, .unparsed:
-            Text(node.displayValue)
-                .foregroundStyle(.secondary)
+            case .container, .unparsed:
+                Text(node.displayValue)
+                    .foregroundStyle(.secondary)
 
-        case .error(let msg):
-            Label(msg, systemImage: "exclamationmark.triangle.fill")
-                .foregroundStyle(.red)
-                .lineLimit(1)
+            case .error(let msg):
+                Label(msg, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                    .lineLimit(1)
+            }
         }
     }
 
-    // MARK: - Scalar color
+    // MARK: - Context menu (P2-03)
+
+    @ViewBuilder
+    private var contextMenuItems: some View {
+        let vn = node.valueNode
+
+        if vn.type == .object {
+            Button("Add Key-Value") { addKeyValue(to: vn.id) }
+        }
+        if vn.type == .array {
+            Button("Add Item") { addArrayItem(to: vn.id) }
+        }
+
+        if (vn.type == .object || vn.type == .array) && canDelete {
+            Divider()
+        }
+
+        if canDelete {
+            Button("Delete", role: .destructive) { deleteNode() }
+        }
+    }
+
+    // MARK: - Helpers
+
+    private var canDelete: Bool { node.documentNode.parentID != nil }
 
     private func scalarColor(_ sv: ScalarValue) -> Color {
         switch sv {
-        case .string:        return Color(red: 0.8, green: 0.3, blue: 0.1)   // warm red-orange
+        case .string:          return Color(red: 0.8, green: 0.3, blue: 0.1)
         case .integer, .float: return .blue
-        case .boolean:       return .orange
-        case .null:          return .secondary
+        case .boolean:         return .orange
+        case .null:            return .secondary
         }
+    }
+
+    private func rawText(for sv: ScalarValue) -> String {
+        switch sv {
+        case .string(let s):  return s
+        case .integer(let i): return String(i)
+        case .float(let f):   return String(f)
+        case .boolean(let b): return b ? "true" : "false"
+        case .null:           return "null"
+        }
+    }
+
+    // MARK: - Edit lifecycle
+
+    private func startValueEdit(_ sv: ScalarValue) {
+        guard editingField == nil else { return }
+        editText = rawText(for: sv)
+        editingField = .value
+    }
+
+    private func startKeyEdit(_ key: String) {
+        guard editingField == nil else { return }
+        editText = key
+        editingField = .key
+    }
+
+    private func cancelEdit() {
+        editingField = nil
+        editText = ""
+    }
+
+    // MARK: - Commit value (P2-01)
+
+    private func commitValueEdit() {
+        defer { cancelEdit() }
+        let newScalar = parseScalarValue(editText)
+        let newValue  = NodeValue.scalar(newScalar)
+        let vn        = node.valueNode
+        if case .scalar(let current) = vn.value, current == newScalar { return }
+        let desc = "Change Value of '\(node.displayKey ?? "node")'"
+        guard let tx = EditTransaction.changeValue(
+            of: vn.id, to: newValue, description: desc,
+            in: node.nodeIndex) else { return }
+        commitEdit?(tx)
+    }
+
+    // MARK: - Commit key rename (P2-02)
+
+    private func commitKeyEdit() {
+        defer { cancelEdit() }
+        let newKey = editText.trimmingCharacters(in: .whitespaces)
+        guard !newKey.isEmpty, newKey != node.documentNode.key else { return }
+        guard let tx = EditTransaction.renameKey(
+            of: node.documentNode.id, to: newKey,
+            in: node.nodeIndex) else { return }
+        commitEdit?(tx)
+    }
+
+    // MARK: - Add / Delete (P2-03)
+
+    private func addKeyValue(to containerID: NodeID) {
+        guard let tx = EditTransaction.insertKeyValue(
+            key: "newKey", value: .string("value"),
+            into: containerID, in: node.nodeIndex) else { return }
+        commitEdit?(tx)
+    }
+
+    private func addArrayItem(to containerID: NodeID) {
+        guard let tx = EditTransaction.insertArrayItem(
+            value: .string(""), into: containerID,
+            in: node.nodeIndex) else { return }
+        commitEdit?(tx)
+    }
+
+    private func deleteNode() {
+        guard let tx = EditTransaction.removeNode(
+            node.documentNode.id, in: node.nodeIndex) else { return }
+        commitEdit?(tx)
     }
 }
 
+// MARK: - EditField
+
+private enum EditField: Equatable {
+    case value, key
+}
+
+// MARK: - Preview
+
 #Preview {
-    // Construct a tiny NodeIndex for preview purposes.
     let root = DocumentNode(type: .object, value: .container(childCount: 2))
     var index = NodeIndex(root: root)
     let strNode = DocumentNode(
-        id: NodeID.generate(),
-        type: .scalar, depth: 1,
-        parentID: root.id,
-        key: "name",
-        value: .scalar(.string("Alice")))
+        id: NodeID.generate(), type: .scalar, depth: 1,
+        parentID: root.id, key: "name", value: .scalar(.string("Alice")))
     let numNode = DocumentNode(
-        id: NodeID.generate(),
-        type: .scalar, depth: 1,
-        parentID: root.id,
-        key: "age",
-        value: .scalar(.integer(30)))
+        id: NodeID.generate(), type: .scalar, depth: 1,
+        parentID: root.id, key: "age", value: .scalar(.integer(30)))
     index.insertChild(strNode, in: root.id, at: 0)
     index.insertChild(numNode, in: root.id, at: 1)
 
-    let rows = [strNode, numNode].map { dn in
-        TreeNode(documentNode: dn, nodeIndex: index)
-    }
-    return List(rows, children: \.children) { row in
-        NodeRow(node: row)
-    }
-    .frame(width: 400, height: 120)
+    let rows = [strNode, numNode].map { TreeNode(documentNode: $0, nodeIndex: index) }
+    return List(rows, children: \.children) { row in NodeRow(node: row) }
+        .frame(width: 400, height: 120)
+        .environment(\.commitEdit) { _ in }
 }

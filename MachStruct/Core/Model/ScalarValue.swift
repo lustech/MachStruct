@@ -31,6 +31,25 @@ public enum ScalarValue: Sendable, Equatable {
     }
 }
 
+// MARK: - Parsing helper
+
+/// Infers the most appropriate `ScalarValue` from free-form text input.
+///
+/// Priority: null → boolean → integer → float → string.
+/// Strips surrounding double-quotes if present (e.g. `"hello"` → `hello`).
+public func parseScalarValue(_ text: String) -> ScalarValue {
+    let t = text.trimmingCharacters(in: .whitespaces)
+    if t.lowercased() == "null"  { return .null }
+    if t.lowercased() == "true"  { return .boolean(true) }
+    if t.lowercased() == "false" { return .boolean(false) }
+    if let i = Int64(t)          { return .integer(i) }
+    if let f = Double(t)         { return .float(f) }
+    if t.hasPrefix("\"") && t.hasSuffix("\"") && t.count >= 2 {
+        return .string(String(t.dropFirst().dropLast()))
+    }
+    return .string(t)
+}
+
 private func _formatDouble(_ value: Double) -> String {
     if value.isNaN      { return "NaN" }
     if value.isInfinite { return value > 0 ? "Infinity" : "-Infinity" }

@@ -14,6 +14,9 @@ struct ContentView: View {
     /// Lifted here so StatusBar can observe selection changes.
     @State private var selectedNodeID: NodeID?
 
+    /// Injected by SwiftUI for native Cmd+Z / Cmd+Shift+Z support.
+    @Environment(\.undoManager) private var undoManager
+
     var body: some View {
         Group {
             if document.isLoading {
@@ -29,6 +32,11 @@ struct ContentView: View {
                             fileSize: document.fileSize,
                             formatName: document.formatName
                         )
+                    }
+                    // Inject the edit-commit closure so NodeRow (and any descendant)
+                    // can commit edits and register them with the window's UndoManager.
+                    .environment(\.commitEdit) { [weak document] tx in
+                        document?.commitEdit(tx, undoManager: undoManager)
                     }
             } else {
                 placeholderView

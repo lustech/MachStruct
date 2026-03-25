@@ -60,6 +60,29 @@ final class StructDocument: ReferenceFileDocument {
         throw StructDocumentError.readOnly
     }
 
+    // MARK: - Edit API (P2-05)
+
+    /// Apply a transaction to the document and register it with the system
+    /// `UndoManager` so that Cmd+Z / Cmd+Shift+Z work natively.
+    ///
+    /// - Parameters:
+    ///   - tx:           The transaction describing the forward change.
+    ///   - undoManager:  The window's undo manager, obtained from the SwiftUI
+    ///                   environment via `@Environment(\.undoManager)`.
+    @MainActor
+    func commitEdit(_ tx: EditTransaction, undoManager: UndoManager?) {
+        guard let current = nodeIndex else { return }
+        nodeIndex = tx.applying(to: current)
+
+        // Register undo.  Calling commitEdit recursively from the undo handler
+        // is safe because NSUndoManager automatically routes calls made inside
+        // an undo operation onto the redo stack.
+        undoManager?.registerUndo(withTarget: self) { [tx, weak undoManager] doc in
+            doc.commitEdit(tx.reversed, undoManager: undoManager)
+        }
+        undoManager?.setActionName(tx.description)
+    }
+
     // MARK: - Async load
 
     @MainActor
