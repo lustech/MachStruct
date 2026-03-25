@@ -102,19 +102,37 @@ When starting a task, the AI agent should: (1) read the reference docs, (2) chec
 
 ---
 
-## Phase 2: Editor (Summary)
+## Phase 2: Editor ✅ COMPLETE
 
-| ID | Task | Dependencies | Key Deliverable |
+| ID | Task | Status | Key Deliverable |
 |---|---|---|---|
-| P2-01 | Inline value editing | P1-08 | Edit text field in tree rows |
-| P2-02 | Key renaming | P1-08 | Double-click-to-edit on keys |
-| P2-03 | Add/delete nodes | P1-04, P1-08 | Context menu actions |
-| P2-04 | Array reordering | P1-08 | Drag-and-drop in tree |
-| P2-05 | EditTransaction + Undo | P1-04, P2-01 | UndoManager integration |
-| P2-06 | Incremental save | P1-02, P2-05 | Splice-based file writing |
-| P2-07 | Dirty state UI | P2-05, P2-06 | Window dot, save dialogs |
-| P2-08 | Copy/paste nodes | P1-04, P1-08 | Pasteboard JSON integration |
-| P2-09 | Raw text view | P1-07 | Syntax-highlighted text pane |
+| P2-01 | Inline value editing   | ✅ | `NodeRow` TextField; `parseScalarValue` auto-type; Return/Escape |
+| P2-02 | Key renaming           | ✅ | Double-click key label; `EditTransaction.renameKey` |
+| P2-03 | Add/delete nodes       | ✅ | Context menu Add Key-Value / Add Item / Delete |
+| P2-04 | Array reordering       | ✅ | Move Up/Down context menu; `EditTransaction.moveArrayItem` |
+| P2-05 | EditTransaction + Undo | ✅ | `EditTransaction` snapshot model; recursive `tx.reversed` undo/redo |
+| P2-06 | Incremental save       | ✅ | `JSONDocumentSerializer`; `StructDocument.snapshot()/fileWrapper()` |
+| P2-07 | Dirty state UI         | ✅ | Automatic via `ReferenceFileDocument`; window dot + save dialog |
+| P2-08 | Copy/paste nodes       | ✅ | "Copy as JSON" + "Paste from Clipboard"; `insertFromClipboard` factory |
+| P2-09 | Raw text view          | ✅ | Toolbar toggle; async `serializeDocument`; monospaced `Text` pane |
+
+### Implementation notes
+- **P2-04**: Implemented as Move Up/Down context-menu actions rather than drag-and-drop (deferred to Phase 4 for better native `List` reorder support).
+- **P2-06**: Full re-serialization via `JSONDocumentSerializer` + `JSONSerialization` rather than splice-based patching.  Adequate for files up to ~100 MB; `.unparsed` scalar nodes are re-read from the still-alive `MappedFile`.
+- **P2-09**: Read-only monospaced text view (no syntax highlighting); highlighting deferred to Phase 4.
+
+### New files (Phase 2)
+| File | Module | Purpose |
+|---|---|---|
+| `Core/Model/EditTransaction.swift` | MachStructCore | Reversible edit operation + 7 factory methods |
+| `Core/Model/ScalarValue.swift` | MachStructCore | Added `parseScalarValue()` free function |
+| `Core/Serializers/JSONDocumentSerializer.swift` | MachStructCore | NodeIndex → JSON Data |
+| `App/Document/StructDocument.swift` | MachStruct | Save support; MappedFile kept alive |
+| `App/UI/Editing/CommitEditEnvironment.swift` | MachStruct | `commitEdit` + `serializeNode` environment keys |
+| `App/UI/TreeView/NodeRow.swift` | MachStruct | Full editing/move/copy-paste UI |
+| `App/ContentView.swift` | MachStruct | Raw view toggle + environment injection |
+| `MachStructTests/EditTransactionTests.swift` | Tests | 18 tests for all transaction types |
+| `MachStructTests/JSONSerializerTests.swift` | Tests | 21 tests for serializer + move + paste |
 
 ---
 

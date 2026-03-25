@@ -5,9 +5,9 @@
 ![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-blue)
 ![Swift](https://img.shields.io/badge/swift-5.10-orange)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/tests-87%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-126%20passing-brightgreen)
 
-MachStruct opens large JSON files (and eventually XML, YAML, CSV) in under a second and lets you navigate the tree without lag. A 100 MB JSON file is structurally indexed in **~430 ms** and displayed as a live, expandable tree — no loading spinners, no frozen UI.
+MachStruct opens and **edits** large JSON files (and eventually XML, YAML, CSV) in under a second. A 100 MB JSON file is structurally indexed in **~430 ms** and displayed as a live, expandable, editable tree — no loading spinners, no frozen UI.
 
 ---
 
@@ -17,9 +17,14 @@ MachStruct opens large JSON files (and eventually XML, YAML, CSV) in under a sec
 - **Zero-copy I/O** — memory-mapped files via `mmap`; a 100 MB file uses < 5 MB of resident memory while browsing
 - **Lazy value parsing** — only nodes you actually expand are fully parsed
 - **Progressive tree** — `AsyncStream` feeds the UI in batches of 1 000 nodes
+- **Full JSON editing** — click any scalar to edit, double-click keys to rename, context-menu Add / Delete
+- **Array reordering** — Move Up / Move Down within arrays via context menu with full undo/redo
+- **Copy / paste** — copy any node subtree as JSON, paste JSON into containers
+- **Incremental save** — Cmd+S writes the full edited document back; window dirty dot appears on first edit
+- **Raw JSON view** — toolbar toggle renders the full document as formatted JSON in a read-only text pane
 - **Status bar** — live node count, file size, format label, and path to the selected node
 - **Native feel** — SwiftUI `DocumentGroup`, `List` with `OutlineGroup`, keyboard navigation, macOS 14+ design language
-- **87 tests** — unit tests for every layer plus a benchmark suite with hard timing assertions
+- **126 tests** — unit tests for every layer plus a benchmark suite with hard timing assertions
 
 ---
 
@@ -84,24 +89,29 @@ MachStruct/
 │   │   ├── Model/
 │   │   │   ├── DocumentNode.swift    NodeID · NodeType · NodeValue · DocumentNode
 │   │   │   ├── NodeIndex.swift       O(1) flat lookup + COW mutation API
-│   │   │   ├── ScalarValue.swift     Typed leaf values with display helpers
+│   │   │   ├── ScalarValue.swift     Typed leaf values + parseScalarValue()
+│   │   │   ├── EditTransaction.swift Reversible edit ops + factory methods
 │   │   │   └── FormatMetadata.swift  Per-format annotations
 │   │   ├── FileIO/
 │   │   │   └── MappedFile.swift      mmap wrapper with madvise hints
-│   │   └── Parsers/
-│   │       ├── StructParser.swift    Protocol · IndexEntry · StructuralIndex
-│   │       └── JSONParser.swift      Two-phase parser (simdjson + Foundation)
+│   │   ├── Parsers/
+│   │   │   ├── StructParser.swift    Protocol · IndexEntry · StructuralIndex
+│   │   │   └── JSONParser.swift      Two-phase parser (simdjson + Foundation)
+│   │   └── Serializers/
+│   │       └── JSONDocumentSerializer.swift  NodeIndex → JSON Data
 │   └── App/                       MachStruct executable
 │       ├── MachStructApp.swift       DocumentGroup scene
-│       ├── ContentView.swift         Loading / error / tree switcher
+│       ├── ContentView.swift         Tree / raw view switcher + toolbar
 │       ├── Document/
-│       │   └── StructDocument.swift  ReferenceFileDocument + async load
+│       │   └── StructDocument.swift  ReferenceFileDocument + save + undo
 │       └── UI/
 │           ├── TreeView/
 │           │   ├── TreeView.swift    SwiftUI List + OutlineGroup
 │           │   ├── TreeNode.swift    Recursive data wrapper for List
-│           │   ├── NodeRow.swift     Key · value · type badge row
+│           │   ├── NodeRow.swift     Editing · move · copy/paste · context menu
 │           │   └── TypeBadge.swift   Colored capsule pill
+│           ├── Editing/
+│           │   └── CommitEditEnvironment.swift  commitEdit / serializeNode env keys
 │           └── Toolbar/
 │               └── StatusBar.swift   Node count · file size · path
 └── MachStructTests/
@@ -109,6 +119,8 @@ MachStruct/
     ├── MappedFileTests.swift         10 tests — mmap, slices, madvise
     ├── SimdjsonBridgeTests.swift     13 tests — C bridge, all scalar types
     ├── JSONParserTests.swift         27 tests — Foundation + simdjson paths
+    ├── EditTransactionTests.swift    18 tests — all factory methods + undo
+    ├── JSONSerializerTests.swift     21 tests — round-trips, move, paste
     ├── Generators/
     │   └── TestCorpusGenerator.swift 7 corpus files, cached in tmp/
     └── Performance/
@@ -163,16 +175,16 @@ Phase 2 — On-demand value parsing
 - [x] P1-09 Status bar (node count, file size, format, selected path)
 - [x] P1-10 Benchmark suite (corpus generator + hard timing assertions)
 
-### Phase 2 — Editor 🚧
-- [ ] P2-01 Inline value editing
-- [ ] P2-02 Key renaming
-- [ ] P2-03 Add / delete nodes
-- [ ] P2-04 Array reordering (drag-and-drop)
-- [ ] P2-05 `EditTransaction` + `UndoManager`
-- [ ] P2-06 Incremental save
-- [ ] P2-07 Dirty state UI
-- [ ] P2-08 Copy / paste nodes
-- [ ] P2-09 Raw text view
+### Phase 2 — Editor ✅
+- [x] P2-01 Inline value editing (click scalar to edit; Return commits, Escape cancels)
+- [x] P2-02 Key renaming (double-click key label on keyValue rows)
+- [x] P2-03 Add / delete nodes (context-menu Add Key-Value, Add Item, Delete)
+- [x] P2-04 Array reordering (Move Up / Move Down via context menu)
+- [x] P2-05 `EditTransaction` + `UndoManager` (Cmd+Z / Cmd+Shift+Z)
+- [x] P2-06 Incremental save (`JSONDocumentSerializer` + `ReferenceFileDocument` save)
+- [x] P2-07 Dirty state UI (window edited dot; save dialog on close)
+- [x] P2-08 Copy / paste nodes (Copy as JSON; Paste from Clipboard into containers)
+- [x] P2-09 Raw text view (toolbar toggle; async serialization to monospaced text pane)
 
 ### Phase 3 — Format Expansion
 - [ ] P3-01 XMLParser (libxml2 SAX)
