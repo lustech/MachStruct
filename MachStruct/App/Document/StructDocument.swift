@@ -30,7 +30,15 @@ final class StructDocument: ReferenceFileDocument {
 
     // MARK: - DocumentGroup protocol
 
-    static var readableContentTypes: [UTType] { [.json] }
+    static var readableContentTypes: [UTType] {
+        [
+            .json,
+            .xml,
+            .commaSeparatedText,
+            UTType(filenameExtension: "yaml") ?? .data,
+            UTType(filenameExtension: "yml")  ?? .data,
+        ]
+    }
 
     // MARK: - Published state
 
@@ -144,21 +152,49 @@ final class StructDocument: ReferenceFileDocument {
         isLoading = true
         loadError = nil
         do {
-            // Write to a temp file so we can mmap it.  The file is unlinked after
-            // mmap so the directory entry disappears while the pages remain accessible.
+            // Derive the file extension so the detector can use it as a tiebreaker.
+            let ext = (fileName as NSString).pathExtension.lowercased()
+
+            // Write to a temp file so we can mmap it.  We keep the original
+            // extension so madvise hints stay correct.
             let tmp = FileManager.default.temporaryDirectory
-                .appendingPathComponent("\(UUID().uuidString).json")
+                .appendingPathComponent("\(UUID().uuidString).\(ext.isEmpty ? "dat" : ext)")
             try data.write(to: tmp)
             let file = try MappedFile(url: tmp)
             try? FileManager.default.removeItem(at: tmp)    // unlink is safe post-mmap
 
             mappedFile = file   // Keep alive for save / Phase 2 value parsing.
-            let si = try await JSONParser().buildIndex(from: file)
-            nodeIndex = si.buildNodeIndex()
+
+            // ── Auto-detect format ──────────────────────────────────────────
+            let detected = FormatDetector.detect(file: file,
+                                                 fileExtension: ext.isEmpty ? nil : ext)
+            let (si, name) = try await parseFile(file, detectedAs: detected)
+            nodeIndex  = si.buildNodeIndex()
+            formatName = name
         } catch {
             loadError = error
         }
         isLoading = false
+    }
+
+    // MARK: - Format dispatch
+
+    /// Pick the right parser for `detected` and return the structural index +
+    /// a human-readable format name for the status bar.
+    private func parseFile(
+        _ file: MappedFile,
+        detectedAs detected: FormatDetector.DetectedFormat
+    ) async throws -> (StructuralIndex, String) {
+        switch detected {
+        case .json, .unknown:
+            return (try await JSONParser().buildIndex(from: file), "JSON")
+        case .xml:
+            return (try await XMLParser().buildIndex(from: file), "XML")
+        case .yaml:
+            return (try await YAMLParser().buildIndex(from: file), "YAML")
+        case .csv:
+            return (try await CSVParser().buildIndex(from: file), "CSV")
+        }
     }
 }
 

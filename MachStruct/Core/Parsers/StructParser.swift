@@ -29,6 +29,10 @@ public struct IndexEntry: Sendable {
     /// `nil` on the simdjson path — use `StructParser.parseValue` to obtain.
     public let parsedValue: ScalarValue?
 
+    /// Format-specific metadata (e.g. `XMLMetadata` for XML nodes). Populated eagerly
+    /// by format parsers that have this information at index-build time.
+    public let metadata: FormatMetadata?
+
     public init(
         id: NodeID,
         byteOffset: UInt64 = 0,
@@ -38,7 +42,8 @@ public struct IndexEntry: Sendable {
         parentID: NodeID?,
         childCount: UInt32 = 0,
         key: String? = nil,
-        parsedValue: ScalarValue? = nil
+        parsedValue: ScalarValue? = nil,
+        metadata: FormatMetadata? = nil
     ) {
         self.id = id
         self.byteOffset = byteOffset
@@ -49,6 +54,7 @@ public struct IndexEntry: Sendable {
         self.childCount = childCount
         self.key = key
         self.parsedValue = parsedValue
+        self.metadata = metadata
     }
 }
 
@@ -101,7 +107,8 @@ public struct StructuralIndex: Sendable {
                 key: entry.key,
                 value: value,
                 sourceRange: SourceRange(byteOffset: entry.byteOffset,
-                                         byteLength: entry.byteLength)
+                                         byteLength: entry.byteLength),
+                metadata: entry.metadata
             )
 
             if let pid = entry.parentID {
@@ -184,6 +191,9 @@ public protocol StructParser: Sendable {
 // MARK: - ParserRegistry
 
 /// Maps file extensions to registered `StructParser` instances.
+///
+/// Also provides `parser(for:file:)` which combines content-based detection
+/// (`FormatDetector`) with the extension-keyed registry for a best-effort match.
 public actor ParserRegistry {
     public static let shared = ParserRegistry()
 
@@ -197,7 +207,22 @@ public actor ParserRegistry {
         }
     }
 
+    /// Look up a parser by file extension only.
     public func parser(for fileExtension: String) -> (any StructParser)? {
         parsers[fileExtension.lowercased()]
+    }
+
+    /// Sniff `file` content and return the best matching parser.
+    ///
+    /// Falls back to extension-based lookup if content sniffing is inconclusive.
+    public func parser(for file: MappedFile, fileExtension: String?) -> (any StructParser)? {
+        let detected = FormatDetector.detect(file: file, fileExtension: fileExtension)
+        switch detected {
+        case .json:    return parsers["json"]
+        case .xml:     return parsers["xml"]
+        case .yaml:    return parsers["yaml"]
+        case .csv:     return parsers["csv"]
+        case .unknown: return fileExtension.flatMap { parsers[$0.lowercased()] }
+        }
     }
 }

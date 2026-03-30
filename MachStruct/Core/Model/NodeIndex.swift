@@ -139,6 +139,39 @@ public struct NodeIndex: Sendable {
         for id in deletions { nodesById.removeValue(forKey: id) }
     }
 
+    // MARK: - Tabular detection
+
+    /// Returns `true` when the root is an array of uniform objects suitable
+    /// for spreadsheet-style table display.
+    ///
+    /// **Criteria (sampled):**
+    /// - Root type is `.array`.
+    /// - Every sampled child is `.object`.
+    /// - All sampled objects share the same ordered key list.
+    ///
+    /// Only the first `sampleSize` rows are checked so this stays fast even on
+    /// 100 k-row CSV files.
+    public func isTabular(sampleSize: Int = 10) -> Bool {
+        guard let root = self.root, root.type == .array else { return false }
+        let sample = children(of: root.id).prefix(sampleSize)
+        guard !sample.isEmpty,
+              sample.allSatisfy({ $0.type == .object }) else { return false }
+        let firstKeys = children(of: sample[0].id).compactMap { $0.key }
+        guard !firstKeys.isEmpty else { return false }
+        return sample.allSatisfy { row in
+            children(of: row.id).compactMap { $0.key } == firstKeys
+        }
+    }
+
+    /// Ordered column names derived from the first row's keys.
+    ///
+    /// Returns an empty array when `isTabular()` is `false`.
+    public var tabularColumns: [String] {
+        guard let root = self.root, root.type == .array,
+              let firstRow = children(of: root.id).first else { return [] }
+        return children(of: firstRow.id).compactMap { $0.key }
+    }
+
     private mutating func removeSubtree(_ id: NodeID) {
         guard let node = nodesById[id] else { return }
         for childID in node.childIDs {

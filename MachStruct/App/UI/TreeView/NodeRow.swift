@@ -29,6 +29,22 @@ struct NodeRow: View {
     @State private var editText: String = ""
     @FocusState private var isFocused: Bool
 
+    // MARK: - Format-specific helpers
+
+    /// Non-nil when this row represents an XML element.
+    private var xmlElementMeta: XMLMetadata? { node.xmlElementMeta }
+
+    /// Tooltip text for a YAML scalar-style badge.
+    private func yamlStyleHelp(_ style: BadgeStyle) -> String {
+        switch style {
+        case .yamlLiteral:  return "Literal block scalar ( | )"
+        case .yamlFolded:   return "Folded block scalar ( > )"
+        case .yamlSingleQ:  return "Single-quoted scalar"
+        case .yamlDoubleQ:  return "Double-quoted scalar"
+        default:            return ""
+        }
+    }
+
     // MARK: - Body
 
     var body: some View {
@@ -36,6 +52,21 @@ struct NodeRow: View {
             keyView
             valueView
             Spacer(minLength: 8)
+            // Namespace badge — shown before the main type badge for namespaced XML elements.
+            if let ns = xmlElementMeta?.namespace {
+                TypeBadge(style: .ns)
+                    .help(ns)   // full URI on hover
+            }
+            // YAML anchor badge — shown when the node declares a named anchor (&name).
+            if node.hasYAMLAnchor, let anchor = node.yamlValueMeta?.anchor {
+                TypeBadge(style: .yamlAnchor)
+                    .help("Anchor: &\(anchor)")
+            }
+            // YAML scalar-style badge — shown for non-plain scalar styles (|, >, ', ").
+            if let styleBadge = node.yamlStyleBadge {
+                TypeBadge(style: styleBadge)
+                    .help(yamlStyleHelp(styleBadge))
+            }
             TypeBadge(style: node.badgeInfo.style)
         }
         .font(.system(.body, design: .monospaced))
@@ -50,7 +81,11 @@ struct NodeRow: View {
     @ViewBuilder
     private var keyView: some View {
         if let key = node.displayKey {
-            if editingField == .key {
+            if xmlElementMeta != nil {
+                // XML element: display as <tagName> in teal — no quotes, no colon.
+                Text("<\(key)>")
+                    .foregroundStyle(Color(red: 0.15, green: 0.60, blue: 0.55))
+            } else if editingField == .key {
                 TextField("Key", text: $editText)
                     .textFieldStyle(.plain)
                     .focused($isFocused)
@@ -70,10 +105,10 @@ struct NodeRow: View {
                 .onTapGesture(count: 2) {
                     if node.documentNode.type == .keyValue { startKeyEdit(key) }
                 }
-            }
 
-            Text(":")
-                .foregroundStyle(.tertiary)
+                Text(":")
+                    .foregroundStyle(.tertiary)
+            }
         }
     }
 

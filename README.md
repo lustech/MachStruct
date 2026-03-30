@@ -1,30 +1,43 @@
 # MachStruct
 
-> A native macOS structured-document viewer built for speed.
+> A native macOS structured-document viewer and editor built for speed.
 
 ![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-blue)
 ![Swift](https://img.shields.io/badge/swift-5.10-orange)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/tests-126%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-332%20passing-brightgreen)
 
-MachStruct opens and **edits** large JSON files (and eventually XML, YAML, CSV) in under a second. A 100 MB JSON file is structurally indexed in **~430 ms** and displayed as a live, expandable, editable tree — no loading spinners, no frozen UI.
+MachStruct opens, navigates, edits, and converts large JSON, XML, YAML, and CSV files in under a second. A 100 MB JSON file is structurally indexed in **~430 ms** and displayed as a live, expandable, editable tree — no loading spinners, no frozen UI.
 
 ---
 
 ## Features
 
+### Viewing
 - **Instant open** — simdjson SIMD parsing on a background actor; top-level nodes appear while the rest indexes
 - **Zero-copy I/O** — memory-mapped files via `mmap`; a 100 MB file uses < 5 MB of resident memory while browsing
-- **Lazy value parsing** — only nodes you actually expand are fully parsed
-- **Progressive tree** — `AsyncStream` feeds the UI in batches of 1 000 nodes
-- **Full JSON editing** — click any scalar to edit, double-click keys to rename, context-menu Add / Delete
-- **Array reordering** — Move Up / Move Down within arrays via context menu with full undo/redo
-- **Copy / paste** — copy any node subtree as JSON, paste JSON into containers
-- **Incremental save** — Cmd+S writes the full edited document back; window dirty dot appears on first edit
-- **Raw JSON view** — toolbar toggle renders the full document as formatted JSON in a read-only text pane
-- **Status bar** — live node count, file size, format label, and path to the selected node
-- **Native feel** — SwiftUI `DocumentGroup`, `List` with `OutlineGroup`, keyboard navigation, macOS 14+ design language
-- **126 tests** — unit tests for every layer plus a benchmark suite with hard timing assertions
+- **Lazy value parsing** — only nodes you expand are fully parsed
+- **Progressive tree** — `AsyncStream` feeds the UI in batches so the tree is interactive before parsing finishes
+- **Table view** — automatic spreadsheet grid for CSV files and uniform JSON/YAML arrays of objects
+- **Raw text view** — toolbar toggle shows the full document as formatted text in a monospaced pane
+- **Status bar** — live node count, file size, format label, and path to the selected node (`root.items[42].name`)
+
+### Editing
+- **Inline value editing** — click any scalar to edit; auto-detects type (null › bool › int › float › string)
+- **Key renaming** — double-click a key label
+- **Add / delete nodes** — context-menu "Add Key-Value", "Add Item", "Delete"
+- **Array reordering** — Move Up / Move Down via context menu with full undo/redo
+- **Copy / paste** — "Copy as JSON" for any subtree; "Paste from Clipboard" into containers
+- **Unlimited undo/redo** — Cmd+Z / Cmd+Shift+Z via native `UndoManager`
+- **Save** — Cmd+S round-trips correctly; window dirty dot appears on first edit
+
+### Formats
+- **JSON** — simdjson two-phase parse (structural index + lazy value decode)
+- **XML** — libxml2 SAX parser; namespace badges, attribute display
+- **YAML** — Yams/libyaml AST walk; anchor, scalar-style, and tag badges
+- **CSV** — auto-delimiter detection (`,` `;` `\t` `|`); auto-header detection; RFC 4180 quoting
+- **Auto-detection** — format sniffed from file content (first 512 bytes), not just extension
+- **Export** — "Export as JSON / YAML / CSV…" toolbar menu with native save panel
 
 ---
 
@@ -35,6 +48,7 @@ MachStruct opens and **edits** large JSON files (and eventually XML, YAML, CSV) 
 | macOS | 14.0+ |
 | Xcode | 15+ (or Swift 5.10 toolchain) |
 | simdjson | 4.x (via Homebrew) |
+| Yams | 5.4+ (resolved automatically via SPM) |
 
 Install simdjson:
 
@@ -54,15 +68,13 @@ cd MachStruct
 open Package.swift
 ```
 
-Press **⌘R** to build and run. An Open dialog appears — pick any `.json` file.
+Press **⌘R** to build and run. An Open dialog appears — pick any `.json`, `.xml`, `.yaml`, `.yml`, or `.csv` file.
 
 ### Command line
 
 ```bash
 swift build -c release
 ```
-
-Then run the binary and use **File → Open** (⌘O) to open a JSON file.
 
 ### Run tests
 
@@ -88,43 +100,58 @@ MachStruct/
 │   ├── Core/                      MachStructCore library (no UI deps)
 │   │   ├── Model/
 │   │   │   ├── DocumentNode.swift    NodeID · NodeType · NodeValue · DocumentNode
-│   │   │   ├── NodeIndex.swift       O(1) flat lookup + COW mutation API
+│   │   │   ├── NodeIndex.swift       O(1) flat lookup + COW mutation + isTabular()
 │   │   │   ├── ScalarValue.swift     Typed leaf values + parseScalarValue()
 │   │   │   ├── EditTransaction.swift Reversible edit ops + factory methods
-│   │   │   └── FormatMetadata.swift  Per-format annotations
+│   │   │   └── FormatMetadata.swift  Per-format annotations (XML/YAML/CSV metadata)
 │   │   ├── FileIO/
 │   │   │   └── MappedFile.swift      mmap wrapper with madvise hints
 │   │   ├── Parsers/
-│   │   │   ├── StructParser.swift    Protocol · IndexEntry · StructuralIndex
-│   │   │   └── JSONParser.swift      Two-phase parser (simdjson + Foundation)
+│   │   │   ├── StructParser.swift    Protocol · IndexEntry · StructuralIndex · ParserRegistry
+│   │   │   ├── JSONParser.swift      Two-phase parser (simdjson + Foundation)
+│   │   │   ├── XMLParser.swift       libxml2 SAX parser
+│   │   │   ├── YAMLParser.swift      Yams/libyaml AST walker
+│   │   │   ├── CSVParser.swift       RFC 4180 + auto-delimiter/header detection
+│   │   │   └── FormatDetector.swift  512-byte content sniffer (JSON/XML/YAML/CSV)
 │   │   └── Serializers/
-│   │       └── JSONDocumentSerializer.swift  NodeIndex → JSON Data
+│   │       ├── JSONDocumentSerializer.swift  NodeIndex → JSON Data
+│   │       ├── YAMLDocumentSerializer.swift  NodeIndex → YAML text (block style)
+│   │       ├── CSVDocumentSerializer.swift   NodeIndex → RFC 4180 CSV (tabular only)
+│   │       └── FormatConverter.swift         Unified convert(index:to:) entry point
 │   └── App/                       MachStruct executable
 │       ├── MachStructApp.swift       DocumentGroup scene
-│       ├── ContentView.swift         Tree / raw view switcher + toolbar
+│       ├── ContentView.swift         Tree / table / raw view switcher + toolbar
 │       ├── Document/
-│       │   └── StructDocument.swift  ReferenceFileDocument + save + undo
+│       │   └── StructDocument.swift  ReferenceFileDocument; auto-detect format on open
 │       └── UI/
 │           ├── TreeView/
 │           │   ├── TreeView.swift    SwiftUI List + OutlineGroup
-│           │   ├── TreeNode.swift    Recursive data wrapper for List
-│           │   ├── NodeRow.swift     Editing · move · copy/paste · context menu
-│           │   └── TypeBadge.swift   Colored capsule pill
+│           │   ├── TreeNode.swift    Recursive data wrapper; format-specific badge helpers
+│           │   ├── NodeRow.swift     Editing · move · copy/paste · XML/YAML badges
+│           │   └── TypeBadge.swift   Colored capsule pills (str/int/bool/obj/arr/xml/yaml…)
+│           ├── TableView/
+│           │   └── TableView.swift   Sticky header + LazyVStack grid for tabular data
 │           ├── Editing/
 │           │   └── CommitEditEnvironment.swift  commitEdit / serializeNode env keys
 │           └── Toolbar/
-│               └── StatusBar.swift   Node count · file size · path
+│               └── StatusBar.swift   Node count · file size · format name · node path
 └── MachStructTests/
-    ├── ModelTests.swift              26 tests — NodeID, COW, Sendable
-    ├── MappedFileTests.swift         10 tests — mmap, slices, madvise
-    ├── SimdjsonBridgeTests.swift     13 tests — C bridge, all scalar types
-    ├── JSONParserTests.swift         27 tests — Foundation + simdjson paths
-    ├── EditTransactionTests.swift    18 tests — all factory methods + undo
-    ├── JSONSerializerTests.swift     21 tests — round-trips, move, paste
+    ├── ModelTests.swift              DocumentNode, COW, Sendable
+    ├── MappedFileTests.swift         mmap, slices, madvise
+    ├── SimdjsonBridgeTests.swift     C bridge, all scalar types
+    ├── JSONParserTests.swift         Foundation + simdjson paths
+    ├── XMLParserTests.swift          Elements, attributes, namespaces, CDATA
+    ├── YAMLParserTests.swift         Mappings, sequences, scalars, anchors, styles
+    ├── CSVParserTests.swift          RFC 4180, delimiter/header detection, CRLF
+    ├── TableViewTests.swift          isTabular(), tabularColumns
+    ├── EditTransactionTests.swift    All factory methods + undo
+    ├── JSONSerializerTests.swift     Round-trips, move, paste
+    ├── FormatConverterTests.swift    YAML/CSV serializers + cross-format round-trips
+    ├── FormatDetectorTests.swift     Content sniffing, BOM, extension fallback
     ├── Generators/
     │   └── TestCorpusGenerator.swift 7 corpus files, cached in tmp/
     └── Performance/
-        └── ParseBenchmarks.swift     17 benchmarks with os_signpost
+        └── ParseBenchmarks.swift     Hard timing assertions with os_signpost
 ```
 
 ### Two-Phase Parsing
@@ -133,21 +160,24 @@ MachStruct/
 File open
     │
     ▼
+FormatDetector — probes first 512 bytes
+    │   JSON ({/[) · XML (<) · YAML (---/key:) · CSV (delimiter consistency)
+    │
+    ▼
 Phase 1 — Structural Index
-    │   simdjson (≥ 5 MB) or Foundation (< 5 MB) scans the entire file
-    │   and builds a flat [IndexEntry] — byte offsets, types, depths,
-    │   parent IDs. No string or number values are parsed yet.
+    │   Format-specific parser scans the entire file and builds a flat
+    │   [IndexEntry] — byte offsets, types, depths, parent IDs.
+    │   No string or number values are parsed yet.
     │   Result: StructuralIndex → NodeIndex  (O(1) lookup by NodeID)
     │
     ▼
-UI renders top-level tree immediately
+UI renders top-level tree (or table) immediately
     │
     ▼
 Phase 2 — On-demand value parsing
-    │   When a node becomes visible, its raw bytes are sliced from the
-    │   memory-mapped region and parsed by Foundation. For a 500K-node
-    │   file the user typically parses fewer than 500 nodes.
-    ▼
+        When a node becomes visible, its raw bytes are sliced from the
+        memory-mapped region and parsed. For a 500K-node file the user
+        typically touches fewer than 500 nodes.
 ```
 
 ### Performance (M1 Mac mini, debug build)
@@ -176,23 +206,37 @@ Phase 2 — On-demand value parsing
 - [x] P1-10 Benchmark suite (corpus generator + hard timing assertions)
 
 ### Phase 2 — Editor ✅
-- [x] P2-01 Inline value editing (click scalar to edit; Return commits, Escape cancels)
-- [x] P2-02 Key renaming (double-click key label on keyValue rows)
+- [x] P2-01 Inline value editing (click scalar; Return commits, Escape cancels)
+- [x] P2-02 Key renaming (double-click key label)
 - [x] P2-03 Add / delete nodes (context-menu Add Key-Value, Add Item, Delete)
 - [x] P2-04 Array reordering (Move Up / Move Down via context menu)
 - [x] P2-05 `EditTransaction` + `UndoManager` (Cmd+Z / Cmd+Shift+Z)
-- [x] P2-06 Incremental save (`JSONDocumentSerializer` + `ReferenceFileDocument` save)
+- [x] P2-06 Save (`JSONDocumentSerializer` + `ReferenceFileDocument`)
 - [x] P2-07 Dirty state UI (window edited dot; save dialog on close)
-- [x] P2-08 Copy / paste nodes (Copy as JSON; Paste from Clipboard into containers)
-- [x] P2-09 Raw text view (toolbar toggle; async serialization to monospaced text pane)
+- [x] P2-08 Copy / paste nodes (Copy as JSON; Paste from Clipboard)
+- [x] P2-09 Raw text view (toolbar toggle; async serialization)
 
-### Phase 3 — Format Expansion
-- [ ] P3-01 XMLParser (libxml2 SAX)
-- [ ] P3-02 YAMLParser (libyaml)
-- [ ] P3-03 CSVParser
-- [ ] P3-04 Table view for uniform arrays
-- [ ] P3-05 Format conversion
-- [ ] P3-06 Content-based auto-detection
+### Phase 3 — Format Expansion ✅
+- [x] P3-01 `XMLParser` (libxml2 SAX)
+- [x] P3-02 XML UI — namespace badges, attribute display
+- [x] P3-03 `YAMLParser` (Yams/libyaml)
+- [x] P3-04 YAML UI — anchor, scalar-style, and tag badges
+- [x] P3-05 `CSVParser` — auto-delimiter, auto-header, RFC 4180
+- [x] P3-06 `TableView` — sticky header, virtualized `LazyVStack` rows
+- [x] P3-07 Format conversion — `YAMLDocumentSerializer`, `CSVDocumentSerializer`, `FormatConverter`, export menu
+- [x] P3-08 Auto-detection — `FormatDetector` content sniffer; `StructDocument` opens all four formats
+
+### Phase 4 — Power Tools (next)
+- [ ] Full-text search across keys and values with highlighting
+- [ ] Path queries (JQ-style expressions)
+- [ ] Diff view — compare two documents or two revisions
+- [ ] Schema validation (JSON Schema, XSD/DTD)
+- [ ] Format/minify — pretty-print or minify JSON/XML/YAML
+- [ ] Syntax highlighting in raw text view (deferred from Phase 3)
+- [ ] CSV column statistics — type distribution, unique count, min/max (deferred from Phase 3)
+- [ ] Drag-and-drop reordering in tree view (deferred from Phase 2)
+- [ ] Bookmarks and in-document navigation history
+- [ ] Clipboard watch — detect structured data and offer to open
 
 ---
 
@@ -215,7 +259,8 @@ See [`docs/`](docs/) for the full design documentation:
 | [`docs/design/PARSING-ENGINE.md`](docs/design/PARSING-ENGINE.md) | Two-phase strategy, simdjson integration |
 | [`docs/design/UI-DESIGN.md`](docs/design/UI-DESIGN.md) | Window layout, tree view, keyboard shortcuts |
 | [`docs/design/PERFORMANCE.md`](docs/design/PERFORMANCE.md) | Targets, measurement plan, optimization notes |
-| [`docs/roadmap/ROADMAP.md`](docs/roadmap/ROADMAP.md) | Full phase breakdown |
+| [`docs/roadmap/ROADMAP.md`](docs/roadmap/ROADMAP.md) | Full phase breakdown with implementation notes |
+| [`docs/tasks/TASK-INDEX.md`](docs/tasks/TASK-INDEX.md) | AI-agent task breakdown with acceptance criteria |
 
 ---
 

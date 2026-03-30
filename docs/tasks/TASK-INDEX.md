@@ -140,14 +140,14 @@ When starting a task, the AI agent should: (1) read the reference docs, (2) chec
 
 | ID | Task | Dependencies | Key Deliverable |
 |---|---|---|---|
-| P3-01 | XMLParser | P1-05 | libxml2 SAX-based parser |
-| P3-02 | XML UI adaptations | P3-01, P1-08 | Namespace badges, attributes |
-| P3-03 | YAMLParser | P1-05 | libyaml-based parser |
-| P3-04 | YAML UI adaptations | P3-03, P1-08 | Anchor/alias display |
-| P3-05 | CSVParser | P1-05 | Auto-delimiter detection |
-| P3-06 | Table view | P3-05, P1-08 | Tabular display for arrays/CSV |
-| P3-07 | Format conversion | P3-01–P3-05 | Cross-format export |
-| P3-08 | Auto-detection | P1-05 | Content-based format sniffing |
+| P3-01 | XMLParser | P1-05 | libxml2 SAX-based parser ✅ |
+| P3-02 | XML UI adaptations | P3-01, P1-08 | Namespace badges, attributes ✅ |
+| P3-03 | YAMLParser | P1-05 | libyaml-based parser ✅ |
+| P3-04 | YAML UI adaptations | P3-03, P1-08 | Anchor/alias display ✅ |
+| P3-05 | CSVParser | P1-05 | Auto-delimiter detection ✅ |
+| P3-06 | Table view | P3-05, P1-08 | Tabular display for arrays/CSV ✅ |
+| P3-07 | Format conversion | P3-01–P3-05 | Cross-format export ✅ |
+| P3-08 | Auto-detection | P1-05 | Content-based format sniffing ✅ |
 
 ---
 

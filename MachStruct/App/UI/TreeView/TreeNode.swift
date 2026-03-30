@@ -27,6 +27,36 @@ struct TreeNode: Identifiable {
     /// The key to display on the left of this row.
     var displayKey: String? { documentNode.key }
 
+    /// Non-nil when this node is an XML element (`.object` with `XMLMetadata`).
+    var xmlElementMeta: XMLMetadata? {
+        guard documentNode.type == .object,
+              case .xml(let m) = documentNode.metadata else { return nil }
+        return m
+    }
+
+    /// YAML metadata for the *value* node (the scalar or container that is rendered).
+    ///
+    /// For `.keyValue` rows, this returns the metadata of the value child,
+    /// so scalar-style badges reflect the actual scalar rather than the key node.
+    var yamlValueMeta: YAMLMetadata? {
+        guard case .yaml(let m) = valueNode.metadata else { return nil }
+        return m
+    }
+
+    /// The secondary YAML scalar-style badge to show, or `nil` for plain scalars.
+    var yamlStyleBadge: BadgeStyle? {
+        switch yamlValueMeta?.scalarStyle {
+        case .literal:      return .yamlLiteral
+        case .folded:       return .yamlFolded
+        case .singleQuoted: return .yamlSingleQ
+        case .doubleQuoted: return .yamlDoubleQ
+        default:            return nil   // .plain / nil → no badge
+        }
+    }
+
+    /// True when the value node carries a named YAML anchor (`&name`).
+    var hasYAMLAnchor: Bool { yamlValueMeta?.anchor != nil }
+
     /// The node whose value should be used for the right-hand display text.
     ///
     /// For `.keyValue` nodes, this is the single child (the actual value node).
@@ -41,6 +71,17 @@ struct TreeNode: Identifiable {
 
     /// Human-readable summary of the value shown on the right side of the row.
     var displayValue: String {
+        // XML element: show inline attribute preview or self-closing indicator.
+        if let xmlMeta = xmlElementMeta {
+            if xmlMeta.isSelfClosing { return "/>" }
+            let attrs = xmlMeta.attributes
+            guard !attrs.isEmpty else { return "" }
+            let shown = attrs.prefix(2)
+                .map { "@\($0.key)=\"\($0.value)\"" }
+                .joined(separator: " ")
+            return attrs.count > 2 ? "\(shown) \u{2026}" : shown
+        }
+
         let vn = valueNode
         switch vn.value {
         case .scalar(let sv):
@@ -65,6 +106,9 @@ struct TreeNode: Identifiable {
 
     /// Badge label and color for the right side of the row.
     var badgeInfo: (label: String, style: BadgeStyle) {
+        // XML elements always show the "elm" badge.
+        if xmlElementMeta != nil { return ("elm", .xml) }
+
         let vn = valueNode
         switch vn.value {
         case .scalar(let sv):
@@ -112,6 +156,14 @@ struct TreeNode: Identifiable {
 /// Maps node value types to visual badge styles.
 enum BadgeStyle {
     case str, int, float, bool, null, obj, arr, err
+    case xml        // XML element
+    case ns         // XML namespace indicator
+    // YAML secondary badges
+    case yamlAnchor     // & — node declares an anchor
+    case yamlLiteral    // | — literal block scalar
+    case yamlFolded     // > — folded block scalar
+    case yamlSingleQ    // ' — single-quoted scalar
+    case yamlDoubleQ    // " — double-quoted scalar
 
     init(for sv: ScalarValue) {
         switch sv {
