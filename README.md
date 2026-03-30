@@ -238,6 +238,15 @@ Phase 2 — On-demand value parsing
 - [ ] Bookmarks and in-document navigation history
 - [ ] Clipboard watch — detect structured data and offer to open
 
+### Phase 5 — Release Engineering
+- [ ] P5-01 Vendor simdjson (replace Homebrew `systemLibrary` with bundled amalgamation)
+- [ ] P5-02 Xcode app target + `Info.plist` UTType declarations + sandbox entitlements
+- [ ] P5-03 App icon (`AppIcon.appiconset`, all required sizes)
+- [ ] P5-04 Code signing (Developer ID + Apple Distribution certificates, `ExportOptions.plist`)
+- [ ] P5-05 Notarization + GitHub Actions release pipeline → notarized DMG on tag push
+- [ ] P5-06 Sparkle 2 auto-updates (appcast, EdDSA signing, background update check)
+- [ ] P5-07 App Store submission prep (screenshots, listing copy, `xcrun altool` validation)
+
 ---
 
 ## Contributing

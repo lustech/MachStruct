@@ -10,7 +10,8 @@
 | **Phase 2** | Editor | JSON editing, undo, save | ✅ Complete |
 | **Phase 3** | Formats | XML, YAML, CSV support | ✅ Complete |
 | **Phase 4** | Power Tools | Search, diff, conversion, plugins | 4–6 weeks |
-| **Phase 5** | Polish | App Store, Quick Look, Spotlight, performance tuning | 3–4 weeks |
+| **Phase 5** | Release Engineering | simdjson vendoring, Xcode target, signing, notarization, Sparkle, App Store | 2–3 weeks |
+| **Phase 6** | Polish | Settings, onboarding, Quick Look, Spotlight, accessibility, localisation | 3–4 weeks |
 
 ---
 
@@ -114,24 +115,88 @@
 
 ---
 
-## Phase 5: Polish and Distribution
+## Phase 5: Release Engineering
 
-**Goal:** App Store readiness and deep macOS integration.
+**Goal:** Get MachStruct into users' hands as a self-contained, signed, auto-updating macOS app — via direct notarized DMG first, App Store second.
+
+### Current blockers (must fix before any release)
+
+Three issues in the current codebase prevent shipping:
+
+1. **`simdjson` is a Homebrew system library** — The `CSystemSimdjson` SPM target points at `/opt/homebrew/`. This breaks on machines without Homebrew and is rejected by the Mac App Store. Must be replaced with vendored source.
+2. **No Xcode app target** — `Package.swift` produces a command-line-style executable, not a proper `.app` bundle. Shipping requires a real Xcode target with `Info.plist`, entitlements, and an asset catalog.
+3. **No signing or sandboxing configuration** — Neither distribution channel works without these.
+
+### Distribution channels
+
+| Channel | When | Notes |
+|---|---|---|
+| **Notarized DMG** | v1.0 | Fastest path; no review; Sparkle handles updates |
+| **Mac App Store** | v1.1+ | After v1.0 proves stable; broader discovery |
 
 ### Deliverables
-1. **Quick Look plugin** — Preview JSON/XML/YAML/CSV files in Finder with a mini tree view.
-2. **Spotlight importer** — Index document keys and string values for system-wide search.
-3. **macOS Services** — "Format JSON" and "Minify JSON" in any app's Services menu.
-4. **App Store preparation** — Sandboxing, notarization, screenshots, description, pricing.
-5. **Settings UI** — Theme, font, indent style, default format, keyboard shortcuts.
-6. **Onboarding** — First-launch tutorial highlighting key features.
-7. **Performance audit** — Profile every target in PERFORMANCE.md. Fix any regressions.
-8. **Accessibility audit** — VoiceOver, keyboard-only, high contrast, Dynamic Type.
+
+1. **Vendor simdjson** *(P5-01)* — Replace the `systemLibrary` SPM target with the simdjson single-header amalgamation (`simdjson.h` + `simdjson.cpp`) checked in under `Sources/CSimdjsonBridge/vendor/`. Drop the Homebrew dependency entirely.
+
+2. **Xcode app target + Info.plist** *(P5-02)* — Create a proper `.xcodeproj` app target. `Info.plist` declares all five UTTypes (JSON, XML, YAML, YML, CSV) for `CFBundleDocumentTypes`. Entitlements file grants `com.apple.security.files.user-selected.read-write` (sandbox-compatible with `ReferenceFileDocument`).
+
+3. **App icon** *(P5-03)* — `AppIcon.appiconset` at all required sizes (16 → 1024 pt, @1x + @2x). Icon reflects the structured-document inspector theme.
+
+4. **Code signing configuration** *(P5-04)* — Developer ID Application certificate (direct distribution) and Apple Distribution certificate (App Store). Two `ExportOptions.plist` files, one per channel. `xcodebuild archive` + `xcodebuild -exportArchive` verified.
+
+5. **Notarization pipeline** *(P5-05)* — GitHub Actions workflow triggered on `v*` tag push: archive → export → `xcrun notarytool submit --wait` → `xcrun stapler staple` → `hdiutil create` DMG → upload to GitHub Release. `spctl --assess` passes on a clean machine.
+
+6. **Sparkle auto-updates** *(P5-06)* — Add Sparkle 2 (SPM). `SUFeedURL` in `Info.plist` points at a hosted `appcast.xml`. Appcast signed with EdDSA key. Update check runs in background on launch.
+
+7. **App Store submission prep** *(P5-07)* — Sandbox entitlements audited (only `user-selected.read-write` required for `DocumentGroup`). App Store Connect listing: screenshots at 1280×800 and 1440×900, description, keywords, age rating, pricing. `xcrun altool --validate-app` clean before submission.
+
+### Recommended sequencing
+
+```
+P5-01 (vendor simdjson) ──▶ P5-02 (Xcode target) ──▶ P5-04 (signing)
+                                   │                          │
+                              P5-03 (icon)             P5-05 (notarize CI)
+                                                              │
+                                                       P5-06 (Sparkle)
+                                                              │
+                                                       ship v1.0 DMG
+                                                              │
+                                                       P5-07 (App Store)
+```
+
+### What's already in good shape
+
+- `ReferenceFileDocument` / `DocumentGroup` is the correct sandbox-friendly architecture — security-scoped bookmarks are handled automatically.
+- `MappedFile` writes to `NSTemporaryDirectory()` before mmapping — permitted in the sandbox.
+- `StructDocument.readableContentTypes` already lists all five UTTypes — maps directly to `Info.plist` `CFBundleDocumentTypes`.
+- All four parsers are actors and all model types are `Sendable` — no concurrency surprises after signing.
 
 ### Exit Criteria
-- App passes App Store review.
-- All accessibility features functional.
-- All performance targets met per PERFORMANCE.md.
+- `swift build` succeeds on a machine without Homebrew installed.
+- `spctl --assess --type exec MachStruct.app` exits 0 on a clean macOS install.
+- Sparkle update dialog appears when a newer version is published to the appcast.
+- App Store validation (`xcrun altool --validate-app`) passes with no errors.
+
+---
+
+## Phase 6: Polish and Deep Integration
+
+**Goal:** Deep macOS integration, accessibility, onboarding, and App Store quality bar.
+
+### Deliverables
+1. **Settings UI** — Theme (light/dark/auto), font size, indent width, default format on paste, keyboard shortcut customisation.
+2. **Onboarding** — First-launch welcome sheet highlighting key features and pointing to docs.
+3. **Quick Look plugin** — Preview JSON/XML/YAML/CSV files in Finder with a read-only mini tree view.
+4. **Spotlight importer** — Index document keys and string values for Spotlight (`mdimport`).
+5. **macOS Services** — "Format JSON" and "Minify JSON" in the system Services menu.
+6. **Performance audit** — Profile every target from PERFORMANCE.md on current hardware. Fix any regressions introduced since Phase 1.
+7. **Accessibility audit** — Full VoiceOver pass, keyboard-only navigation, high-contrast support, Dynamic Type.
+8. **Localisation** — At minimum en, de, fr, ja (the four largest Mac developer markets).
+
+### Exit Criteria
+- App passes App Store review (if not already submitted in Phase 5).
+- All PERFORMANCE.md targets met on the benchmark machine.
+- VoiceOver can navigate and read the full document tree without gaps.
 
 ---
 
@@ -139,8 +204,8 @@
 
 These are explored further in [FEATURE-IDEAS.md](FEATURE-IDEAS.md):
 
-- **Phase 6:** Binary formats (MessagePack, BSON, Protobuf, CBOR)
-- **Phase 7:** Collaborative editing / file watching / live reload
-- **Phase 8:** Plugin system for custom parsers and transformations
-- **Phase 9:** iOS/iPadOS companion app
-- **Phase 10:** AI-assisted features (schema inference, data summarization, natural language queries)
+- **Phase 7:** Binary formats (MessagePack, BSON, Protobuf, CBOR)
+- **Phase 8:** Collaborative editing / file watching / live reload
+- **Phase 9:** Plugin system for custom parsers and transformations
+- **Phase 10:** iOS/iPadOS companion app
+- **Phase 11:** AI-assisted features (schema inference, data summarization, natural language queries)

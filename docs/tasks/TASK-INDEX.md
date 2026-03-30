@@ -151,6 +151,83 @@ When starting a task, the AI agent should: (1) read the reference docs, (2) chec
 
 ---
 
+## Phase 5: Release Engineering
+
+> **Critical context for AI agents:** Before starting any P5 task, read ROADMAP.md §Phase 5 for the full rationale. P5-01 must land first — every other task depends on a self-contained build.
+
+### P5-01: Vendor simdjson
+- **Module:** Build / Sources/CSimdjsonBridge
+- **Dependencies:** None
+- **Description:** The current `CSystemSimdjson` SPM system-library target points at Homebrew (`/opt/homebrew/opt/simdjson`). Replace it entirely with the simdjson single-header amalgamation checked in to the repo. Download `simdjson.h` and `simdjson.cpp` from the [simdjson releases page](https://github.com/simdjson/simdjson/releases) (match the version currently in use). Place them under `Sources/CSimdjsonBridge/vendor/`. Update `Package.swift`: remove the `CSystemSimdjson` target and its `systemLibrary` declaration; add `simdjson.cpp` as a source in the `CSimdjsonBridge` C++ target; add any required compiler flags (`-std=c++17`, `-DSIMDJSON_EXCEPTIONS=0`). Remove all references to `CSystemSimdjson` from target dependencies.
+- **Key files:** `Sources/CSimdjsonBridge/vendor/simdjson.h`, `Sources/CSimdjsonBridge/vendor/simdjson.cpp`, `Package.swift`
+- **Acceptance criteria:** `swift build` succeeds on a machine with Homebrew's simdjson uninstalled (or with `PKG_CONFIG_PATH` cleared). All existing tests pass. No references to `/opt/homebrew` remain in the build log.
+- **Reference docs:** ROADMAP.md §Phase 5 — Current blockers
+
+### P5-02: Xcode App Target + Info.plist + Entitlements
+- **Module:** Root / Build
+- **Dependencies:** P5-01
+- **Description:** Create a proper Xcode project with a macOS App target that wraps the existing SwiftUI `DocumentGroup` entry point. The `Package.swift` SwiftUI app already has everything needed — this task is about giving it the correct bundle infrastructure. Add `Info.plist` with: `CFBundleDocumentTypes` and `UTExportedTypeDeclarations` for all five formats (JSON, XML, YAML, YML, CSV); `LSMinimumSystemVersion 14.0`; `CFBundleName`, `CFBundleIdentifier` (`com.lustech.machstruct`), `CFBundleShortVersionString`. Add `MachStruct.entitlements` with `com.apple.security.app-sandbox = true` and `com.apple.security.files.user-selected.read-write = true`. Verify `StructDocument.readableContentTypes` matches the declared UTTypes.
+- **Key files:** `MachStruct.xcodeproj/`, `MachStruct/App/Info.plist`, `MachStruct/App/MachStruct.entitlements`
+- **Acceptance criteria:** App builds and runs from Xcode. File → Open sheet filters to .json/.xml/.yaml/.yml/.csv. Dragging any supported file onto the Dock icon opens it. `codesign -dv --entitlements - MachStruct.app` shows the sandbox entitlement. All existing tests pass.
+- **Reference docs:** ROADMAP.md §Phase 5
+
+### P5-03: App Icon
+- **Module:** UI / Assets
+- **Dependencies:** P5-02
+- **Description:** Design and export an `AppIcon.appiconset` covering all required macOS icon sizes: 16, 32, 64, 128, 256, 512, 1024 pt at @1x and @2x (total 10 PNG files). The icon should communicate "structured document inspector" — consider motifs like nested brackets `{ }`, a magnifying glass over a tree, or a structured grid. Place the asset catalog at `MachStruct/Assets.xcassets/AppIcon.appiconset/`. Update `Contents.json` with correct filename entries.
+- **Key files:** `MachStruct/Assets.xcassets/AppIcon.appiconset/`
+- **Acceptance criteria:** App icon appears in the Dock, Finder, and About dialog without the default system placeholder. No missing-size warnings in Xcode's asset catalog validator. Icon passes the [App Store icon guidelines](https://developer.apple.com/design/human-interface-guidelines/app-icons) (no alpha channel, square, no rounded corners — macOS applies the mask).
+- **Reference docs:** ROADMAP.md §Phase 5
+
+### P5-04: Code Signing Configuration
+- **Module:** Build
+- **Dependencies:** P5-02
+- **Description:** Configure Xcode signing for two distribution channels. For **direct distribution**: Developer ID Application certificate; `ExportOptions-Direct.plist` with `method = developer-id`, `hardened-runtime = true`. For **App Store**: Apple Distribution certificate; `ExportOptions-AppStore.plist` with `method = app-store`. Enable Hardened Runtime in the Xcode target build settings (required for notarization). Confirm the entitlements file is referenced in both configurations. Do not commit private keys or provisioning profiles — document where they must be placed.
+- **Key files:** `ExportOptions-Direct.plist`, `ExportOptions-AppStore.plist`, `scripts/README-signing.md`
+- **Acceptance criteria:** `xcodebuild archive -scheme MachStruct -archivePath build/MachStruct.xcarchive` succeeds. `xcodebuild -exportArchive … -exportOptionsPlist ExportOptions-Direct.plist` produces a signed `.app`. `codesign --verify --strict MachStruct.app` exits 0. `spctl --assess --type exec MachStruct.app` exits 0 (after notarization in P5-05).
+- **Reference docs:** ROADMAP.md §Phase 5
+
+### P5-05: Notarization + Release CI Pipeline
+- **Module:** Build / CI
+- **Dependencies:** P5-04
+- **Description:** Create a GitHub Actions workflow (`.github/workflows/release.yml`) triggered on `v*` tag push. Pipeline steps: (1) `xcodebuild archive`, (2) `xcodebuild -exportArchive` using `ExportOptions-Direct.plist`, (3) `xcrun notarytool submit --wait` using repository secrets for Apple ID and app-specific password, (4) `xcrun stapler staple`, (5) `hdiutil create` to produce a `MachStruct-{version}.dmg`, (6) upload the DMG as a GitHub Release asset. Secrets required: `APPLE_ID`, `APPLE_APP_PASSWORD`, `APPLE_TEAM_ID`, `SIGNING_CERTIFICATE_P12`, `SIGNING_CERTIFICATE_PASSWORD`. Also add a `Makefile` target `make release` for local builds.
+- **Key files:** `.github/workflows/release.yml`, `Makefile`, `scripts/notarize.sh`
+- **Acceptance criteria:** Pushing `git tag v1.0.0 && git push --tags` triggers the workflow and produces a downloadable DMG on the GitHub Releases page within 15 minutes. `spctl --assess --type exec MachStruct.app` and `spctl --assess --type install MachStruct.dmg` both exit 0 on a clean macOS 14 machine (no Gatekeeper warning on double-click).
+- **Reference docs:** ROADMAP.md §Phase 5
+
+### P5-06: Sparkle Auto-Updates
+- **Module:** App
+- **Dependencies:** P5-05
+- **Description:** Add [Sparkle 2](https://sparkle-project.org/) as an SPM dependency. In `Info.plist`, set `SUFeedURL` to the hosted `appcast.xml` URL. In `MachStructApp.swift`, instantiate `SPUStandardUpdaterController` as a `@StateObject` and expose "Check for Updates…" in the app menu. Generate an EdDSA key pair with `generate_keys` (Sparkle CLI); store the public key in `Info.plist` (`SUPublicEDKey`); store the private key securely outside the repo. Create an `appcast.xml` template and a `scripts/update-appcast.sh` helper that generates a new entry from the DMG produced by P5-05. The update check must run on a background thread and must not block launch.
+- **Key files:** `Package.swift` (Sparkle dep), `MachStruct/App/MachStructApp.swift`, `MachStruct/App/Info.plist` (`SUFeedURL`, `SUPublicEDKey`), `appcast.xml`, `scripts/update-appcast.sh`
+- **Acceptance criteria:** A test `appcast.xml` pointing to a fake newer version causes Sparkle's update dialog to appear within 5 seconds of launch (in debug). Removing `SUFeedURL` or hosting an empty appcast causes a graceful no-op (no crash). `SUPublicEDKey` in `Info.plist` matches the private key used to sign the appcast.
+- **Reference docs:** ROADMAP.md §Phase 5, [Sparkle documentation](https://sparkle-project.org/documentation/)
+
+### P5-07: App Store Submission Prep
+- **Module:** Build / Marketing
+- **Dependencies:** P5-04
+- **Description:** Audit and finalise the sandbox entitlements for App Store review — `com.apple.security.app-sandbox` + `com.apple.security.files.user-selected.read-write` should be sufficient for `DocumentGroup`-based document access; confirm no `com.apple.security.temporary-exception.*` entitlements are needed. Create the App Store Connect listing: app name, subtitle, description (up to 4 000 chars), keywords (100 chars), support URL, marketing URL. Produce screenshots at both required sizes: 1280×800 (13" MacBook) and 1440×900 (15" MacBook). Set pricing (suggest free or one-time purchase — no subscriptions for a developer tool). Age rating questionnaire. `xcrun altool --validate-app` must pass before submission.
+- **Key files:** `marketing/description.md`, `marketing/keywords.txt`, `marketing/screenshots/`, `MachStruct.entitlements` (App Store variant)
+- **Acceptance criteria:** `xcrun altool --validate-app -f MachStruct.pkg --type osx` exits 0 with no errors or warnings. App Store Connect listing is 100% complete (green indicators on all required fields). At least 3 screenshots per device size uploaded.
+- **Reference docs:** ROADMAP.md §Phase 5, [App Store Review Guidelines](https://developer.apple.com/app-store/review/guidelines/)
+
+---
+
+## Task Dependency Graph (Phase 5)
+
+```
+P5-01 (Vendor simdjson)
+  └──▶ P5-02 (Xcode target + Info.plist)
+         ├──▶ P5-03 (App icon)          [can run in parallel with P5-04]
+         └──▶ P5-04 (Code signing)
+                    └──▶ P5-05 (Notarization CI)
+                               └──▶ P5-06 (Sparkle)
+                                          └──▶  ship v1.0 DMG
+                    └──▶ P5-07 (App Store prep)  [can run in parallel with P5-05/06]
+```
+
+---
+
 ## Task Dependency Graph (Phase 1)
 
 ```
