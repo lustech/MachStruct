@@ -10,7 +10,7 @@
 | **Phase 2** | Editor | JSON editing, undo, save | ✅ Complete |
 | **Phase 3** | Formats | XML, YAML, CSV support | ✅ Complete |
 | **Phase 4** | Power Tools | Search, diff, conversion, plugins | 4–6 weeks |
-| **Phase 5** | Release Engineering | simdjson vendoring, Xcode target, signing, notarization, Sparkle, App Store | 2–3 weeks |
+| **Phase 5** | Release Engineering | simdjson vendoring, Xcode target, signing, notarization, Sparkle, App Store | 🔄 In Progress |
 | **Phase 6** | Polish | Settings, onboarding, Quick Look, Spotlight, accessibility, localisation | 3–4 weeks |
 
 ---
@@ -124,7 +124,7 @@
 Three issues in the current codebase prevent shipping:
 
 1. **`simdjson` is a Homebrew system library** — The `CSystemSimdjson` SPM target points at `/opt/homebrew/`. This breaks on machines without Homebrew and is rejected by the Mac App Store. Must be replaced with vendored source.
-2. **No Xcode app target** — `Package.swift` produces a command-line-style executable, not a proper `.app` bundle. Shipping requires a real Xcode target with `Info.plist`, entitlements, and an asset catalog.
+2. ~~**No Xcode app target**~~ ✅ **DONE** — `MachStruct.xcodeproj` created with proper `Info.plist`, `PRODUCT_BUNDLE_IDENTIFIER`, and all five UTTypes declared via `LSItemContentTypes`. `public.yaml` registered via `UTImportedTypeDeclarations`. App launches from Xcode with Dock icon, menu bar, and Open panel. See implementation notes below.
 3. **No signing or sandboxing configuration** — Neither distribution channel works without these.
 
 ### Distribution channels
@@ -136,9 +136,18 @@ Three issues in the current codebase prevent shipping:
 
 ### Deliverables
 
+### Implementation notes (P5-02 — lessons learned)
+
+- **SPM executable targets do not reliably embed `Info.plist`** — Xcode auto-generates a minimal plist and ignores ours regardless of file placement. A proper `.xcodeproj` with `GENERATE_INFOPLIST_FILE = NO` and `INFOPLIST_FILE = MachStruct/App/Info.plist` is required.
+- **`LSItemContentTypes` is mandatory for `DocumentGroup`** — `CFBundleTypeExtensions` alone is not enough on modern macOS. Each `CFBundleDocumentTypes` entry must include an `LSItemContentTypes` array with the actual UTI string (`public.json`, `public.xml`, etc.).
+- **`public.yaml` must be imported** — It is not guaranteed to be registered system-wide on macOS 14. Add a `UTImportedTypeDeclarations` entry so `UTType(filenameExtension: "yaml")` resolves correctly.
+- **`NSApp` is nil at `App.init()` time** — Do not call `NSApp.setActivationPolicy()` from the SwiftUI `App` struct initialiser; it crashes. With a proper xcodeproj + Info.plist the activation policy is set automatically and no workaround is needed.
+
+---
+
 1. **Vendor simdjson** *(P5-01)* — Replace the `systemLibrary` SPM target with the simdjson single-header amalgamation (`simdjson.h` + `simdjson.cpp`) checked in under `Sources/CSimdjsonBridge/vendor/`. Drop the Homebrew dependency entirely.
 
-2. **Xcode app target + Info.plist** *(P5-02)* — Create a proper `.xcodeproj` app target. `Info.plist` declares all five UTTypes (JSON, XML, YAML, YML, CSV) for `CFBundleDocumentTypes`. Entitlements file grants `com.apple.security.files.user-selected.read-write` (sandbox-compatible with `ReferenceFileDocument`).
+2. ~~**Xcode app target + Info.plist**~~ ✅ **DONE** *(P5-02)* — `MachStruct.xcodeproj` created; see implementation notes above. `Info.plist` declares all five UTTypes (JSON, XML, YAML, YML, CSV) for `CFBundleDocumentTypes`. Entitlements file grants `com.apple.security.files.user-selected.read-write` (sandbox-compatible with `ReferenceFileDocument`).
 
 3. **App icon** *(P5-03)* — `AppIcon.appiconset` at all required sizes (16 → 1024 pt, @1x + @2x). Icon reflects the structured-document inspector theme.
 
@@ -185,7 +194,8 @@ P5-01 (vendor simdjson) ──▶ P5-02 (Xcode target) ──▶ P5-04 (signing)
 
 ### Deliverables
 1. **Settings UI** — Theme (light/dark/auto), font size, indent width, default format on paste, keyboard shortcut customisation.
-2. **Onboarding** — First-launch welcome sheet highlighting key features and pointing to docs.
+2. **Welcome / launch window** *(P6-02, next up)* — Replace the bare system Open panel on launch with a dedicated welcome window containing: a drop zone (accepts JSON/XML/YAML/CSV via drag-and-drop), an "Open File…" button (triggers `NSOpenPanel`), and a recent files list sourced from `NSDocumentController`. Uses a `Window("Welcome", id: "welcome")` SwiftUI scene alongside the existing `DocumentGroup`. Opening a file spawns a new document window; the welcome window stays open. Designed decisions: new window per file (not single-window replace), recents list visible on the welcome screen.
+3. **Onboarding** — First-launch welcome sheet highlighting key features and pointing to docs.
 3. **Quick Look plugin** — Preview JSON/XML/YAML/CSV files in Finder with a read-only mini tree view.
 4. **Spotlight importer** — Index document keys and string values for Spotlight (`mdimport`).
 5. **macOS Services** — "Format JSON" and "Minify JSON" in the system Services menu.

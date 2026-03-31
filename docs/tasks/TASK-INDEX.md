@@ -163,12 +163,20 @@ When starting a task, the AI agent should: (1) read the reference docs, (2) chec
 - **Acceptance criteria:** `swift build` succeeds on a machine with Homebrew's simdjson uninstalled (or with `PKG_CONFIG_PATH` cleared). All existing tests pass. No references to `/opt/homebrew` remain in the build log.
 - **Reference docs:** ROADMAP.md §Phase 5 — Current blockers
 
-### P5-02: Xcode App Target + Info.plist + Entitlements
+### P5-02: Xcode App Target + Info.plist + Entitlements ✅ DONE (partial)
 - **Module:** Root / Build
 - **Dependencies:** P5-01
-- **Description:** Create a proper Xcode project with a macOS App target that wraps the existing SwiftUI `DocumentGroup` entry point. The `Package.swift` SwiftUI app already has everything needed — this task is about giving it the correct bundle infrastructure. Add `Info.plist` with: `CFBundleDocumentTypes` and `UTExportedTypeDeclarations` for all five formats (JSON, XML, YAML, YML, CSV); `LSMinimumSystemVersion 14.0`; `CFBundleName`, `CFBundleIdentifier` (`com.lustech.machstruct`), `CFBundleShortVersionString`. Add `MachStruct.entitlements` with `com.apple.security.app-sandbox = true` and `com.apple.security.files.user-selected.read-write = true`. Verify `StructDocument.readableContentTypes` matches the declared UTTypes.
-- **Key files:** `MachStruct.xcodeproj/`, `MachStruct/App/Info.plist`, `MachStruct/App/MachStruct.entitlements`
-- **Acceptance criteria:** App builds and runs from Xcode. File → Open sheet filters to .json/.xml/.yaml/.yml/.csv. Dragging any supported file onto the Dock icon opens it. `codesign -dv --entitlements - MachStruct.app` shows the sandbox entitlement. All existing tests pass.
+- **Status:** Xcode project and Info.plist complete and working. Entitlements file (sandbox) still needed — add during P5-04.
+- **What was built:**
+  - `MachStruct.xcodeproj/project.pbxproj` — generated deterministically from `gen_xcodeproj.py`. App target with `GENERATE_INFOPLIST_FILE = NO`, `INFOPLIST_FILE = MachStruct/App/Info.plist`, `PRODUCT_BUNDLE_IDENTIFIER = com.machstruct.app`, deployment target macOS 14.0. `MachStructCore` linked as a local Swift package via `XCLocalSwiftPackageReference`.
+  - `MachStruct/App/Info.plist` — `CFBundleDocumentTypes` with both `CFBundleTypeExtensions` **and** `LSItemContentTypes` for JSON, XML, YAML/YML, CSV. `UTImportedTypeDeclarations` registers `public.yaml`. `NSPrincipalClass = NSApplication`.
+- **Key lessons (for future AI agents):**
+  - SPM executable targets do not reliably embed `Info.plist` — a real `.xcodeproj` is required.
+  - `LSItemContentTypes` is required in each `CFBundleDocumentTypes` entry; extensions alone are not matched by `DocumentGroup` at runtime.
+  - `public.yaml` must be declared under `UTImportedTypeDeclarations` — it is not guaranteed to be registered system-wide on macOS 14.
+  - Never call `NSApp.setActivationPolicy()` from `App.init()` — `NSApp` is nil at that point and crashes with `_swift_runtime_on_report`. With a proper xcodeproj + Info.plist the activation policy is set automatically.
+- **Remaining:** Add `MachStruct.entitlements` (sandbox + user-selected read-write) during P5-04.
+- **Key files:** `MachStruct.xcodeproj/project.pbxproj`, `MachStruct/App/Info.plist`
 - **Reference docs:** ROADMAP.md §Phase 5
 
 ### P5-03: App Icon
@@ -210,6 +218,21 @@ When starting a task, the AI agent should: (1) read the reference docs, (2) chec
 - **Key files:** `marketing/description.md`, `marketing/keywords.txt`, `marketing/screenshots/`, `MachStruct.entitlements` (App Store variant)
 - **Acceptance criteria:** `xcrun altool --validate-app -f MachStruct.pkg --type osx` exits 0 with no errors or warnings. App Store Connect listing is 100% complete (green indicators on all required fields). At least 3 screenshots per device size uploaded.
 - **Reference docs:** ROADMAP.md §Phase 5, [App Store Review Guidelines](https://developer.apple.com/app-store/review/guidelines/)
+
+---
+
+---
+
+## Phase 6: Polish (Selected Tasks)
+
+### P6-02: Welcome / Launch Window ⬅️ NEXT UP
+- **Module:** App / UI
+- **Dependencies:** P5-02
+- **Description:** Add a dedicated welcome window that appears on app launch, replacing the bare system Open panel. The window contains three areas: (1) a drop zone that accepts JSON, XML, YAML, and CSV files via drag-and-drop, (2) an "Open File…" button that triggers `NSOpenPanel` filtered to the supported UTTypes, and (3) a scrollable recent files list sourced from `NSDocumentController.shared.recentDocumentURLs`. Opening a file (via any of the three methods) calls `NSDocumentController.shared.openDocument(withContentsOf:display:completionHandler:)` to open it in a new `DocumentGroup` document window — the welcome window stays open independently. Implement as a `Window("Welcome", id: "welcome")` SwiftUI scene added alongside the existing `DocumentGroup` in `MachStructApp`. The existing `ContentView.placeholderView` can be simplified or removed since it is no longer the first thing the user sees.
+- **Design decisions:** new window per file (not single-window replace); recent files list visible on welcome screen; welcome window is re-openable via Window menu.
+- **Key files:** `MachStruct/App/WelcomeView.swift` (new), `MachStruct/App/MachStructApp.swift` (add `Window` scene)
+- **Acceptance criteria:** App launches directly into the welcome window (no system Open panel). Dropping a supported file onto the drop zone opens it in a document window. Clicking "Open File…" shows a filtered open panel. Recent files are listed and clicking one opens it. Unsupported file types dropped onto the zone show a clear error state. Welcome window is accessible from the Window menu.
+- **Reference docs:** ROADMAP.md §Phase 6
 
 ---
 

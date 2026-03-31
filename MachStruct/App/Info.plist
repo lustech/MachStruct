@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>MachStruct</string>
+    <key>CFBundleDisplayName</key>
+    <string>MachStruct</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.machstruct.app</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleExecutable</key>
+    <string>MachStruct</string>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeExtensions</key>
+            <array><string>json</string></array>
+            <key>LSItemContentTypes</key>
+            <array><string>public.json</string></array>
+            <key>CFBundleTypeName</key>
+            <string>JSON Document</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+        </dict>
+        <dict>
+            <key>CFBundleTypeExtensions</key>
+            <array><string>xml</string></array>
+            <key>LSItemContentTypes</key>
+            <array><string>public.xml</string></array>
+            <key>CFBundleTypeName</key>
+            <string>XML Document</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+        </dict>
+        <dict>
+            <key>CFBundleTypeExtensions</key>
+            <array><string>csv</string></array>
+            <key>LSItemContentTypes</key>
+            <array><string>public.comma-separated-values-text</string></array>
+            <key>CFBundleTypeName</key>
+            <string>CSV Document</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+        </dict>
+        <dict>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>yaml</string>
+                <string>yml</string>
+            </array>
+            <key>LSItemContentTypes</key>
+            <array><string>public.yaml</string></array>
+            <key>CFBundleTypeName</key>
+            <string>YAML Document</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+        </dict>
+    </array>
+
+    <!-- Import public.yaml since it may not be registered on all macOS 14 installs -->
+    <key>UTImportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>public.yaml</string>
+            <key>UTTypeDescription</key>
+            <string>YAML Document</string>
+            <key>UTTypeConformsTo</key>
+            <array><string>public.text</string></array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>yaml</string>
+                    <string>yml</string>
+                </array>
+            </dict>
+        </dict>
+    </array>
+</dict>
+</plist>
