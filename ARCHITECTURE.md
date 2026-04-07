@@ -1,6 +1,6 @@
 # MachStruct — Architecture Overview
 
-> A superfast structured-document viewer and editor for macOS, starting with JSON.
+> A superfast structured-document viewer and editor for macOS: JSON, XML, YAML, and CSV.
 
 ## 1. Vision
 
@@ -12,14 +12,14 @@ MachStruct is a native macOS application that opens, parses, displays, and enabl
 |---|---|---|
 | **UI** | Swift + SwiftUI | Native macOS look and feel. Declarative UI with lazy rendering (List + OutlineGroup) gives us view recycling and on-demand child expansion for free. |
 | **App framework** | SwiftUI App lifecycle | Modern, lightweight. NSDocument-based architecture for native file handling, recent files, and multi-window support. |
-| **Parsing core** | Swift with C-interop to simdjson | simdjson parses JSON at gigabytes/second using SIMD instructions. We wrap it via a thin C bridge and expose a Swift-friendly API. For files under ~5MB, Foundation's JSONSerialization (recently rewritten, 5x faster) is a fine fallback. |
+| **Parsing core** | Swift with C-interop to simdjson | simdjson v3.12.3 (vendored amalgamation — no Homebrew required) parses JSON at gigabytes/second using SIMD instructions. Wrapped via a thin C bridge (`CSimdjsonBridge`). Foundation's `JSONSerialization` is used as a fallback for small files. XML uses libxml2 SAX; YAML uses Yams/libyaml; CSV is a custom RFC 4180 actor. |
 | **File I/O** | Memory-mapped files (mmap) | Zero-copy reads for large files. The OS pages data in on demand — we never load 100MB into a contiguous buffer. |
 | **Concurrency** | Swift Concurrency (async/await, actors) | Parsing and indexing run on background actors. The UI actor is never blocked. |
-| **Build** | Swift Package Manager + Xcode | SPM for dependency management; Xcode for signing, notarization, and App Store delivery. |
+| **Build** | Swift Package Manager + Xcode | `Package.swift` manages `CSimdjsonBridge` (vendored C++), `MachStructCore`, and the Yams SPM dependency. `MachStruct.xcodeproj` handles signing, entitlements, UTType registration, and App Store delivery. |
 
 ### Why not Rust for the core?
 
-Rust + Swift FFI (via UniFFI or cbindgen) is a valid path and would give us the fastest possible parsing. However, for the initial phase targeting up to 100MB, simdjson via C-interop is fast enough and keeps the codebase in one language ecosystem. Rust is a viable Phase 3+ optimization if we need multi-GB support.
+Rust + Swift FFI (via UniFFI or cbindgen) is a valid path and would give the fastest possible parsing. However, simdjson via C-interop is fast enough for the current targets (100MB in < 500ms on M1) and keeps the codebase in one language ecosystem. Rust is a viable future optimization if multi-GB support is needed.
 
 ## 3. High-Level Architecture
 
@@ -55,7 +55,11 @@ Rust + Swift FFI (via UniFFI or cbindgen) is a valid path and would give us the 
 
 - **FileIO module** — Memory-mapped file access. Provides a `MappedFile` type that wraps `mmap`/`munmap` with safe Swift lifetime management.
 - **Parser protocol** — `StructParser` protocol that each format implements: `func parse(source: MappedFile) async throws -> DocumentNode`. This is the extension point for new formats.
-- **JSONParser** — Primary parser. Uses simdjson via C-interop for the hot path. Falls back to Foundation for small files or when simdjson encounters edge cases.
+- **JSONParser** — Primary parser. Uses simdjson v3.12.3 (vendored; no Homebrew) via C-interop for the hot path. Falls back to Foundation for small files or when simdjson encounters edge cases.
+- **XMLParser** — libxml2 SAX-based parser. Maps elements, attributes, and text nodes to `DocumentNode`. Handles namespaces, CDATA, and nesting.
+- **YAMLParser** — Yams/libyaml AST walker. Handles mappings, sequences, scalars, multi-document files, anchors.
+- **CSVParser** — Custom RFC 4180 actor with auto-delimiter detection (comma, tab, semicolon, pipe) and auto-header detection.
+- **FormatDetector** — Content sniffer (first 512 bytes): JSON `{`/`[`, XML `<`, YAML markers, delimiter-consistency scoring for CSV, then extension fallback.
 
 ### 4.2 Document Layer (`MachStructDocument`)
 **Responsibility:** Format-agnostic internal representation, indexing, and edit state.
@@ -121,38 +125,58 @@ StructParser.parse() ──── runs on background actor
               └──▶ SearchBar (queries against NodeIndex)
 ```
 
-## 7. Directory Structure (Target)
+## 7. Directory Structure (as shipped)
 
 ```
 MachStruct/
 ├── ARCHITECTURE.md              ← you are here
+├── README.md
+├── Package.swift                ← SPM: CSimdjsonBridge, MachStructCore, Yams
+├── MachStruct.xcodeproj/        ← Xcode app target (signing, UTTypes, assets)
+├── Sources/
+│   └── CSimdjsonBridge/         ← C++ DOM walker → flat MSIndexEntry[]
+│       ├── include/MachStructBridge.h
+│       ├── MachStructBridge.cpp
+│       └── vendor/              ← simdjson v3.12.3 single-header amalgamation
+│           ├── simdjson.h
+│           └── simdjson.cpp
+├── MachStruct/
+│   ├── Assets.xcassets/         ← AppIcon.appiconset (all macOS sizes)
+│   ├── Core/                    ← MachStructCore library (no UI deps)
+│   │   ├── Model/               ← DocumentNode, NodeIndex, ScalarValue, EditTransaction
+│   │   ├── FileIO/              ← MappedFile (mmap + madvise)
+│   │   ├── Parsers/             ← StructParser protocol, JSON/XML/YAML/CSV parsers, FormatDetector
+│   │   └── Serializers/         ← JSON/YAML/CSV serializers, FormatConverter
+│   └── App/                     ← MachStruct executable
+│       ├── MachStructApp.swift  ← AppDelegate + MachStructDocumentController
+│       ├── WelcomeView.swift    ← Launch window (drop zone, Open File, recents)
+│       ├── ContentView.swift    ← Tree / table / raw view switcher + toolbar
+│       ├── MachStruct.entitlements  ← App Sandbox + user-selected read-write
+│       ├── Info.plist           ← UTType declarations, bundle ID, document types
+│       ├── Document/
+│       │   └── StructDocument.swift
+│       └── UI/
+│           ├── TreeView/        ← TreeView, TreeNode, NodeRow, TypeBadge
+│           ├── TableView/       ← TableView (sticky header, LazyVStack)
+│           ├── Editing/         ← CommitEditEnvironment
+│           └── Toolbar/         ← StatusBar
+├── MachStructTests/             ← 332 tests across all modules
+│   ├── ...
+│   ├── Generators/              ← TestCorpusGenerator (7 corpus files, cached)
+│   └── Performance/             ← ParseBenchmarks (hard timing assertions)
 ├── docs/
 │   ├── design/
-│   │   ├── PARSING-ENGINE.md    ← parser internals
-│   │   ├── UI-DESIGN.md         ← UI components and interaction
-│   │   ├── DATA-MODEL.md        ← node types, indexing
-│   │   └── PERFORMANCE.md       ← benchmarks, optimization strategy
+│   │   ├── PARSING-ENGINE.md
+│   │   ├── UI-DESIGN.md
+│   │   ├── DATA-MODEL.md
+│   │   └── PERFORMANCE.md
 │   ├── roadmap/
-│   │   ├── ROADMAP.md           ← phased delivery plan
-│   │   └── FEATURE-IDEAS.md     ← creative features backlog
+│   │   ├── ROADMAP.md
+│   │   └── FEATURE-IDEAS.md
 │   └── tasks/
-│       └── TASK-INDEX.md        ← AI-friendly implementation tasks
-├── MachStruct/                  ← Xcode project (future)
-│   ├── App/
-│   ├── Core/
-│   │   ├── FileIO/
-│   │   ├── Parsers/
-│   │   └── Model/
-│   ├── UI/
-│   │   ├── TreeView/
-│   │   ├── Editor/
-│   │   ├── Search/
-│   │   └── Toolbar/
-│   └── Platform/
-│       ├── SpotlightImporter/
-│       └── QuickLook/
-├── MachStructTests/
-└── Package.swift
+│       └── TASK-INDEX.md
+└── scripts/
+    └── README-signing.md        ← Certificate setup, archiving, notarization guide
 ```
 
 ## 8. Cross-References
@@ -166,3 +190,4 @@ MachStruct/
 | Phased delivery plan | [ROADMAP.md](docs/roadmap/ROADMAP.md) |
 | Feature ideas and differentiators | [FEATURE-IDEAS.md](docs/roadmap/FEATURE-IDEAS.md) |
 | Implementation task breakdown | [TASK-INDEX.md](docs/tasks/TASK-INDEX.md) |
+| Code signing, archiving, notarization | [scripts/README-signing.md](scripts/README-signing.md) |

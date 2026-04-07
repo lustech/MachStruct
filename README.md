@@ -7,13 +7,14 @@
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://img.shields.io/badge/tests-332%20passing-brightgreen)
 
-MachStruct opens, navigates, edits, and converts large JSON, XML, YAML, and CSV files in under a second. A 100 MB JSON file is structurally indexed in **~430 ms** and displayed as a live, expandable, editable tree — no loading spinners, no frozen UI.
+MachStruct opens, navigates, edits, and converts large JSON, XML, YAML, and CSV files in under a second. A 100 MB JSON file is structurally indexed in **under 500 ms** (release build) and displayed as a live, expandable, editable tree — no loading spinners, no frozen UI.
 
 ---
 
 ## Features
 
 ### Viewing
+- **Welcome screen** — drag files onto the drop zone or pick from recents; no bare Open dialog on launch
 - **Instant open** — simdjson SIMD parsing on a background actor; top-level nodes appear while the rest indexes
 - **Zero-copy I/O** — memory-mapped files via `mmap`; a 100 MB file uses < 5 MB of resident memory while browsing
 - **Lazy value parsing** — only nodes you expand are fully parsed
@@ -46,15 +47,11 @@ MachStruct opens, navigates, edits, and converts large JSON, XML, YAML, and CSV 
 | Dependency | Version |
 |---|---|
 | macOS | 14.0+ |
-| Xcode | 15+ (or Swift 5.10 toolchain) |
-| simdjson | 4.x (via Homebrew) |
+| Xcode | 15+ |
+| simdjson | 3.12.3 (vendored — no install required) |
 | Yams | 5.4+ (resolved automatically via SPM) |
 
-Install simdjson:
-
-```bash
-brew install simdjson
-```
+No external dependencies to install. simdjson is bundled as a single-header amalgamation under `Sources/CSimdjsonBridge/vendor/`.
 
 ---
 
@@ -65,24 +62,21 @@ brew install simdjson
 ```bash
 git clone https://github.com/lustech/MachStruct.git
 cd MachStruct
-open Package.swift
+open MachStruct.xcodeproj
 ```
 
-Press **⌘R** to build and run. An Open dialog appears — pick any `.json`, `.xml`, `.yaml`, `.yml`, or `.csv` file.
+Press **⌘R** to build and run. The welcome window appears — drop any `.json`, `.xml`, `.yaml`, `.yml`, or `.csv` file onto the drop zone, or click "Open File…".
 
-### Command line
+### Command line (library + tests only)
 
 ```bash
 swift build -c release
-```
-
-### Run tests
-
-```bash
 swift test
 ```
 
-The first run generates ~120 MB of test-corpus files in `NSTemporaryDirectory()` and caches them for subsequent runs.
+> **Note:** `swift build` builds the core library and CLI. For the full macOS app (Dock icon, UTType registration, welcome window), open `MachStruct.xcodeproj` in Xcode.
+
+The first test run generates ~120 MB of corpus files in `NSTemporaryDirectory()` and caches them for subsequent runs.
 
 ---
 
@@ -91,13 +85,17 @@ The first run generates ~120 MB of test-corpus files in `NSTemporaryDirectory()`
 ```
 MachStruct/
 ├── Package.swift
+├── MachStruct.xcodeproj          macOS app target (Info.plist, signing, assets)
 ├── Sources/
-│   ├── CSystemSimdjson/           SPM systemLibrary → Homebrew simdjson
-│   └── CSimdjsonBridge/           C++ DOM walker → flat MSIndexEntry[]
+│   └── CSimdjsonBridge/          C++ DOM walker → flat MSIndexEntry[]
 │       ├── include/MachStructBridge.h
-│       └── MachStructBridge.cpp
+│       ├── MachStructBridge.cpp
+│       └── vendor/               simdjson 3.12.3 single-header amalgamation
+│           ├── simdjson.h
+│           └── simdjson.cpp
 ├── MachStruct/
-│   ├── Core/                      MachStructCore library (no UI deps)
+│   ├── Assets.xcassets/          App icon (all macOS sizes)
+│   ├── Core/                     MachStructCore library (no UI deps)
 │   │   ├── Model/
 │   │   │   ├── DocumentNode.swift    NodeID · NodeType · NodeValue · DocumentNode
 │   │   │   ├── NodeIndex.swift       O(1) flat lookup + COW mutation + isTabular()
@@ -118,9 +116,12 @@ MachStruct/
 │   │       ├── YAMLDocumentSerializer.swift  NodeIndex → YAML text (block style)
 │   │       ├── CSVDocumentSerializer.swift   NodeIndex → RFC 4180 CSV (tabular only)
 │   │       └── FormatConverter.swift         Unified convert(index:to:) entry point
-│   └── App/                       MachStruct executable
-│       ├── MachStructApp.swift       DocumentGroup scene
-│       ├── ContentView.swift         Tree / table / raw view switcher + toolbar
+│   └── App/                      MachStruct executable
+│       ├── MachStructApp.swift     AppDelegate + MachStructDocumentController + DocumentGroup
+│       ├── WelcomeView.swift       Launch window (drop zone, Open File, recent files)
+│       ├── ContentView.swift       Tree / table / raw view switcher + toolbar
+│       ├── MachStruct.entitlements App Sandbox + user-selected read-write
+│       ├── Info.plist              UTType declarations, bundle ID, document types
 │       ├── Document/
 │       │   └── StructDocument.swift  ReferenceFileDocument; auto-detect format on open
 │       └── UI/
@@ -135,23 +136,25 @@ MachStruct/
 │           │   └── CommitEditEnvironment.swift  commitEdit / serializeNode env keys
 │           └── Toolbar/
 │               └── StatusBar.swift   Node count · file size · format name · node path
-└── MachStructTests/
-    ├── ModelTests.swift              DocumentNode, COW, Sendable
-    ├── MappedFileTests.swift         mmap, slices, madvise
-    ├── SimdjsonBridgeTests.swift     C bridge, all scalar types
-    ├── JSONParserTests.swift         Foundation + simdjson paths
-    ├── XMLParserTests.swift          Elements, attributes, namespaces, CDATA
-    ├── YAMLParserTests.swift         Mappings, sequences, scalars, anchors, styles
-    ├── CSVParserTests.swift          RFC 4180, delimiter/header detection, CRLF
-    ├── TableViewTests.swift          isTabular(), tabularColumns
-    ├── EditTransactionTests.swift    All factory methods + undo
-    ├── JSONSerializerTests.swift     Round-trips, move, paste
-    ├── FormatConverterTests.swift    YAML/CSV serializers + cross-format round-trips
-    ├── FormatDetectorTests.swift     Content sniffing, BOM, extension fallback
-    ├── Generators/
-    │   └── TestCorpusGenerator.swift 7 corpus files, cached in tmp/
-    └── Performance/
-        └── ParseBenchmarks.swift     Hard timing assertions with os_signpost
+├── MachStructTests/
+│   ├── ModelTests.swift              DocumentNode, COW, Sendable
+│   ├── MappedFileTests.swift         mmap, slices, madvise
+│   ├── SimdjsonBridgeTests.swift     C bridge, all scalar types
+│   ├── JSONParserTests.swift         Foundation + simdjson paths
+│   ├── XMLParserTests.swift          Elements, attributes, namespaces, CDATA
+│   ├── YAMLParserTests.swift         Mappings, sequences, scalars, anchors, styles
+│   ├── CSVParserTests.swift          RFC 4180, delimiter/header detection, CRLF
+│   ├── TableViewTests.swift          isTabular(), tabularColumns
+│   ├── EditTransactionTests.swift    All factory methods + undo
+│   ├── JSONSerializerTests.swift     Round-trips, move, paste
+│   ├── FormatConverterTests.swift    YAML/CSV serializers + cross-format round-trips
+│   ├── FormatDetectorTests.swift     Content sniffing, BOM, extension fallback
+│   ├── Generators/
+│   │   └── TestCorpusGenerator.swift 7 corpus files, cached in tmp/
+│   └── Performance/
+│       └── ParseBenchmarks.swift     Hard timing assertions with os_signpost
+└── scripts/
+    └── README-signing.md             Certificate setup, archiving, notarization guide
 ```
 
 ### Two-Phase Parsing
@@ -180,12 +183,12 @@ Phase 2 — On-demand value parsing
         typically touches fewer than 500 nodes.
 ```
 
-### Performance (M1 Mac mini, debug build)
+### Performance (M1 Mac mini, release build)
 
 | File | Size | Nodes | Index time |
 |---|---|---|---|
 | large.json | 10 MB | 210 K | **~115 ms** ✅ (target < 200 ms) |
-| huge.json | 100 MB | 710 K | **~430 ms** ✅ (target < 1 500 ms) |
+| huge.json | 100 MB | 710 K | **< 500 ms** ✅ (target < 1 500 ms) |
 | pathological_wide | 10 MB | 350 K | ~180 ms |
 | pathological_deep | — | depth 401 | ~17 ms |
 
@@ -226,7 +229,7 @@ Phase 2 — On-demand value parsing
 - [x] P3-07 Format conversion — `YAMLDocumentSerializer`, `CSVDocumentSerializer`, `FormatConverter`, export menu
 - [x] P3-08 Auto-detection — `FormatDetector` content sniffer; `StructDocument` opens all four formats
 
-### Phase 4 — Power Tools (next)
+### Phase 4 — Power Tools
 - [ ] Full-text search across keys and values with highlighting
 - [ ] Path queries (JQ-style expressions)
 - [ ] Diff view — compare two documents or two revisions
@@ -238,14 +241,22 @@ Phase 2 — On-demand value parsing
 - [ ] Bookmarks and in-document navigation history
 - [ ] Clipboard watch — detect structured data and offer to open
 
-### Phase 5 — Release Engineering
-- [ ] P5-01 Vendor simdjson (replace Homebrew `systemLibrary` with bundled amalgamation)
-- [ ] P5-02 Xcode app target + `Info.plist` UTType declarations + sandbox entitlements
-- [ ] P5-03 App icon (`AppIcon.appiconset`, all required sizes)
-- [ ] P5-04 Code signing (Developer ID + Apple Distribution certificates, `ExportOptions.plist`)
+### Phase 5 — Release Engineering 🔄
+- [x] P5-01 Vendor simdjson (bundled amalgamation v3.12.3 — no Homebrew required)
+- [x] P5-02 Xcode app target + `Info.plist` UTType declarations
+- [x] P5-03 App icon (`AppIcon.appiconset`, all required sizes)
+- [x] P5-04 Code signing (entitlements, `ExportOptions-Direct.plist`, `ExportOptions-AppStore.plist`, Hardened Runtime)
 - [ ] P5-05 Notarization + GitHub Actions release pipeline → notarized DMG on tag push
 - [ ] P5-06 Sparkle 2 auto-updates (appcast, EdDSA signing, background update check)
 - [ ] P5-07 App Store submission prep (screenshots, listing copy, `xcrun altool` validation)
+
+### Phase 6 — Polish 🔄
+- [x] P6-02 Welcome / launch window (drop zone, Open File button, recent files list)
+- [ ] Settings UI (theme, font size, keyboard shortcut customisation)
+- [ ] Quick Look plugin
+- [ ] Spotlight importer
+- [ ] Accessibility audit (VoiceOver, keyboard-only navigation)
+- [ ] Localisation (en, de, fr, ja)
 
 ---
 
@@ -270,9 +281,10 @@ See [`docs/`](docs/) for the full design documentation:
 | [`docs/design/PERFORMANCE.md`](docs/design/PERFORMANCE.md) | Targets, measurement plan, optimization notes |
 | [`docs/roadmap/ROADMAP.md`](docs/roadmap/ROADMAP.md) | Full phase breakdown with implementation notes |
 | [`docs/tasks/TASK-INDEX.md`](docs/tasks/TASK-INDEX.md) | AI-agent task breakdown with acceptance criteria |
+| [`scripts/README-signing.md`](scripts/README-signing.md) | Certificate setup, archiving, notarization guide |
 
 ---
 
 ## License
 
-MIT © 2025 lustech
+MIT © 2026 lustech
