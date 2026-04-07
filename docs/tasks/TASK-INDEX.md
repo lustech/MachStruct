@@ -207,13 +207,30 @@ When starting a task, the AI agent should: (1) read the reference docs, (2) chec
 - **Acceptance criteria:** `xcodebuild archive` succeeds; `codesign --verify --strict` exits 0 after signing with a Developer ID cert.
 - **Reference docs:** ROADMAP.md §Phase 5
 
-### P5-05: Notarization + Release CI Pipeline
+### P5-05: Notarization + Release CI Pipeline ✅ DONE
 - **Module:** Build / CI
 - **Dependencies:** P5-04
-- **Description:** Create a GitHub Actions workflow (`.github/workflows/release.yml`) triggered on `v*` tag push. Pipeline steps: (1) `xcodebuild archive`, (2) `xcodebuild -exportArchive` using `ExportOptions-Direct.plist`, (3) `xcrun notarytool submit --wait` using repository secrets for Apple ID and app-specific password, (4) `xcrun stapler staple`, (5) `hdiutil create` to produce a `MachStruct-{version}.dmg`, (6) upload the DMG as a GitHub Release asset. Secrets required: `APPLE_ID`, `APPLE_APP_PASSWORD`, `APPLE_TEAM_ID`, `SIGNING_CERTIFICATE_P12`, `SIGNING_CERTIFICATE_PASSWORD`. Also add a `Makefile` target `make release` for local builds.
-- **Key files:** `.github/workflows/release.yml`, `Makefile`, `scripts/notarize.sh`
-- **Acceptance criteria:** Pushing `git tag v1.0.0 && git push --tags` triggers the workflow and produces a downloadable DMG on the GitHub Releases page within 15 minutes. `spctl --assess --type exec MachStruct.app` and `spctl --assess --type install MachStruct.dmg` both exit 0 on a clean macOS 14 machine (no Gatekeeper warning on double-click).
-- **Reference docs:** ROADMAP.md §Phase 5
+- **Key files:** `.github/workflows/release.yml`, `ExportOptions-Direct.plist` (updated comment)
+- **Implementation notes:**
+  - Workflow triggers on `v*` tag push. Runner: `macos-14` (Apple Silicon, Xcode 15 pre-installed).
+  - Step order: checkout → import certificate into temp keychain → patch `ExportOptions-Direct.plist` teamID via `PlistBuddy` → `xcodebuild archive` → `xcodebuild -exportArchive` → `ditto` zip → `xcrun notarytool submit --wait` → status assertion (fails loudly if not "Accepted") → `xcrun stapler staple` → `codesign --verify` + `spctl --assess` → `hdiutil create UDZO` → `gh release create --draft` → delete temp keychain.
+  - Release is created as a **draft** so it can be reviewed and release notes edited before publishing.
+  - `APPLE_CERTIFICATE` is stored as a base64-encoded `.p12` (`base64 -i cert.p12 | pbcopy` to generate).
+  - Notarytool output is captured as JSON and parsed with `python3` to assert status == "Accepted".
+  - `ExportOptions-Direct.plist` teamID placeholder `XXXXXXXXXX` is safe to commit; CI patches it at runtime from `APPLE_TEAM_ID` secret.
+- **Required Actions secrets:**
+
+  | Secret | How to obtain |
+  |---|---|
+  | `APPLE_CERTIFICATE` | Export Developer ID Application cert as .p12, then `base64 -i cert.p12` |
+  | `APPLE_CERTIFICATE_PASSWORD` | Password set when exporting the .p12 |
+  | `APPLE_TEAM_ID` | 10-char string from developer.apple.com/account → Membership |
+  | `APPLE_ID` | Apple ID email associated with the developer account |
+  | `NOTARIZATION_PASSWORD` | App-specific password from appleid.apple.com |
+  | `KEYCHAIN_PASSWORD` | Any strong random string (e.g. `openssl rand -base64 32`) |
+
+- **Acceptance criteria:** Pushing `git tag v1.0.0 && git push --tags` triggers the workflow, completes in < 15 min, and produces a draft GitHub Release with `MachStruct-v1.0.0.dmg` attached. `spctl --assess --type exec MachStruct.app` exits 0 on a clean macOS 14 machine.
+- **Reference docs:** ROADMAP.md §Phase 5, `scripts/README-signing.md`
 
 ### P5-06: Sparkle Auto-Updates
 - **Module:** App

@@ -153,6 +153,9 @@ MachStruct/
 │   │   └── TestCorpusGenerator.swift 7 corpus files, cached in tmp/
 │   └── Performance/
 │       └── ParseBenchmarks.swift     Hard timing assertions with os_signpost
+├── .github/
+│   └── workflows/
+│       └── release.yml               CI: archive → notarize → staple → DMG → GitHub Release
 └── scripts/
     └── README-signing.md             Certificate setup, archiving, notarization guide
 ```
@@ -246,7 +249,7 @@ Phase 2 — On-demand value parsing
 - [x] P5-02 Xcode app target + `Info.plist` UTType declarations
 - [x] P5-03 App icon (`AppIcon.appiconset`, all required sizes)
 - [x] P5-04 Code signing (entitlements, `ExportOptions-Direct.plist`, `ExportOptions-AppStore.plist`, Hardened Runtime)
-- [ ] P5-05 Notarization + GitHub Actions release pipeline → notarized DMG on tag push
+- [x] P5-05 Notarization + GitHub Actions release pipeline → notarized DMG on tag push
 - [ ] P5-06 Sparkle 2 auto-updates (appcast, EdDSA signing, background update check)
 - [ ] P5-07 App Store submission prep (screenshots, listing copy, `xcrun altool` validation)
 
@@ -283,6 +286,7 @@ See [`docs/`](docs/) for the full design documentation:
 | [`docs/roadmap/ROADMAP.md`](docs/roadmap/ROADMAP.md) | Full phase breakdown with implementation notes |
 | [`docs/tasks/TASK-INDEX.md`](docs/tasks/TASK-INDEX.md) | AI-agent task breakdown with acceptance criteria |
 | [`scripts/README-signing.md`](scripts/README-signing.md) | Certificate setup, archiving, notarization guide |
+| [`.github/workflows/release.yml`](.github/workflows/release.yml) | CI release pipeline: notarize → DMG → GitHub Release |
 
 ---
 

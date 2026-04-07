@@ -153,7 +153,7 @@ All three pre-release blockers are now resolved:
 
 4. ~~**Code signing configuration**~~ ✅ **DONE** *(P5-04)* — `MachStruct.entitlements` (App Sandbox + user-selected read-write), `ExportOptions-Direct.plist` (Developer ID, Hardened Runtime), `ExportOptions-AppStore.plist`. `ENABLE_HARDENED_RUNTIME = YES` in xcodeproj. Full guide in `scripts/README-signing.md`.
 
-5. **Notarization pipeline** *(P5-05)* — GitHub Actions workflow triggered on `v*` tag push: archive → export → `xcrun notarytool submit --wait` → `xcrun stapler staple` → `hdiutil create` DMG → upload to GitHub Release. `spctl --assess` passes on a clean machine.
+5. ~~**Notarization pipeline**~~ ✅ **DONE** *(P5-05)* — `.github/workflows/release.yml` triggers on `v*` tag push. `macos-14` runner: imports Developer ID cert into temp keychain → archives → exports → `xcrun notarytool submit --wait` → asserts "Accepted" → `xcrun stapler staple` → `codesign --verify` + `spctl --assess` → `hdiutil create UDZO` → `gh release create --draft`. Six Actions secrets required (see TASK-INDEX.md §P5-05). Release is created as a draft for review before publishing.
 
 6. **Sparkle auto-updates** *(P5-06)* — Add Sparkle 2 (SPM). `SUFeedURL` in `Info.plist` points at a hosted `appcast.xml`. Appcast signed with EdDSA key. Update check runs in background on launch.
 

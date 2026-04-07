@@ -1,0 +1,185 @@
+# MachStruct — Release Pipeline
+#
+# Triggers on any tag matching "v*" (e.g. v1.0.0, v1.0.0-beta.1).
+# Produces a notarized, stapled Developer ID DMG and attaches it to a
+# GitHub Release.
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   APPLE_CERTIFICATE          Base64-encoded Developer ID Application .p12
+#   APPLE_CERTIFICATE_PASSWORD Password for the .p12
+#   APPLE_TEAM_ID              10-character Apple Developer Team ID
+#   APPLE_ID                   Apple ID email used for notarytool
+#   NOTARIZATION_PASSWORD      App-specific password for that Apple ID
+#                              (generate at appleid.apple.com → App-Specific Passwords)
+#   KEYCHAIN_PASSWORD          Any strong random string — used only for the
+#                              temporary build keychain created in CI
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    name: Build, Notarize, and Publish
+    runs-on: macos-14   # Apple Silicon; Xcode 15+ pre-installed
+
+    env:
+      SCHEME:       MachStruct
+      CONFIGURATION: Release
+      ARCHIVE_PATH: ${{ github.workspace }}/build/MachStruct.xcarchive
+      EXPORT_PATH:  ${{ github.workspace }}/build/export
+      APP_PATH:     ${{ github.workspace }}/build/export/MachStruct.app
+      DMG_PATH:     ${{ github.workspace }}/build/MachStruct-${{ github.ref_name }}.dmg
+
+    steps:
+
+      # ── 1. Checkout ────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Select Xcode ────────────────────────────────────────────────────
+      - name: Select Xcode 15
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app
+
+      # ── 3. Import signing certificate ──────────────────────────────────────
+      # Creates a temporary keychain scoped to this runner, imports the
+      # Developer ID Application certificate, and makes it available to
+      # xcodebuild for the duration of the job.
+      - name: Import certificate into keychain
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain
+          CERTIFICATE_PATH=$RUNNER_TEMP/certificate.p12
+
+          echo "$CERTIFICATE_BASE64" | base64 --decode -o "$CERTIFICATE_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          security import "$CERTIFICATE_PATH" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign
+
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list \
+            -S apple-tool:,apple: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+      # ── 4. Inject Team ID into ExportOptions ───────────────────────────────
+      # Replace the XXXXXXXXXX placeholder so xcodebuild can resolve the
+      # certificate without a manual edit to the committed plist.
+      - name: Patch ExportOptions-Direct.plist
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          /usr/libexec/PlistBuddy \
+            -c "Set :teamID $APPLE_TEAM_ID" \
+            ExportOptions-Direct.plist
+
+      # ── 5. Archive ─────────────────────────────────────────────────────────
+      - name: Archive
+        run: |
+          mkdir -p build
+          xcodebuild archive \
+            -project MachStruct.xcodeproj \
+            -scheme "$SCHEME" \
+            -configuration "$CONFIGURATION" \
+            -archivePath "$ARCHIVE_PATH" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Developer ID Application" \
+            DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
+            | xcpretty || cat /tmp/xcodebuild.log
+
+      # ── 6. Export (Developer ID) ───────────────────────────────────────────
+      - name: Export archive
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath "$ARCHIVE_PATH" \
+            -exportPath "$EXPORT_PATH" \
+            -exportOptionsPlist ExportOptions-Direct.plist \
+            | xcpretty
+
+      # ── 7. Notarize ────────────────────────────────────────────────────────
+      # Apple requires submitting a zip; the .app itself is stapled after.
+      - name: Notarize
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          NOTARIZATION_PASSWORD: ${{ secrets.NOTARIZATION_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          ZIP_PATH=$RUNNER_TEMP/MachStruct-notarize.zip
+          ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
+
+          xcrun notarytool submit "$ZIP_PATH" \
+            --apple-id "$APPLE_ID" \
+            --password "$NOTARIZATION_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait \
+            --output-format json \
+            | tee $RUNNER_TEMP/notarytool-output.json
+
+          # Fail loudly if notarization was rejected (status != "Accepted")
+          STATUS=$(python3 -c "
+          import json, sys
+          d = json.load(open('$RUNNER_TEMP/notarytool-output.json'))
+          print(d.get('status','unknown'))
+          ")
+          echo "Notarization status: $STATUS"
+          if [ "$STATUS" != "Accepted" ]; then
+            echo "::error::Notarization failed with status: $STATUS"
+            exit 1
+          fi
+
+      # ── 8. Staple ──────────────────────────────────────────────────────────
+      - name: Staple
+        run: xcrun stapler staple "$APP_PATH"
+
+      # ── 9. Verify ──────────────────────────────────────────────────────────
+      - name: Verify signature and notarization
+        run: |
+          echo "--- codesign ---"
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          echo "--- spctl ---"
+          spctl --assess --type exec --verbose "$APP_PATH"
+
+      # ── 10. Create DMG ─────────────────────────────────────────────────────
+      - name: Create DMG
+        run: |
+          hdiutil create \
+            -volname "MachStruct ${{ github.ref_name }}" \
+            -srcfolder "$APP_PATH" \
+            -ov \
+            -format UDZO \
+            "$DMG_PATH"
+
+      # ── 11. Publish GitHub Release ─────────────────────────────────────────
+      - name: Create GitHub Release and upload DMG
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Derive a clean release name from the tag (v1.0.0 → "MachStruct 1.0.0")
+          TAG="${{ github.ref_name }}"
+          RELEASE_NAME="MachStruct ${TAG#v}"
+
+          gh release create "$TAG" \
+            --title "$RELEASE_NAME" \
+            --generate-notes \
+            --draft \
+            "$DMG_PATH#MachStruct-${TAG}.dmg"
+
+          echo "::notice::Draft release created. Review and publish at:"
+          echo "::notice::https://github.com/${{ github.repository }}/releases/tag/$TAG"
+
+      # ── 12. Clean up keychain ──────────────────────────────────────────────
+      - name: Remove temporary keychain
+        if: always()
+        run: |
+          security delete-keychain $RUNNER_TEMP/build.keychain || true
