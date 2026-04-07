@@ -280,7 +280,7 @@ struct ContentView: View {
                 .foregroundStyle(.secondary)
             Text("MachStruct")
                 .font(.title2.weight(.semibold))
-            Text("Drop a JSON file here to open it.")
+            Text("No content to display.")
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

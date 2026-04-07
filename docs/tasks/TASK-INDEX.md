@@ -225,12 +225,18 @@ When starting a task, the AI agent should: (1) read the reference docs, (2) chec
 
 ## Phase 6: Polish (Selected Tasks)
 
-### P6-02: Welcome / Launch Window ⬅️ NEXT UP
+### P6-02: Welcome / Launch Window ✅ DONE
 - **Module:** App / UI
 - **Dependencies:** P5-02
-- **Description:** Add a dedicated welcome window that appears on app launch, replacing the bare system Open panel. The window contains three areas: (1) a drop zone that accepts JSON, XML, YAML, and CSV files via drag-and-drop, (2) an "Open File…" button that triggers `NSOpenPanel` filtered to the supported UTTypes, and (3) a scrollable recent files list sourced from `NSDocumentController.shared.recentDocumentURLs`. Opening a file (via any of the three methods) calls `NSDocumentController.shared.openDocument(withContentsOf:display:completionHandler:)` to open it in a new `DocumentGroup` document window — the welcome window stays open independently. Implement as a `Window("Welcome", id: "welcome")` SwiftUI scene added alongside the existing `DocumentGroup` in `MachStructApp`. The existing `ContentView.placeholderView` can be simplified or removed since it is no longer the first thing the user sees.
-- **Design decisions:** new window per file (not single-window replace); recent files list visible on welcome screen; welcome window is re-openable via Window menu.
-- **Key files:** `MachStruct/App/WelcomeView.swift` (new), `MachStruct/App/MachStructApp.swift` (add `Window` scene)
+- **Description:** Add a dedicated welcome window that appears on app launch, replacing the bare system Open panel. The window contains three areas: (1) a drop zone that accepts JSON, XML, YAML, and CSV files via drag-and-drop, (2) an "Open File…" button that triggers `NSOpenPanel` filtered to the supported UTTypes, and (3) a scrollable recent files list sourced from `NSDocumentController.shared.recentDocumentURLs`. Opening a file (via any of the three methods) calls `NSDocumentController.shared.openDocument(withContentsOf:display:completionHandler:)` to open it in a new `DocumentGroup` document window — the welcome window stays open independently.
+- **Design decisions:** new window per file (not single-window replace); recent files list visible on welcome screen; welcome window re-openable via Window menu (Cmd+Shift+0).
+- **Key files:** `MachStruct/App/WelcomeView.swift` (new), `MachStruct/App/MachStructApp.swift` (AppDelegate + MachStructDocumentController)
+- **Implementation notes:**
+  - Used `NSWindow + NSHostingController(rootView: WelcomeView())` via `AppDelegate` instead of a SwiftUI `Window` scene — avoids DocumentGroup ordering/focus issues on macOS 14.
+  - `MachStructDocumentController` subclass suppresses the auto-launch Open panel via `suppressOpen` flag; cleared on next run-loop cycle after launch.
+  - `NSOpenPanel` notification observer (Strategy B) provides a belt-and-suspenders guard in case DocumentGroup bypasses the document controller.
+  - Welcome window is a singleton (`_welcomeWindow`); `applicationShouldHandleReopen` re-shows it on Dock click when no document windows are open.
+  - `ContentView.placeholderView` text updated to "No content to display." (defensive fallback only).
 - **Acceptance criteria:** App launches directly into the welcome window (no system Open panel). Dropping a supported file onto the drop zone opens it in a document window. Clicking "Open File…" shows a filtered open panel. Recent files are listed and clicking one opens it. Unsupported file types dropped onto the zone show a clear error state. Welcome window is accessible from the Window menu.
 - **Reference docs:** ROADMAP.md §Phase 6
 
