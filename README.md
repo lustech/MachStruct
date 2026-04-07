@@ -14,7 +14,7 @@ MachStruct opens, navigates, edits, and converts large JSON, XML, YAML, and CSV 
 ## Features
 
 ### Viewing
-- **Welcome screen** — drag files onto the drop zone or pick from recents; no bare Open dialog on launch
+- **Welcome screen** — drag files onto the drop zone, paste raw text directly, or pick from recents; no bare Open dialog on launch
 - **Instant open** — simdjson SIMD parsing on a background actor; top-level nodes appear while the rest indexes
 - **Zero-copy I/O** — memory-mapped files via `mmap`; a 100 MB file uses < 5 MB of resident memory while browsing
 - **Lazy value parsing** — only nodes you expand are fully parsed
@@ -65,7 +65,7 @@ cd MachStruct
 open MachStruct.xcodeproj
 ```
 
-Press **⌘R** to build and run. The welcome window appears — drop any `.json`, `.xml`, `.yaml`, `.yml`, or `.csv` file onto the drop zone, or click "Open File…".
+Press **⌘R** to build and run. The welcome window appears — drop any `.json`, `.xml`, `.yaml`, `.yml`, or `.csv` file onto the drop zone, paste raw structured text directly into the inline editor, or click "Open File…".
 
 ### Command line (library + tests only)
 
@@ -252,6 +252,7 @@ Phase 2 — On-demand value parsing
 
 ### Phase 6 — Polish 🔄
 - [x] P6-02 Welcome / launch window (drop zone, Open File button, recent files list)
+- [x] P6-03 Paste raw text on welcome screen (inline TextEditor, auto-detect format, opens as untitled doc)
 - [ ] Settings UI (theme, font size, keyboard shortcut customisation)
 - [ ] Quick Look plugin
 - [ ] Spotlight importer
