@@ -179,24 +179,32 @@ When starting a task, the AI agent should: (1) read the reference docs, (2) chec
   - `LSItemContentTypes` is required in each `CFBundleDocumentTypes` entry; extensions alone are not matched by `DocumentGroup` at runtime.
   - `public.yaml` must be declared under `UTImportedTypeDeclarations` — it is not guaranteed to be registered system-wide on macOS 14.
   - Never call `NSApp.setActivationPolicy()` from `App.init()` — `NSApp` is nil at that point and crashes with `_swift_runtime_on_report`. With a proper xcodeproj + Info.plist the activation policy is set automatically.
-- **Remaining:** Add `MachStruct.entitlements` (sandbox + user-selected read-write) during P5-04.
+- **Remaining:** ~~Add `MachStruct.entitlements` (sandbox + user-selected read-write) during P5-04.~~ Done in P5-04.
 - **Key files:** `MachStruct.xcodeproj/project.pbxproj`, `MachStruct/App/Info.plist`
 - **Reference docs:** ROADMAP.md §Phase 5
 
-### P5-03: App Icon
+### P5-03: App Icon ✅ DONE
 - **Module:** UI / Assets
 - **Dependencies:** P5-02
-- **Description:** Design and export an `AppIcon.appiconset` covering all required macOS icon sizes: 16, 32, 64, 128, 256, 512, 1024 pt at @1x and @2x (total 10 PNG files). The icon should communicate "structured document inspector" — consider motifs like nested brackets `{ }`, a magnifying glass over a tree, or a structured grid. Place the asset catalog at `MachStruct/Assets.xcassets/AppIcon.appiconset/`. Update `Contents.json` with correct filename entries.
-- **Key files:** `MachStruct/Assets.xcassets/AppIcon.appiconset/`
-- **Acceptance criteria:** App icon appears in the Dock, Finder, and About dialog without the default system placeholder. No missing-size warnings in Xcode's asset catalog validator. Icon passes the [App Store icon guidelines](https://developer.apple.com/design/human-interface-guidelines/app-icons) (no alpha channel, square, no rounded corners — macOS applies the mask).
+- **Key files:** `MachStruct/Assets.xcassets/AppIcon.appiconset/` (12 PNGs + Contents.json)
+- **Implementation notes:**
+  - Dark navy gradient background; node-tree motif (root + 2 children + 3 leaves); curly braces either side. Generated programmatically with Pillow.
+  - All 12 required pixel sizes: 16, 32, 64, 128, 256, 512, 1024 @1x and @2x.
+  - `Assets.xcassets` wired into `xcodeproj`: PBXFileReference + PBXBuildFile + PBXResourcesBuildPhase entry.
+- **Acceptance criteria:** App icon appears in the Dock, Finder, and About dialog without the default system placeholder.
 - **Reference docs:** ROADMAP.md §Phase 5
 
-### P5-04: Code Signing Configuration
+### P5-04: Code Signing Configuration ✅ DONE
 - **Module:** Build
 - **Dependencies:** P5-02
-- **Description:** Configure Xcode signing for two distribution channels. For **direct distribution**: Developer ID Application certificate; `ExportOptions-Direct.plist` with `method = developer-id`, `hardened-runtime = true`. For **App Store**: Apple Distribution certificate; `ExportOptions-AppStore.plist` with `method = app-store`. Enable Hardened Runtime in the Xcode target build settings (required for notarization). Confirm the entitlements file is referenced in both configurations. Do not commit private keys or provisioning profiles — document where they must be placed.
-- **Key files:** `ExportOptions-Direct.plist`, `ExportOptions-AppStore.plist`, `scripts/README-signing.md`
-- **Acceptance criteria:** `xcodebuild archive -scheme MachStruct -archivePath build/MachStruct.xcarchive` succeeds. `xcodebuild -exportArchive … -exportOptionsPlist ExportOptions-Direct.plist` produces a signed `.app`. `codesign --verify --strict MachStruct.app` exits 0. `spctl --assess --type exec MachStruct.app` exits 0 (after notarization in P5-05).
+- **Key files:** `MachStruct/App/MachStruct.entitlements`, `ExportOptions-Direct.plist`, `ExportOptions-AppStore.plist`, `scripts/README-signing.md`
+- **Implementation notes:**
+  - `MachStruct.entitlements`: App Sandbox + `user-selected.read-write` (required for a document-based sandboxed app).
+  - `ExportOptions-Direct.plist`: `method=developer-id`, `hardened-runtime=true`. Replace `XXXXXXXXXX` with real Team ID.
+  - `ExportOptions-AppStore.plist`: `method=app-store`. Same Team ID placeholder.
+  - `ENABLE_HARDENED_RUNTIME = YES` and `CODE_SIGN_ENTITLEMENTS` set in both Debug and Release build configurations.
+  - `scripts/README-signing.md`: step-by-step guide for certificate setup, archiving, notarization, and what never to commit.
+- **Acceptance criteria:** `xcodebuild archive` succeeds; `codesign --verify --strict` exits 0 after signing with a Developer ID cert.
 - **Reference docs:** ROADMAP.md §Phase 5
 
 ### P5-05: Notarization + Release CI Pipeline

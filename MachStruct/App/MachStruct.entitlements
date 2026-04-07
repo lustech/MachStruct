@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- App Sandbox: required for App Store distribution.
+	     For direct/Developer-ID distribution the sandbox is optional but
+	     strongly recommended. Remove this key only if a specific feature
+	     requires it and document the reason. -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+
+	<!-- Read/write access to files the user explicitly opens via NSOpenPanel
+	     or drag-and-drop. Required for a document-based app. -->
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+</dict>
+</plist>

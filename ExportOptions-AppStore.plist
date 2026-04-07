@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Export options for App Store Connect upload.
+  Used by: xcodebuild -exportArchive -exportOptionsPlist ExportOptions-AppStore.plist
+  Requires: Apple Distribution certificate + Mac App Store provisioning profile.
+-->
+<plist version="1.0">
+<dict>
+	<key>method</key>
+	<string>app-store</string>
+
+	<!-- Replace with your Apple Developer Team ID. -->
+	<key>teamID</key>
+	<string>XXXXXXXXXX</string>
+
+	<key>stripSwiftSymbols</key>
+	<true/>
+
+	<!-- Set to true to upload directly to App Store Connect after export. -->
+	<key>uploadBitcode</key>
+	<false/>
+</dict>
+</plist>
