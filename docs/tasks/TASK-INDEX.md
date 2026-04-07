@@ -252,7 +252,7 @@ When starting a task, the AI agent should: (1) read the reference docs, (2) chec
 - **Acceptance criteria:** App launches directly into the welcome window (no system Open panel). Dropping a supported file onto the drop zone opens it in a document window. Clicking "Open File…" shows a filtered open panel. Recent files are listed and clicking one opens it. Unsupported file types dropped onto the zone show a clear error state. Welcome window is accessible from the Window menu.
 - **Reference docs:** ROADMAP.md §Phase 6
 
-### P6-03: Paste Raw Text on Welcome Screen
+### P6-03: Paste Raw Text on Welcome Screen ✅ DONE
 - **Module:** App / UI (`WelcomeView.swift`)
 - **Dependencies:** P6-02, P1-06 (FormatDetector)
 - **Description:** Add an inline text area to the welcome window's left panel so users can paste raw JSON, XML, YAML, or CSV text and have it open as an untitled document — no file required.
@@ -364,6 +364,13 @@ Add to `MachStructTests/UI/WelcomeViewTests.swift` (or a new `PasteParserTests.s
 - `testFormatDetectionForPastedCSV()` — feed `a,b,c\n1,2,3`, assert `.csv`.
 - `testEmptyPasteIsNoOp()` — call `parsePastedText()` with empty/whitespace text, assert no temp file written.
 
+- **Implementation notes (as shipped):**
+  - Window height: 560×460 (was 360). `VStack(spacing: 16)` keeps content comfortably distributed.
+  - `orDivider`: `HStack` with two `VStack { Divider() }` flanking a `Text("or paste text")` label — fills to 220 pt width.
+  - `pasteArea`: `ZStack(alignment: .topLeading)` with `TextEditor` underneath and a `Text` placeholder overlay (`allowsHitTesting(false)`) to work around `TextEditor`'s lack of native placeholder support.
+  - `parsePastedText()`: synchronous temp-file write (`data.write(to:options:.atomic)`) on main thread is acceptable for typical paste sizes. Async path is the `openDocument` callback.
+  - `isParsing` drives the Parse button label: idle → `Text("Parse")`, active → `ProgressView().controlSize(.mini)` + `Text("Parsing…")`.
+  - Error display reuses the existing `showDropError` / `dropError` path (auto-dismisses after 3 s).
 - **Key files:**
   - `MachStruct/App/WelcomeView.swift` — layout change + new state + `parsePastedText()`
   - No changes to `StructDocument`, `FormatDetector`, or `Package.swift`

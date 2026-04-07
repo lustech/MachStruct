@@ -7,14 +7,17 @@ import UniformTypeIdentifiers
 ///
 /// Provides:
 ///   - A drag-and-drop zone for JSON / XML / YAML / CSV files
+///   - An inline text area for pasting raw structured text (P6-03)
 ///   - An "Open File…" button (filtered NSOpenPanel via NSDocumentController)
 ///   - A scrollable recent-files list pulled from NSDocumentController
-///   - A clear error state for unsupported file types dropped onto the zone
+///   - A clear error state for unsupported file types or parse failures
 struct WelcomeView: View {
 
     @State private var isDraggingOver = false
     @State private var dropError: String?
     @State private var recentURLs: [URL] = []
+    @State private var pasteText: String = ""
+    @State private var isParsing: Bool = false
 
     private static let supportedExtensions: Set<String> = ["json", "xml", "yaml", "yml", "csv"]
 
@@ -24,18 +27,18 @@ struct WelcomeView: View {
             Divider()
             rightPanel
         }
-        .frame(width: 560, height: 360)
+        .frame(width: 560, height: 460)
         .onAppear { recentURLs = NSDocumentController.shared.recentDocumentURLs }
     }
 
     // MARK: - Left panel
 
     private var leftPanel: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 16) {
             Spacer()
 
             Image(systemName: "doc.text.magnifyingglass")
-                .font(.system(size: 52))
+                .font(.system(size: 48))
                 .foregroundStyle(.secondary)
 
             Text("MachStruct")
@@ -43,6 +46,10 @@ struct WelcomeView: View {
                 .fontWeight(.semibold)
 
             dropZone
+
+            orDivider
+
+            pasteArea
 
             if let error = dropError {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
@@ -61,9 +68,11 @@ struct WelcomeView: View {
 
             Spacer()
         }
-        .padding(.horizontal, 32)
+        .padding(.horizontal, 28)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+
+    // MARK: - Drop zone
 
     private var dropZone: some View {
         ZStack {
@@ -81,7 +90,7 @@ struct WelcomeView: View {
 
             VStack(spacing: 6) {
                 Image(systemName: isDraggingOver ? "arrow.down.doc.fill" : "arrow.down.doc")
-                    .font(.system(size: 26))
+                    .font(.system(size: 24))
                     .foregroundStyle(isDraggingOver ? Color.accentColor : Color.secondary)
 
                 Text("Drop a file here")
@@ -89,9 +98,70 @@ struct WelcomeView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .frame(width: 220, height: 110)
+        .frame(width: 220, height: 88)
         .animation(.easeInOut(duration: 0.15), value: isDraggingOver)
         .onDrop(of: [UTType.fileURL], isTargeted: $isDraggingOver, perform: handleDrop)
+    }
+
+    // MARK: - "or paste text" divider
+
+    private var orDivider: some View {
+        HStack(spacing: 8) {
+            VStack { Divider() }
+            Text("or paste text")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .fixedSize()
+            VStack { Divider() }
+        }
+        .frame(width: 220)
+    }
+
+    // MARK: - Paste area
+
+    private var pasteArea: some View {
+        VStack(spacing: 8) {
+            // TextEditor has no native placeholder support; use a ZStack overlay.
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: $pasteText)
+                    .font(.system(size: 12, design: .monospaced))
+                    .scrollContentBackground(.hidden)
+                    .background(Color.secondary.opacity(0.06))
+                    .cornerRadius(8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(Color.secondary.opacity(0.25), lineWidth: 1)
+                    )
+
+                if pasteText.isEmpty {
+                    Text("Paste JSON, XML, YAML, or CSV…")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.tertiary)
+                        // Match TextEditor's internal content inset (~5 pt each side).
+                        .padding(.horizontal, 5)
+                        .padding(.top, 6)
+                        .allowsHitTesting(false)
+                }
+            }
+            .frame(width: 220, height: 90)
+
+            Button(action: parsePastedText) {
+                if isParsing {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.mini)
+                        Text("Parsing…")
+                    }
+                    .frame(minWidth: 90)
+                } else {
+                    Text("Parse")
+                        .frame(minWidth: 90)
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.regular)
+            .disabled(pasteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isParsing)
+        }
     }
 
     // MARK: - Right panel
@@ -171,6 +241,62 @@ struct WelcomeView: View {
             }
         }
         return true
+    }
+
+    /// Parse the pasted text as a structured document and open it in a new window.
+    ///
+    /// Steps:
+    ///   1. Auto-detect format from the first 512 bytes via FormatDetector.
+    ///   2. Write to a named temp file so StructDocument.read(from:ofType:) can use
+    ///      its existing mmap → parse path with zero changes to the document layer.
+    ///   3. Open via NSDocumentController — identical to the file-drop path.
+    ///
+    /// The document opens titled "Pasted Content" with an immediate dirty state,
+    /// so the user is naturally prompted to File › Save As if they want to keep it.
+    private func parsePastedText() {
+        let trimmed = pasteText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        isParsing = true
+
+        // 1. Detect format.
+        let data = Data(trimmed.utf8)
+        let detected = FormatDetector.detect(headerBytes: data, fileExtension: nil)
+
+        let ext: String
+        switch detected {
+        case .json:    ext = "json"
+        case .xml:     ext = "xml"
+        case .yaml:    ext = "yaml"
+        case .csv:     ext = "csv"
+        case .unknown: ext = "json"  // fall through — parser will produce a usable error
+        }
+
+        // 2. Write to temp file (overwrites any prior paste; the name is intentionally generic).
+        let tempURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("Pasted Content.\(ext)")
+        do {
+            try data.write(to: tempURL, options: .atomic)
+        } catch {
+            showDropError("Could not write temp file: \(error.localizedDescription)")
+            isParsing = false
+            return
+        }
+
+        // 3. Open via document controller.
+        NSDocumentController.shared.openDocument(
+            withContentsOf: tempURL, display: true
+        ) { _, _, error in
+            DispatchQueue.main.async {
+                isParsing = false
+                if let error {
+                    showDropError(error.localizedDescription)
+                } else {
+                    pasteText = ""
+                    recentURLs = NSDocumentController.shared.recentDocumentURLs
+                }
+            }
+        }
     }
 
     private func showDropError(_ message: String) {
