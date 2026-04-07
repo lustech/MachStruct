@@ -13,32 +13,23 @@ let package = Package(
         .package(url: "https://github.com/jpsim/Yams.git", from: "5.0.0"),
     ],
     targets: [
-        // System library shim for the Homebrew-installed simdjson (Apple Silicon path).
-        // Install: brew install simdjson
-        // On Intel Macs the prefix is /usr/local instead of /opt/homebrew — update
-        // module.modulemap if needed. Proper pkg-config support is a future P1-03 polish task.
-        .systemLibrary(
-            name: "CSystemSimdjson",
-            path: "Sources/CSystemSimdjson",
-            providers: [.brew(["simdjson"])]
-        ),
-
         // C++ bridge: thin extern "C" wrapper around simdjson.
         // Exposes ms_build_structural_index() consumed by JSONParser (P1-06).
+        //
+        // simdjson is vendored as a single-header amalgamation (v3.12.3) under
+        // Sources/CSimdjsonBridge/vendor/ — no Homebrew install required.
         .target(
             name: "CSimdjsonBridge",
-            dependencies: ["CSystemSimdjson"],
+            dependencies: [],
             path: "Sources/CSimdjsonBridge",
+            sources: ["MachStructBridge.cpp", "vendor/simdjson.cpp"],
             publicHeadersPath: "include",
             cxxSettings: [
                 .headerSearchPath("include"),
-                // Point the compiler at the Homebrew simdjson header.
-                // The systemLibrary target above also provides this path, but
-                // adding it explicitly ensures CSimdjsonBridge.cpp can #include "simdjson.h".
-                .unsafeFlags(["-I/opt/homebrew/include"]),
-            ],
-            linkerSettings: [
-                .unsafeFlags(["-L/opt/homebrew/lib", "-lsimdjson"]),
+                // vendor/ contains the simdjson single-header amalgamation.
+                .headerSearchPath("vendor"),
+                // Disable C++ exceptions — simdjson uses error codes instead.
+                .define("SIMDJSON_EXCEPTIONS", to: "0"),
             ]
         ),
 
@@ -68,6 +59,6 @@ let package = Package(
             path: "MachStructTests"
         ),
     ],
-    // C++17 required by simdjson 4.x.
+    // C++17 required by simdjson.
     cxxLanguageStandard: .cxx17
 )
