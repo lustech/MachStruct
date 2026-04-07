@@ -252,6 +252,134 @@ When starting a task, the AI agent should: (1) read the reference docs, (2) chec
 - **Acceptance criteria:** App launches directly into the welcome window (no system Open panel). Dropping a supported file onto the drop zone opens it in a document window. Clicking "Open File…" shows a filtered open panel. Recent files are listed and clicking one opens it. Unsupported file types dropped onto the zone show a clear error state. Welcome window is accessible from the Window menu.
 - **Reference docs:** ROADMAP.md §Phase 6
 
+### P6-03: Paste Raw Text on Welcome Screen
+- **Module:** App / UI (`WelcomeView.swift`)
+- **Dependencies:** P6-02, P1-06 (FormatDetector)
+- **Description:** Add an inline text area to the welcome window's left panel so users can paste raw JSON, XML, YAML, or CSV text and have it open as an untitled document — no file required.
+
+#### Layout change
+
+The left panel currently stacks: icon → title → drop zone → error label → Open File button. Expand the window from `560×360` to `560×460` and add a text-paste area between the drop zone and the Open File button:
+
+```
+icon + title
+  drop zone  (unchanged)
+  ── OR paste text ──   (Label, .caption, .tertiary, HRule-style divider on each side)
+  TextEditor             (fixed height ≈ 90 pt, rounded border, placeholder overlay)
+  [Parse]                (Button, .bordered, disabled when TextEditor is empty)
+  error label            (existing, shared with drop zone errors)
+  [Open File…]           (existing, .borderedProminent)
+```
+
+The placeholder overlay (`Text("Paste JSON, XML, YAML, or CSV…").foregroundStyle(.tertiary)`) is shown when `pasteText.isEmpty` and overlaid at the leading edge using a `ZStack`; it is not a real placeholder since `TextEditor` does not support one natively.
+
+The "── OR paste text ──" divider is a simple `HStack` with two `Divider()` views flanking a `Text` label.
+
+#### New state
+
+Add to `WelcomeView`:
+```swift
+@State private var pasteText: String = ""
+@State private var isParsing: Bool = false
+```
+
+#### Parse action
+
+```swift
+private func parsePastedText() {
+    let trimmed = pasteText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return }
+
+    isParsing = true
+
+    // 1. Auto-detect format from content bytes.
+    let data = Data(trimmed.utf8)
+    let detected = FormatDetector.detect(data: data, fileExtension: nil)
+    // detected is a FormatDetector.Result with a .format property (JSONFormat, XMLFormat, etc.)
+    // Map to a file extension string:
+    let ext: String
+    switch detected.format {
+    case .json:         ext = "json"
+    case .xml:          ext = "xml"
+    case .yaml:         ext = "yaml"
+    case .csv:          ext = "csv"
+    default:            ext = "json"   // fallback — parser will error gracefully
+    }
+
+    // 2. Write to a named temp file (overwriting any previous paste).
+    //    The filename is intentionally generic: the user is expected to Save As if they
+    //    want to keep the content.
+    let tempURL = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("Pasted Content.\(ext)")
+    do {
+        try data.write(to: tempURL, options: .atomic)
+    } catch {
+        showDropError("Could not write temp file: \(error.localizedDescription)")
+        isParsing = false
+        return
+    }
+
+    // 3. Open via document controller — same path as dropping a file.
+    NSDocumentController.shared.openDocument(
+        withContentsOf: tempURL, display: true
+    ) { _, alreadyOpen, error in
+        DispatchQueue.main.async {
+            isParsing = false
+            if let error {
+                showDropError(error.localizedDescription)
+            } else {
+                // Clear the text area on success; refresh recents.
+                pasteText = ""
+                recentURLs = NSDocumentController.shared.recentDocumentURLs
+            }
+        }
+    }
+}
+```
+
+> **Why temp file?** `StructDocument` is a `ReferenceFileDocument` whose `read(from:)` path is already battle-tested and handles mmap, progressive parsing, and all four formats. Routing through a temp URL reuses that path with zero changes to the document layer. The document opens with the title "Pasted Content" and an immediate dirty state; the user is naturally prompted to File › Save As if they want to keep it.
+
+> **Recents note:** "Pasted Content.json" will appear in the recent files list. This is acceptable for now. A future improvement (P6-xx) could call `NSDocumentController.shared.noteNewRecentDocumentURL` after a real Save As and skip adding the temp URL.
+
+#### Parse button state
+
+```swift
+Button(action: parsePastedText) {
+    if isParsing {
+        ProgressView().controlSize(.small)
+    } else {
+        Text("Parse")
+    }
+}
+.buttonStyle(.bordered)
+.disabled(pasteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isParsing)
+```
+
+#### Tests
+
+Add to `MachStructTests/UI/WelcomeViewTests.swift` (or a new `PasteParserTests.swift`):
+- `testFormatDetectionForPastedJSON()` — feed `{"key": 1}`, assert detected format is `.json`, assert temp file created with `.json` extension.
+- `testFormatDetectionForPastedXML()` — feed `<root><a/></root>`, assert `.xml`.
+- `testFormatDetectionForPastedYAML()` — feed `key: value\n- item`, assert `.yaml`.
+- `testFormatDetectionForPastedCSV()` — feed `a,b,c\n1,2,3`, assert `.csv`.
+- `testEmptyPasteIsNoOp()` — call `parsePastedText()` with empty/whitespace text, assert no temp file written.
+
+- **Key files:**
+  - `MachStruct/App/WelcomeView.swift` — layout change + new state + `parsePastedText()`
+  - No changes to `StructDocument`, `FormatDetector`, or `Package.swift`
+- **Acceptance criteria:**
+  - Welcome window is 560×460 (height increased by 100 pt).
+  - A text area appears between the drop zone and the Open File button.
+  - Placeholder text "Paste JSON, XML, YAML, or CSV…" is visible when the text area is empty.
+  - Parse button is disabled when the text area is empty or only whitespace.
+  - Pasting valid JSON and clicking Parse opens a new document window titled "Pasted Content" with the parsed tree visible.
+  - Pasting valid XML / YAML / CSV also opens correctly (auto-detected, no format picker shown).
+  - Parse button shows a `ProgressView` spinner while the document is loading.
+  - Text area is cleared after a successful parse.
+  - An inline error is shown (same red label as drop errors) if the temp file write fails.
+  - 332 existing tests still pass.
+- **Reference docs:** ROADMAP.md §Phase 6, ARCHITECTURE.md §4.1 (FormatDetector)
+
 ---
 
 ## Task Dependency Graph (Phase 5)

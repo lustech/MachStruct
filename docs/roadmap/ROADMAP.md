@@ -202,13 +202,14 @@ All three pre-release blockers are now resolved:
 ### Deliverables
 1. **Settings UI** — Theme (light/dark/auto), font size, indent width, default format on paste, keyboard shortcut customisation.
 2. ~~**Welcome / launch window**~~ ✅ **DONE** *(P6-02)* — Dedicated welcome window replaces the bare system Open panel on launch. Drop zone (drag JSON/XML/YAML/CSV), "Open File…" button, recent files list. Implemented via `NSWindow` + `NSHostingController` (not SwiftUI `Window` scene — avoids macOS 14 `DocumentGroup` ordering issues). Re-shown on Dock click (`applicationShouldHandleReopen`). Cmd+Shift+0 shortcut.
-3. **Onboarding** — First-launch welcome sheet highlighting key features and pointing to docs.
-4. **Quick Look plugin** — Preview JSON/XML/YAML/CSV files in Finder with a read-only mini tree view.
-5. **Spotlight importer** — Index document keys and string values for Spotlight (`mdimport`).
-6. **macOS Services** — "Format JSON" and "Minify JSON" in the system Services menu.
-7. **Performance audit** — Profile every target from PERFORMANCE.md on current hardware. Fix any regressions introduced since Phase 1.
-8. **Accessibility audit** — Full VoiceOver pass, keyboard-only navigation, high-contrast support, Dynamic Type.
-9. **Localisation** — At minimum en, de, fr, ja (the four largest Mac developer markets).
+3. **Paste raw text** *(P6-03)* — Inline `TextEditor` in the welcome window's left panel. User pastes any JSON/XML/YAML/CSV text, clicks Parse, and the content opens as an untitled document window. `FormatDetector` auto-detects the format silently; the document opens via the normal temp-file path so all existing parsing logic is reused unchanged.
+4. **Onboarding** — First-launch welcome sheet highlighting key features and pointing to docs.
+5. **Quick Look plugin** — Preview JSON/XML/YAML/CSV files in Finder with a read-only mini tree view.
+6. **Spotlight importer** — Index document keys and string values for Spotlight (`mdimport`).
+7. **macOS Services** — "Format JSON" and "Minify JSON" in the system Services menu.
+8. **Performance audit** — Profile every target from PERFORMANCE.md on current hardware. Fix any regressions introduced since Phase 1.
+9. **Accessibility audit** — Full VoiceOver pass, keyboard-only navigation, high-contrast support, Dynamic Type.
+10. **Localisation** — At minimum en, de, fr, ja (the four largest Mac developer markets).
 
 ### Exit Criteria
 - App passes App Store review (if not already submitted in Phase 5).
