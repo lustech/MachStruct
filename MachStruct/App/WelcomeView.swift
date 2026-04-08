@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import MachStructCore
 
 // MARK: - WelcomeView
 
