@@ -97,8 +97,9 @@
 **Goal:** Features that differentiate MachStruct from basic viewers.
 
 ### Deliverables
-1. ~~**Full-text search**~~ ✅ **DONE** *(P4-01)* — `.searchable` field in window toolbar (Cmd+F). `SearchEngine` scans all keys and scalar values in DFS document order. Yellow highlight on all matches; amber on the active match. `"N of M"` counter + ↑↓ chevron navigation pill in toolbar. Background `Task.detached` keeps UI fluid on large files. Known limitation: collapsed ancestors are not auto-expanded (requires replacing SwiftUI `List` with a custom recursive view — deferred to P4-02).
-2. **Path queries** — JQ-style expressions for targeted navigation and filtering.
+1. ~~**Full-text search**~~ ✅ **DONE** *(P4-01)* — `.searchable` field in window toolbar (Cmd+F). `SearchEngine` scans all keys and scalar values in DFS document order. Yellow highlight on all matches; amber on the active match. `"N of M"` counter + ↑↓ chevron navigation pill in toolbar. Background `Task.detached` keeps UI fluid on large files.
+2. ~~**Auto-expand on search nav**~~ ✅ **DONE** *(P4-02)* — Replaced `List(data:children:)` with `ExpandedTreeView` (flat `[FlatRow]` array + explicit `expandedIDs: Set<NodeID>`). When navigating to a match, `expandPath(to:in:)` opens every collapsed ancestor; `ScrollViewReader` scrolls the row into view.
+3. **Path queries** — JQ-style expressions for targeted navigation and filtering.
 3. **Diff view** — Compare two documents or two versions of the same document. Highlight added, removed, and changed nodes.
 4. **Schema validation** — Validate JSON against JSON Schema, XML against XSD/DTD.
 5. **Format/minify** — Pretty-print or minify JSON/XML/YAML.

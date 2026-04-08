@@ -58,6 +58,23 @@ struct ContentView: View {
     /// Background search task — cancelled when the query changes.
     @State private var searchTask: Task<Void, Never>? = nil
 
+    // MARK: - Tree expansion state (P4-02)
+
+    /// Node IDs whose children are currently visible in the tree.
+    ///
+    /// Owned here (not inside `ExpandedTreeView`) so `expandPath(to:in:)` can
+    /// programmatically open collapsed subtrees when navigating search matches.
+    @State private var expandedIDs: Set<NodeID> = []
+
+    /// Monotonically increasing counter — bumped each time we want
+    /// `ExpandedTreeView` to scroll a row into view.  A counter (rather than
+    /// the target ID alone) ensures the scroll fires even when navigating back
+    /// to a previously-visited match with the same ID.
+    @State private var scrollTrigger: Int = 0
+
+    /// The node to scroll to when `scrollTrigger` increments.
+    @State private var scrollTarget: NodeID? = nil
+
     @Environment(\.undoManager) private var undoManager
 
     var body: some View {
@@ -114,15 +131,21 @@ struct ContentView: View {
     private func contentStack(_ index: NodeIndex) -> some View {
         switch viewMode {
         case .tree:
-            TreeView(nodeIndex: index, selection: $selectedNodeID)
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    StatusBar(
-                        nodeIndex: index,
-                        selectedID: selectedNodeID,
-                        fileSize: document.fileSize,
-                        formatName: document.formatName
-                    )
-                }
+            ExpandedTreeView(
+                nodeIndex:     index,
+                selection:     $selectedNodeID,
+                expandedIDs:   $expandedIDs,
+                scrollTrigger: scrollTrigger,
+                scrollTarget:  scrollTarget
+            )
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                StatusBar(
+                    nodeIndex:  index,
+                    selectedID: selectedNodeID,
+                    fileSize:   document.fileSize,
+                    formatName: document.formatName
+                )
+            }
 
         case .table:
             TableView(nodeIndex: index, selection: $selectedNodeID)
@@ -328,7 +351,10 @@ struct ContentView: View {
             activeMatchIndex = 0
 
             if let first = results.first {
+                expandPath(to: first.rowNodeID, in: index)
                 selectedNodeID = first.rowNodeID
+                scrollTrigger += 1
+                scrollTarget   = first.rowNodeID
             }
         }
     }
@@ -337,14 +363,51 @@ struct ContentView: View {
     private func advanceMatch() {
         guard !searchMatches.isEmpty else { return }
         activeMatchIndex = (activeMatchIndex + 1) % searchMatches.count
-        selectedNodeID   = searchMatches[activeMatchIndex].rowNodeID
+        navigateToCurrentMatch()
     }
 
     /// Navigate to the previous match (wraps around).
     private func previousMatch() {
         guard !searchMatches.isEmpty else { return }
         activeMatchIndex = (activeMatchIndex - 1 + searchMatches.count) % searchMatches.count
-        selectedNodeID   = searchMatches[activeMatchIndex].rowNodeID
+        navigateToCurrentMatch()
+    }
+
+    /// Shared logic for both `advanceMatch` and `previousMatch`:
+    /// expand collapsed ancestors, select the row, and request a scroll.
+    private func navigateToCurrentMatch() {
+        let match = searchMatches[activeMatchIndex]
+        if let index = document.nodeIndex {
+            expandPath(to: match.rowNodeID, in: index)
+        }
+        selectedNodeID = match.rowNodeID
+        scrollTrigger += 1
+        scrollTarget   = match.rowNodeID
+    }
+
+    // MARK: - Expansion helpers (P4-02)
+
+    /// Open every collapsed ancestor of `id` in the displayed tree so the
+    /// target row becomes visible.
+    ///
+    /// `index.path(to:)` returns `[rootID, …, id]`.  We skip the root (shown
+    /// as `rootRows`, not as an expandable row itself) and the target (we want
+    /// to scroll to it, not open it).  For each intermediate node we construct
+    /// a `TreeNode` and, if it has displayable children, add it to `expandedIDs`.
+    private func expandPath(to id: NodeID, in index: NodeIndex) {
+        let pathIDs = index.path(to: id)
+        guard pathIDs.count > 2 else { return }   // nothing to expand between root and target
+
+        for nodeID in pathIDs.dropFirst().dropLast() {
+            guard let docNode = index.node(for: nodeID) else { continue }
+            let treeNode = TreeNode(documentNode: docNode, nodeIndex: index)
+            // Only insert IDs that ExpandedTreeView recognises as expandable.
+            // Non-row nodes (e.g. the hidden container child of a keyValue row)
+            // will simply never appear in flatRows, so adding their IDs is safe.
+            if treeNode.children != nil {
+                expandedIDs.insert(nodeID)
+            }
+        }
     }
 
     /// Map a `TargetFormat` to its `UTType` for the save panel filter.

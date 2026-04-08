@@ -170,8 +170,23 @@ When starting a task, the AI agent should: (1) read the reference docs, (2) chec
   - Yellow highlight (`Color.yellow.opacity(0.22)`) for all matches; amber (`Color.orange.opacity(0.30)`) for the active (navigated-to) match.
   - Toolbar shows `"N of M"` counter + ↑↓ chevron buttons inside a `.regularMaterial` pill when matches exist.
   - Cmd+F activates the search field (via `.searchable`). Return advances to next match; the pill buttons also work. Clearing the field dismisses all highlights.
-  - **Known limitation:** programmatic expansion of collapsed ancestor nodes is not implemented — if a matched node is inside a collapsed subtree it will be highlighted once expanded, but the tree won't auto-expand the path. To fix this properly, `TreeView` would need to switch from SwiftUI's `List(data:children:)` (which owns expansion state internally) to a custom recursive view with explicit expansion state. Deferred to P4-02.
 - **Acceptance criteria:** Typing in the search field highlights all matching rows with yellow. ↑↓ navigation moves through matches in document order with an amber highlight on the active match and updates the counter. Clearing the field removes all highlights. 332 existing tests still pass.
+- **Reference docs:** ROADMAP.md §Phase 4
+
+### P4-02: Auto-Expand on Search Nav ✅ DONE
+- **Module:** App/UI
+- **Dependencies:** P4-01 (SearchEngine, searchMatches state in ContentView)
+- **Key files:**
+  - `App/UI/TreeView/ExpandedTreeView.swift` (new) — `FlatRow` + `ExpandedTreeView`
+  - `App/ContentView.swift` — `expandedIDs`, `scrollTrigger`, `scrollTarget`, `expandPath(to:in:)`, `navigateToCurrentMatch()`
+- **Implementation notes:**
+  - Root problem: SwiftUI's `List(data:children:)` owns its expand/collapse state internally with no programmatic API. Replaced with `ExpandedTreeView`, which keeps `expandedIDs: Set<NodeID>` as an external `@Binding` owned by `ContentView`.
+  - `ExpandedTreeView` computes a flat `[FlatRow]` array via DFS pre-order traversal that skips children of nodes not in `expandedIDs`. Only visible rows appear in the array — collapsed subtrees have zero rendering cost.
+  - Manual disclosure triangles: `chevron.right` image rotated 90° when open, animated at 0.15 s. Row indentation via `listRowInsets(leading: level × 18 + 6)`.
+  - `expandPath(to:in:)` walks `index.path(to:)`, drops root and target, and inserts every intermediate node whose `TreeNode.children != nil` into `expandedIDs`. Non-row nodes (e.g. hidden container children of keyValue rows) are harmlessly inserted but never matched by flatRow traversal.
+  - Scroll-to-row: `ScrollViewReader` + a `scrollTrigger: Int` counter in `ContentView`. Counter avoids the SwiftUI `onChange` non-fire when navigating to the same ID twice. One `DispatchQueue.main.async` hop ensures expansion is reflected in the List before the scroll runs.
+  - `navigateToCurrentMatch()` consolidates expand + select + scroll for both `advanceMatch()` and `previousMatch()`.
+- **Acceptance criteria:** Pressing ↑↓ (or Return in search) to navigate to a match inside a collapsed subtree automatically expands the full ancestor chain and scrolls the match row into view. Manually collapsed nodes stay collapsed when the search clears. Existing search highlight behaviour (P4-01) is unchanged.
 - **Reference docs:** ROADMAP.md §Phase 4
 
 ---
