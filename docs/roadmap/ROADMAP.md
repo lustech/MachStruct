@@ -102,7 +102,7 @@
 3. **Path queries** — JQ-style expressions for targeted navigation and filtering.
 3. **Diff view** — Compare two documents or two versions of the same document. Highlight added, removed, and changed nodes.
 4. **Schema validation** — Validate JSON against JSON Schema, XML against XSD/DTD.
-5. **Format/minify** — Pretty-print or minify JSON/XML/YAML.
+5. ~~**Format/minify**~~ ✅ **DONE** *(P4-04)* — Segmented picker in the raw text toolbar switches between pretty-printed and minified output. Re-serializes asynchronously; `rawPretty: Bool` state persists across document edits.
 6. **Bookmarks** — Pin frequently accessed nodes for quick return.
 7. **History** — Recently viewed nodes within a document, like browser history.
 8. **Clipboard watch** — Detect JSON/XML on the clipboard and offer to open in MachStruct.

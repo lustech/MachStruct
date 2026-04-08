@@ -38,6 +38,9 @@ struct ContentView: View {
     /// True while raw text is being serialized in the background.
     @State private var isSerializingRaw: Bool = false
 
+    /// When true the raw view shows pretty-printed output; false = minified. (P4-04)
+    @State private var rawPretty: Bool = true
+
     /// True while an export conversion is running in the background.
     @State private var isExporting: Bool = false
 
@@ -220,7 +223,7 @@ struct ContentView: View {
                         ProgressView().scaleEffect(0.6)
                     } else {
                         Label(
-                            viewMode == .raw ? "Tree View" : "Raw JSON",
+                            viewMode == .raw ? "Tree View" : "Raw Text",
                             systemImage: viewMode == .raw
                                 ? "list.bullet.indent"
                                 : "doc.plaintext"
@@ -230,6 +233,23 @@ struct ContentView: View {
                 .toggleStyle(.button)
                 .help(viewMode == .raw ? "Switch to tree view" : "View raw JSON source")
                 .disabled(isSerializingRaw)
+            }
+        }
+
+        // ── Pretty / Minify toggle (P4-04) — only visible in raw text view ──
+        ToolbarItem(placement: .primaryAction) {
+            if viewMode == .raw {
+                Picker("Format", selection: $rawPretty) {
+                    Image(systemName: "text.alignleft").tag(true)
+                        .help("Pretty-print")
+                    Image(systemName: "arrow.left.and.right.text.vertical").tag(false)
+                        .help("Minify")
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 64)
+                .help(rawPretty ? "Switch to minified output" : "Switch to pretty-printed output")
+                .disabled(isSerializingRaw)
+                .onChange(of: rawPretty) { _, _ in refreshRawText() }
             }
         }
 
@@ -277,12 +297,15 @@ struct ContentView: View {
     }
 
     /// Serialize the document asynchronously and update `rawText`.
+    ///
+    /// Respects `rawPretty`: pretty-prints when `true`, minifies when `false` (P4-04).
     private func refreshRawText() {
         guard !isSerializingRaw else { return }
         isSerializingRaw = true
+        let pretty = rawPretty      // capture before Task so mutations don't race
         Task {
             do {
-                rawText = try await document.serializeDocument(pretty: true)
+                rawText = try await document.serializeDocument(pretty: pretty)
             } catch {
                 rawText = "// Serialization error: \(error.localizedDescription)"
             }
