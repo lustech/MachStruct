@@ -14,6 +14,7 @@ MachStruct opens, navigates, edits, and converts large JSON, XML, YAML, and CSV 
 ## Features
 
 ### Viewing
+- **Full-text search** — Cmd+F searches all keys and scalar values; yellow highlights across the tree with amber active-match indicator and ↑↓ navigation counter in the toolbar
 - **Welcome screen** — drag files onto the drop zone, paste raw text directly, or pick from recents; no bare Open dialog on launch
 - **Instant open** — simdjson SIMD parsing on a background actor; top-level nodes appear while the rest indexes
 - **Zero-copy I/O** — memory-mapped files via `mmap`; a 100 MB file uses < 5 MB of resident memory while browsing
@@ -232,8 +233,8 @@ Phase 2 — On-demand value parsing
 - [x] P3-07 Format conversion — `YAMLDocumentSerializer`, `CSVDocumentSerializer`, `FormatConverter`, export menu
 - [x] P3-08 Auto-detection — `FormatDetector` content sniffer; `StructDocument` opens all four formats
 
-### Phase 4 — Power Tools
-- [ ] Full-text search across keys and values with highlighting
+### Phase 4 — Power Tools 🔄
+- [x] P4-01 Full-text search — Cmd+F, keys + values, yellow/amber highlights, ↑↓ navigation
 - [ ] Path queries (JQ-style expressions)
 - [ ] Diff view — compare two documents or two revisions
 - [ ] Schema validation (JSON Schema, XSD/DTD)

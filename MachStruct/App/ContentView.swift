@@ -44,6 +44,20 @@ struct ContentView: View {
     /// Export error to display in an alert.
     @State private var exportError: String? = nil
 
+    // MARK: - Search state (P4-01)
+
+    /// The live search query bound to the `.searchable` modifier.
+    @State private var searchQuery: String = ""
+
+    /// All matches for the current query, in document order.
+    @State private var searchMatches: [SearchMatch] = []
+
+    /// Index into `searchMatches` of the currently focused (active) match.
+    @State private var activeMatchIndex: Int = 0
+
+    /// Background search task — cancelled when the query changes.
+    @State private var searchTask: Task<Void, Never>? = nil
+
     @Environment(\.undoManager) private var undoManager
 
     var body: some View {
@@ -60,11 +74,19 @@ struct ContentView: View {
                     .environment(\.serializeNode) { [weak document] nodeID, pretty in
                         document?.serializeNode(nodeID, pretty: pretty)
                     }
+                    .environment(\.searchMatchIDs,
+                                  Set(searchMatches.map(\.rowNodeID)))
+                    .environment(\.activeSearchMatchID,
+                                  searchMatches.isEmpty ? nil
+                                    : searchMatches[activeMatchIndex].rowNodeID)
                     .onChange(of: viewMode) { _, mode in
                         if mode == .raw { refreshRawText() }
                     }
                     .onChange(of: index.count) { _, _ in
                         if viewMode == .raw { refreshRawText() }
+                    }
+                    .onChange(of: searchQuery) { _, query in
+                        scheduleSearch(query: query, in: index)
                     }
             } else {
                 placeholderView
@@ -72,6 +94,10 @@ struct ContentView: View {
         }
         .frame(minWidth: 400, minHeight: 300)
         .toolbar { toolbarContent }
+        .searchable(text: $searchQuery,
+                    placement: .toolbar,
+                    prompt: "Search keys and values")
+        .onSubmit(of: .search) { advanceMatch() }
         .alert("Export Failed", isPresented: .init(
             get: { exportError != nil },
             set: { if !$0 { exportError = nil } }
@@ -183,6 +209,35 @@ struct ContentView: View {
                 .disabled(isSerializingRaw)
             }
         }
+
+        // ── Search navigation (P4-01) ──────────────────────────────────────
+        // Shown only when a search is active and produced results.
+        ToolbarItem(placement: .primaryAction) {
+            if !searchMatches.isEmpty {
+                HStack(spacing: 4) {
+                    Button(action: previousMatch) {
+                        Image(systemName: "chevron.up")
+                    }
+                    .help("Previous match (⇧↩)")
+                    .buttonStyle(.borderless)
+
+                    Text("\(activeMatchIndex + 1) of \(searchMatches.count)")
+                        .font(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .frame(minWidth: 56)
+
+                    Button(action: advanceMatch) {
+                        Image(systemName: "chevron.down")
+                    }
+                    .help("Next match (↩)")
+                    .buttonStyle(.borderless)
+                }
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+            }
+        }
     }
 
     // MARK: - Raw view (P2-09)
@@ -242,6 +297,54 @@ struct ContentView: View {
                 await MainActor.run { isExporting = false }
             }
         }
+    }
+
+    // MARK: - Search (P4-01)
+
+    /// Launch a background search task, cancelling any prior one.
+    ///
+    /// Results are returned in DFS document order so ↑↓ navigation feels
+    /// natural.  The task is cheap to cancel because `SearchEngine.search`
+    /// is a synchronous, non-blocking scan.
+    private func scheduleSearch(query: String, in index: NodeIndex) {
+        searchTask?.cancel()
+        activeMatchIndex = 0
+
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            searchMatches = []
+            return
+        }
+
+        searchTask = Task {
+            // Run the O(n) scan on a background thread to keep the UI fluid
+            // on very large documents (100 k+ nodes).
+            let results = await Task.detached(priority: .userInitiated) {
+                SearchEngine.search(query: query, in: index)
+            }.value
+
+            guard !Task.isCancelled else { return }
+
+            searchMatches    = results
+            activeMatchIndex = 0
+
+            if let first = results.first {
+                selectedNodeID = first.rowNodeID
+            }
+        }
+    }
+
+    /// Navigate to the next match (wraps around).
+    private func advanceMatch() {
+        guard !searchMatches.isEmpty else { return }
+        activeMatchIndex = (activeMatchIndex + 1) % searchMatches.count
+        selectedNodeID   = searchMatches[activeMatchIndex].rowNodeID
+    }
+
+    /// Navigate to the previous match (wraps around).
+    private func previousMatch() {
+        guard !searchMatches.isEmpty else { return }
+        activeMatchIndex = (activeMatchIndex - 1 + searchMatches.count) % searchMatches.count
+        selectedNodeID   = searchMatches[activeMatchIndex].rowNodeID
     }
 
     /// Map a `TargetFormat` to its `UTType` for the save panel filter.

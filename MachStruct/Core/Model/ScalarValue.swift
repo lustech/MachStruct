@@ -19,6 +19,20 @@ public enum ScalarValue: Sendable, Equatable {
         }
     }
 
+    /// Unquoted text used for full-text search matching.
+    ///
+    /// Unlike `displayText`, string values are returned without surrounding
+    /// double-quotes so that searching for `alice` matches `"alice"`.
+    public var searchableText: String {
+        switch self {
+        case .string(let s):   return s
+        case .integer(let n):  return "\(n)"
+        case .float(let f):    return _formatDouble(f)
+        case .boolean(let b):  return b ? "true" : "false"
+        case .null:            return "null"
+        }
+    }
+
     /// Short type badge label shown in tree rows ("str", "int", "num", "bool", "null").
     public var typeBadge: String {
         switch self {

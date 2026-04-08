@@ -151,6 +151,31 @@ When starting a task, the AI agent should: (1) read the reference docs, (2) chec
 
 ---
 
+## Phase 4: Power Tools
+
+### P4-01: Full-Text Search ✅ DONE
+- **Module:** Core/Model + App/UI
+- **Dependencies:** P1-04 (NodeIndex), P1-08 (TreeView), P2-01 (NodeRow)
+- **Key files:**
+  - `Core/Model/SearchEngine.swift` (new) — `SearchMatch` + `SearchEngine.search(query:in:)`
+  - `Core/Model/ScalarValue.swift` — added `searchableText` property
+  - `App/UI/Search/SearchEnvironment.swift` (new) — `searchMatchIDs` + `activeSearchMatchID` env keys
+  - `App/UI/TreeView/NodeRow.swift` — search highlight background
+  - `App/ContentView.swift` — `.searchable`, search state, toolbar nav, `scheduleSearch`
+- **Implementation notes:**
+  - `SearchEngine.search(query:in:)` is a pure sync function; `ContentView` calls it via `Task.detached` on a background thread.
+  - Traversal is DFS pre-order (stack-based, not recursive) so results are always in document top-to-bottom order.
+  - Scalar nodes that are inline children of `keyValue` nodes resolve to their parent's row ID — so highlighted rows always correspond to visible `NodeRow`s in the tree.
+  - Match highlighting uses SwiftUI environment keys (`searchMatchIDs`, `activeSearchMatchID`) injected in `ContentView.contentStack` and read in `NodeRow.searchHighlight`. No changes needed to `TreeView` — env propagates automatically.
+  - Yellow highlight (`Color.yellow.opacity(0.22)`) for all matches; amber (`Color.orange.opacity(0.30)`) for the active (navigated-to) match.
+  - Toolbar shows `"N of M"` counter + ↑↓ chevron buttons inside a `.regularMaterial` pill when matches exist.
+  - Cmd+F activates the search field (via `.searchable`). Return advances to next match; the pill buttons also work. Clearing the field dismisses all highlights.
+  - **Known limitation:** programmatic expansion of collapsed ancestor nodes is not implemented — if a matched node is inside a collapsed subtree it will be highlighted once expanded, but the tree won't auto-expand the path. To fix this properly, `TreeView` would need to switch from SwiftUI's `List(data:children:)` (which owns expansion state internally) to a custom recursive view with explicit expansion state. Deferred to P4-02.
+- **Acceptance criteria:** Typing in the search field highlights all matching rows with yellow. ↑↓ navigation moves through matches in document order with an amber highlight on the active match and updates the counter. Clearing the field removes all highlights. 332 existing tests still pass.
+- **Reference docs:** ROADMAP.md §Phase 4
+
+---
+
 ## Phase 5: Release Engineering
 
 > **Critical context for AI agents:** Before starting any P5 task, read ROADMAP.md §Phase 5 for the full rationale. P5-01 must land first — every other task depends on a self-contained build.

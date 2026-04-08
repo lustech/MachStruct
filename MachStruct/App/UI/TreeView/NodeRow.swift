@@ -20,8 +20,10 @@ struct NodeRow: View {
 
     // MARK: - Environment
 
-    @Environment(\.commitEdit)   private var commitEdit
-    @Environment(\.serializeNode) private var serializeNode
+    @Environment(\.commitEdit)          private var commitEdit
+    @Environment(\.serializeNode)       private var serializeNode
+    @Environment(\.searchMatchIDs)      private var searchMatchIDs
+    @Environment(\.activeSearchMatchID) private var activeSearchMatchID
 
     // MARK: - Editing state
 
@@ -70,9 +72,28 @@ struct NodeRow: View {
             TypeBadge(style: node.badgeInfo.style)
         }
         .font(.system(.body, design: .monospaced))
+        .background { searchHighlight }
         .contextMenu { contextMenuItems }
         .onChange(of: editingField) { _, newValue in
             isFocused = (newValue != nil)
+        }
+    }
+
+    // MARK: - Search highlight (P4-01)
+
+    /// A subtle rounded background applied when this row is a search match.
+    /// The active (currently navigated-to) match gets a stronger amber fill;
+    /// other matches get a lighter yellow fill.
+    @ViewBuilder
+    private var searchHighlight: some View {
+        let isActive = node.id == activeSearchMatchID
+        let isMatch  = searchMatchIDs.contains(node.id)
+        if isActive {
+            RoundedRectangle(cornerRadius: 4)
+                .fill(Color.orange.opacity(0.30))
+        } else if isMatch {
+            RoundedRectangle(cornerRadius: 4)
+                .fill(Color.yellow.opacity(0.22))
         }
     }
 

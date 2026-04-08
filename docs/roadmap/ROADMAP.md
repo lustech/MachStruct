@@ -9,7 +9,7 @@
 | **Phase 1** | Foundation | JSON viewer with core tree UI | ✅ Complete |
 | **Phase 2** | Editor | JSON editing, undo, save | ✅ Complete |
 | **Phase 3** | Formats | XML, YAML, CSV support | ✅ Complete |
-| **Phase 4** | Power Tools | Search, diff, conversion, plugins | 4–6 weeks |
+| **Phase 4** | Power Tools | Search, diff, conversion, plugins | 🔄 In Progress |
 | **Phase 5** | Release Engineering | simdjson vendoring, Xcode target, signing, notarization, Sparkle, App Store | 🔄 In Progress |
 | **Phase 6** | Polish | Settings, onboarding, Quick Look, Spotlight, accessibility, localisation | 🔄 In Progress |
 
@@ -97,7 +97,7 @@
 **Goal:** Features that differentiate MachStruct from basic viewers.
 
 ### Deliverables
-1. **Full-text search** — Search across keys and values with highlighting.
+1. ~~**Full-text search**~~ ✅ **DONE** *(P4-01)* — `.searchable` field in window toolbar (Cmd+F). `SearchEngine` scans all keys and scalar values in DFS document order. Yellow highlight on all matches; amber on the active match. `"N of M"` counter + ↑↓ chevron navigation pill in toolbar. Background `Task.detached` keeps UI fluid on large files. Known limitation: collapsed ancestors are not auto-expanded (requires replacing SwiftUI `List` with a custom recursive view — deferred to P4-02).
 2. **Path queries** — JQ-style expressions for targeted navigation and filtering.
 3. **Diff view** — Compare two documents or two versions of the same document. Highlight added, removed, and changed nodes.
 4. **Schema validation** — Validate JSON against JSON Schema, XML against XSD/DTD.
