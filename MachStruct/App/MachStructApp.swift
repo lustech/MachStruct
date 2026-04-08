@@ -126,7 +126,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let hosting = NSHostingController(rootView: WelcomeView())
-        hosting.view.frame = NSRect(x: 0, y: 0, width: 560, height: 360)
+        // Let the hosting controller calculate its preferred size from the SwiftUI layout.
+        let size = hosting.sizeThatFits(in: CGSize(width: 560, height: CGFloat.greatestFiniteMagnitude))
+        hosting.view.frame = NSRect(origin: .zero, size: size)
 
         let window = NSWindow(contentViewController: hosting)
         window.title = "Welcome to MachStruct"
@@ -134,6 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.isReleasedWhenClosed = false
         window.center()
         window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
         _welcomeWindow = window
     }
 }
