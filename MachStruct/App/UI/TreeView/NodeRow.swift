@@ -24,6 +24,8 @@ struct NodeRow: View {
     @Environment(\.serializeNode)       private var serializeNode
     @Environment(\.searchMatchIDs)      private var searchMatchIDs
     @Environment(\.activeSearchMatchID) private var activeSearchMatchID
+    @Environment(\.bookmarkedNodeIDs)   private var bookmarkedNodeIDs
+    @Environment(\.toggleBookmark)      private var toggleBookmark
 
     // MARK: - Editing state
 
@@ -68,6 +70,12 @@ struct NodeRow: View {
             if let styleBadge = node.yamlStyleBadge {
                 TypeBadge(style: styleBadge)
                     .help(yamlStyleHelp(styleBadge))
+            }
+            // Bookmark indicator (P4-03) — shown when this node is pinned.
+            if bookmarkedNodeIDs.contains(node.id) {
+                Image(systemName: "bookmark.fill")
+                    .font(.system(size: 9, weight: .regular))
+                    .foregroundStyle(.orange)
             }
             TypeBadge(style: node.badgeInfo.style)
         }
@@ -199,6 +207,14 @@ struct NodeRow: View {
 
         if vn.type == .object || vn.type == .array {
             Button("Paste from Clipboard") { pasteFromClipboard(into: vn.id) }
+        }
+
+        // Bookmarks (P4-03)
+        Divider()
+        Button(bookmarkedNodeIDs.contains(node.id)
+               ? "Remove Bookmark"
+               : "Add Bookmark") {
+            toggleBookmark?(node.id)
         }
 
         // Delete (P2-03)

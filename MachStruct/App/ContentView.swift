@@ -61,6 +61,15 @@ struct ContentView: View {
     /// Background search task — cancelled when the query changes.
     @State private var searchTask: Task<Void, Never>? = nil
 
+    // MARK: - Bookmark state (P4-03)
+
+    /// Ordered list of bookmarked node IDs (insertion order preserved for display).
+    ///
+    /// In-session only: NodeIDs are counter-based and change on each document
+    /// open, so bookmarks do not persist across sessions.  Path-based persistence
+    /// is planned as a future improvement.
+    @State private var bookmarks: [NodeID] = []
+
     // MARK: - Tree expansion state (P4-02)
 
     /// Node IDs whose children are currently visible in the tree.
@@ -99,6 +108,8 @@ struct ContentView: View {
                     .environment(\.activeSearchMatchID,
                                   searchMatches.isEmpty ? nil
                                     : searchMatches[activeMatchIndex].rowNodeID)
+                    .environment(\.bookmarkedNodeIDs, Set(bookmarks))
+                    .environment(\.toggleBookmark, makeToggleBookmark($bookmarks))
                     .onChange(of: viewMode) { _, mode in
                         if mode == .raw { refreshRawText() }
                     }
@@ -114,6 +125,16 @@ struct ContentView: View {
         }
         .frame(minWidth: 400, minHeight: 300)
         .toolbar { toolbarContent }
+        // Cmd+D: toggle bookmark on the currently selected node (P4-03).
+        // A hidden Button is the idiomatic SwiftUI way to bind a keyboard
+        // shortcut to an action without a visible control.
+        .background {
+            Button("Toggle Bookmark") {
+                if let id = selectedNodeID { toggleBookmark(id) }
+            }
+            .keyboardShortcut("d", modifiers: .command)
+            .hidden()
+        }
         .searchable(text: $searchQuery,
                     placement: .toolbar,
                     prompt: "Search keys and values")
@@ -250,6 +271,32 @@ struct ContentView: View {
                 .help(rawPretty ? "Switch to minified output" : "Switch to pretty-printed output")
                 .disabled(isSerializingRaw)
                 .onChange(of: rawPretty) { _, _ in refreshRawText() }
+            }
+        }
+
+        // ── Bookmarks menu (P4-03) ────────────────────────────────────────
+        ToolbarItem(placement: .primaryAction) {
+            if let index = document.nodeIndex {
+                Menu {
+                    if bookmarks.isEmpty {
+                        Text("No bookmarks")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(bookmarks, id: \.self) { nodeID in
+                            Button(index.pathString(to: nodeID)) {
+                                navigateToBookmark(nodeID, in: index)
+                            }
+                        }
+                        Divider()
+                        Button("Clear All Bookmarks", role: .destructive) {
+                            bookmarks = []
+                        }
+                    }
+                } label: {
+                    Label("Bookmarks",
+                          systemImage: bookmarks.isEmpty ? "bookmark" : "bookmark.fill")
+                }
+                .help("Bookmarks (⌘D to toggle)")
             }
         }
 
@@ -431,6 +478,39 @@ struct ContentView: View {
                 expandedIDs.insert(nodeID)
             }
         }
+    }
+
+    // MARK: - Bookmarks (P4-03)
+
+    /// Add or remove `id` from the bookmark list, preserving insertion order.
+    private func toggleBookmark(_ id: NodeID) {
+        if let idx = bookmarks.firstIndex(of: id) {
+            bookmarks.remove(at: idx)
+        } else {
+            bookmarks.append(id)
+        }
+    }
+
+    /// Returns a stable escaping closure that toggles a node in/out of
+    /// the bookmark list.  Captures the `Binding` (not the value) so it
+    /// stays correct across SwiftUI body re-evaluations.
+    private func makeToggleBookmark(_ binding: Binding<[NodeID]>) -> (NodeID) -> Void {
+        { id in
+            if let idx = binding.wrappedValue.firstIndex(of: id) {
+                binding.wrappedValue.remove(at: idx)
+            } else {
+                binding.wrappedValue.append(id)
+            }
+        }
+    }
+
+    /// Expand collapsed ancestors of `id`, select it, and scroll to it —
+    /// the same navigation machinery used by search result navigation.
+    private func navigateToBookmark(_ id: NodeID, in index: NodeIndex) {
+        expandPath(to: id, in: index)
+        selectedNodeID = id
+        scrollTrigger += 1
+        scrollTarget   = id
     }
 
     /// Map a `TargetFormat` to its `UTType` for the save panel filter.

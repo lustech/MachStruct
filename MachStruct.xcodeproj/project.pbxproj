@@ -11,7 +11,10 @@
 		28B0839D1581A4ED1207CB4F /* MachStructApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78176BDF8A0409D74304F7A5 /* MachStructApp.swift */; };
 		3AA47E46E2EB9C60F011A5D4 /* TypeBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97DCCC1F62C267236BB1F89A /* TypeBadge.swift */; };
 		5260B3B31AF06EA038B1220B /* TreeNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD818990A0282E6278E5884C /* TreeNode.swift */; };
+		53F06A2A8D9247B898B0E840 /* SearchEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8244AF5100B0479086F6CA72 /* SearchEnvironment.swift */; };
 		5B683CF7AA4D92E9350EB2C5 /* TableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A19F7CF620D1FC01343CD19 /* TableView.swift */; };
+		7FAE129CF28946DDA8168A29 /* ExpandedTreeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A626FB5F07F4B2CB93B7E61 /* ExpandedTreeView.swift */; };
+		A2335F17FAC94F148FE8ACCC /* BookmarkEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = D817BE60797A41BDB6931DA1 /* BookmarkEnvironment.swift */; };
 		83EE8B039E33902EF9E82A52 /* MachStructCore in Frameworks */ = {isa = PBXBuildFile; productRef = 7F85AA182BEBE07716D6B554 /* MachStructCore */; };
 		A1B2C3D4E5F601234567890A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F601234567890B /* Assets.xcassets */; };
 		BB406DF6750F302763B02B70 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBB9B474EFCC206A7AF61136 /* ContentView.swift */; };
@@ -20,17 +23,18 @@
 		DB84E405504F101A1388C27C /* CommitEditEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 348283C44F1319245138E09C /* CommitEditEnvironment.swift */; };
 		DF7905565F078EAE2DD504B4 /* StructDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE7DD0EE277E26A835C94C4E /* StructDocument.swift */; };
 		E5F816D860AB21053742EC1E /* TreeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F751214D3F721EF38DF437C /* TreeView.swift */; };
-		53F06A2A8D9247B898B0E840 /* SearchEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8244AF5100B0479086F6CA72 /* SearchEnvironment.swift */; };
-		7FAE129CF28946DDA8168A29 /* ExpandedTreeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A626FB5F07F4B2CB93B7E61 /* ExpandedTreeView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		2869AF341CDBC3FA73E9E4E8 /* MachStruct.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MachStruct.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		348283C44F1319245138E09C /* CommitEditEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommitEditEnvironment.swift; sourceTree = "<group>"; };
+		3A626FB5F07F4B2CB93B7E61 /* ExpandedTreeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpandedTreeView.swift; sourceTree = "<group>"; };
 		4070DC5008EE4B8A99811DB5 /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
 		5F751214D3F721EF38DF437C /* TreeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TreeView.swift; sourceTree = "<group>"; };
 		6A19F7CF620D1FC01343CD19 /* TableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableView.swift; sourceTree = "<group>"; };
 		78176BDF8A0409D74304F7A5 /* MachStructApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MachStructApp.swift; sourceTree = "<group>"; };
+		8244AF5100B0479086F6CA72 /* SearchEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchEnvironment.swift; sourceTree = "<group>"; };
+		D817BE60797A41BDB6931DA1 /* BookmarkEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkEnvironment.swift; sourceTree = "<group>"; };
 		97DCCC1F62C267236BB1F89A /* TypeBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TypeBadge.swift; sourceTree = "<group>"; };
 		9B2FF72DBCCACDFFD557BEA1 /* StatusBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBar.swift; sourceTree = "<group>"; };
 		9F481E1643CAA448B1EFC2EB /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -40,8 +44,6 @@
 		DD818990A0282E6278E5884C /* TreeNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TreeNode.swift; sourceTree = "<group>"; };
 		EBB9B474EFCC206A7AF61136 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		EE7DD0EE277E26A835C94C4E /* StructDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StructDocument.swift; sourceTree = "<group>"; };
-		3A626FB5F07F4B2CB93B7E61 /* ExpandedTreeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpandedTreeView.swift; sourceTree = "<group>"; };
-		8244AF5100B0479086F6CA72 /* SearchEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchEnvironment.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -95,6 +97,22 @@
 			path = MachStruct/App;
 			sourceTree = "<group>";
 		};
+		684F1164AE9A4D818D53CB45 /* Search */ = {
+			isa = PBXGroup;
+			children = (
+				8244AF5100B0479086F6CA72 /* SearchEnvironment.swift */,
+			);
+			path = Search;
+			sourceTree = "<group>";
+		};
+		F3A91C502E8B4D769C150871 /* Bookmarks */ = {
+			isa = PBXGroup;
+			children = (
+				D817BE60797A41BDB6931DA1 /* BookmarkEnvironment.swift */,
+			);
+			path = Bookmarks;
+			sourceTree = "<group>";
+		};
 		7305384F0A1C76B22309846A /* Toolbar */ = {
 			isa = PBXGroup;
 			children = (
@@ -106,6 +124,7 @@
 		89DE75843AEE840DCD872D45 /* UI */ = {
 			isa = PBXGroup;
 			children = (
+				F3A91C502E8B4D769C150871 /* Bookmarks */,
 				1D94133E764AA1F23D57C5E2 /* Editing */,
 				684F1164AE9A4D818D53CB45 /* Search */,
 				47BB7154A417D0880DED309C /* TableView */,
@@ -113,14 +132,6 @@
 				8A1E13039B6F5E701F4F45A0 /* TreeView */,
 			);
 			path = UI;
-			sourceTree = "<group>";
-		};
-		684F1164AE9A4D818D53CB45 /* Search */ = {
-			isa = PBXGroup;
-			children = (
-				8244AF5100B0479086F6CA72 /* SearchEnvironment.swift */,
-			);
-			path = Search;
 			sourceTree = "<group>";
 		};
 		8A1E13039B6F5E701F4F45A0 /* TreeView */ = {
@@ -182,7 +193,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1500;
-				LastUpgradeCheck = 1500;
+				LastUpgradeCheck = 2640;
 				TargetAttributes = {
 					C123C8EF7469F5F53F566E9B = {
 						CreatedOnToolsVersion = 15.0;
@@ -238,6 +249,7 @@
 				3AA47E46E2EB9C60F011A5D4 /* TypeBadge.swift in Sources */,
 				53F06A2A8D9247B898B0E840 /* SearchEnvironment.swift in Sources */,
 				7FAE129CF28946DDA8168A29 /* ExpandedTreeView.swift in Sources */,
+				A2335F17FAC94F148FE8ACCC /* BookmarkEnvironment.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -251,6 +263,7 @@
 				CODE_SIGN_ENTITLEMENTS = MachStruct/App/MachStruct.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MachStruct/App/Info.plist;
@@ -297,9 +310,12 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_DECL = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -315,6 +331,8 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = NO;
 				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 			};
 			name = Release;
@@ -351,9 +369,13 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_DECL = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -369,6 +391,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -381,6 +404,7 @@
 				CODE_SIGN_ENTITLEMENTS = MachStruct/App/MachStruct.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MachStruct/App/Info.plist;
