@@ -20,16 +20,51 @@ struct WelcomeView: View {
     @State private var pasteText: String = ""
     @State private var isParsing: Bool = false
 
+    // Clipboard watch (quick win)
+    @StateObject private var clipboardWatcher = ClipboardWatcher()
+    @State private var clipboardDismissed: DetectedClipboard? = nil
+
     private static let supportedExtensions: Set<String> = ["json", "xml", "yaml", "yml", "csv"]
 
+    private var visibleClipboard: DetectedClipboard? {
+        guard let d = clipboardWatcher.detected else { return nil }
+        return d == clipboardDismissed ? nil : d
+    }
+
     var body: some View {
-        HStack(spacing: 0) {
-            leftPanel
-            Divider()
-            rightPanel
+        VStack(spacing: 0) {
+            // Clipboard banner — animated in/out above the main content.
+            if let d = visibleClipboard {
+                ClipboardBanner(
+                    detected:  d,
+                    onOpen:    { open(clipboard: $0) },
+                    onDismiss: { withAnimation { clipboardDismissed = d } }
+                )
+                .padding(.top, 10)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .animation(.spring(duration: 0.3), value: visibleClipboard != nil)
+            }
+
+            HStack(spacing: 0) {
+                leftPanel
+                Divider()
+                rightPanel
+            }
         }
         .frame(width: 560, height: 460)
-        .onAppear { recentURLs = NSDocumentController.shared.recentDocumentURLs }
+        .onAppear {
+            recentURLs = NSDocumentController.shared.recentDocumentURLs
+            clipboardWatcher.start()
+        }
+        .onDisappear { clipboardWatcher.stop() }
+    }
+
+    // MARK: - Clipboard open
+
+    private func open(clipboard d: DetectedClipboard) {
+        withAnimation { clipboardDismissed = d }
+        pasteText = d.text
+        parsePastedText()
     }
 
     // MARK: - Left panel

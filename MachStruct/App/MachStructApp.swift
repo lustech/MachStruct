@@ -1,5 +1,6 @@
 import SwiftUI
 import Sparkle
+import MachStructCore
 
 // MARK: - MachStructDocumentController
 
@@ -128,6 +129,86 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
+    // MARK: - macOS Services (quick win)
+    //
+    // Handlers registered via NSServices in Info.plist.
+    // "Format with MachStruct" → pretty-prints the selected text in place.
+    // "Minify with MachStruct" → minifies the selected text in place.
+    //
+    // Both handlers run synchronously (macOS Services requirement).  Parsing
+    // and serialisation on the current thread is acceptable for clipboard-sized
+    // text; the OS times out services that don't respond within ~30 s.
+
+    @objc func formatWithMachStruct(
+        _ pasteboard: NSPasteboard,
+        userData: String,
+        error: AutoreleasingUnsafeMutablePointer<NSString?>
+    ) {
+        processService(pasteboard: pasteboard, pretty: true, error: error)
+    }
+
+    @objc func minifyWithMachStruct(
+        _ pasteboard: NSPasteboard,
+        userData: String,
+        error: AutoreleasingUnsafeMutablePointer<NSString?>
+    ) {
+        processService(pasteboard: pasteboard, pretty: false, error: error)
+    }
+
+    private func processService(
+        pasteboard: NSPasteboard,
+        pretty: Bool,
+        error outError: AutoreleasingUnsafeMutablePointer<NSString?>
+    ) {
+        guard let text = pasteboard.string(forType: .string),
+              !text.isEmpty else {
+            outError.pointee = "No text on pasteboard" as NSString
+            return
+        }
+        guard let data = text.data(using: .utf8) else { return }
+
+        do {
+            // Write to a temp file so MappedFile / FormatDetector can work.
+            let tmp = FileManager.default.temporaryDirectory
+                .appendingPathComponent("\(UUID().uuidString).txt")
+            try data.write(to: tmp)
+            defer { try? FileManager.default.removeItem(at: tmp) }
+
+            let mapped   = try MappedFile(url: tmp)
+            let detected = FormatDetector.detect(file: mapped, fileExtension: nil)
+
+            // Use JSONDocumentSerializer for JSON; fall back to returning original
+            // text for other formats (full round-trip serialisers are in-progress).
+            var result: String?
+            switch detected {
+            case .json, .unknown:
+                let task = Task<String?, Never> {
+                    do {
+                        let idx  = try await JSONParser().buildIndex(from: mapped)
+                        let ni   = idx.buildNodeIndex()
+                        let ser  = JSONDocumentSerializer(index: ni, mappedFile: mapped)
+                        let d    = try ser.serialize(pretty: pretty)
+                        return String(data: d, encoding: .utf8)
+                    } catch { return nil }
+                }
+                // Block until the async task completes (Services are synchronous).
+                result = DispatchSemaphore.wait(for: task)
+            default:
+                // For XML/YAML/CSV, return unchanged (future work).
+                result = text
+            }
+
+            if let out = result {
+                pasteboard.clearContents()
+                pasteboard.setString(out, forType: .string)
+            } else {
+                outError.pointee = "Could not parse the selected text." as NSString
+            }
+        } catch {
+            outError.pointee = error.localizedDescription as NSString
+        }
+    }
+
     // MARK: Welcome window
 
     /// Opens the welcome window, or brings an existing one to the front.
@@ -151,6 +232,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         _welcomeWindow = window
+    }
+}
+
+// MARK: - DispatchSemaphore helper
+
+/// Blocks the calling thread until a Swift `Task` completes, then returns its value.
+///
+/// Used exclusively for the macOS Services handlers which must be synchronous.
+/// Never call this on the main actor — it will deadlock.
+private extension DispatchSemaphore {
+    static func wait<T: Sendable>(for task: Task<T, Never>) -> T {
+        let sem = DispatchSemaphore(value: 0)
+        var result: T!
+        Task.detached {
+            result = await task.value
+            sem.signal()
+        }
+        sem.wait()
+        return result
     }
 }
 

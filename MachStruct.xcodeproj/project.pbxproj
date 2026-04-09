@@ -9,6 +9,9 @@
 /* Begin PBXBuildFile section */
 		0DD3E3851B844021B714B1EE /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4070DC5008EE4B8A99811DB5 /* WelcomeView.swift */; };
 		28B0839D1581A4ED1207CB4F /* MachStructApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78176BDF8A0409D74304F7A5 /* MachStructApp.swift */; };
+		ABD657A1C90E4BD38E0DB6A7 /* SyntaxHighlighter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7817C68AA5584BF5A6478410 /* SyntaxHighlighter.swift */; };
+		ABBAF63D0B804F1FAABF0656 /* CSVStatsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 695B4DB8E6174B26AE386E0D /* CSVStatsPanel.swift */; };
+		1CD752A47CA249E1AEF25BDB /* ClipboardWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08B0D3A62C114CDE92E1598E /* ClipboardWatcher.swift */; };
 		3AA47E46E2EB9C60F011A5D4 /* TypeBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97DCCC1F62C267236BB1F89A /* TypeBadge.swift */; };
 		5260B3B31AF06EA038B1220B /* TreeNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD818990A0282E6278E5884C /* TreeNode.swift */; };
 		53F06A2A8D9247B898B0E840 /* SearchEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8244AF5100B0479086F6CA72 /* SearchEnvironment.swift */; };
@@ -41,6 +44,9 @@
 		5F751214D3F721EF38DF437C /* TreeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TreeView.swift; sourceTree = "<group>"; };
 		6A19F7CF620D1FC01343CD19 /* TableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableView.swift; sourceTree = "<group>"; };
 		78176BDF8A0409D74304F7A5 /* MachStructApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MachStructApp.swift; sourceTree = "<group>"; };
+		7817C68AA5584BF5A6478410 /* SyntaxHighlighter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyntaxHighlighter.swift; sourceTree = "<group>"; };
+		695B4DB8E6174B26AE386E0D /* CSVStatsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CSVStatsPanel.swift; sourceTree = "<group>"; };
+		08B0D3A62C114CDE92E1598E /* ClipboardWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardWatcher.swift; sourceTree = "<group>"; };
 		8244AF5100B0479086F6CA72 /* SearchEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchEnvironment.swift; sourceTree = "<group>"; };
 		D817BE60797A41BDB6931DA1 /* BookmarkEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkEnvironment.swift; sourceTree = "<group>"; };
 		44591C000ABC43E39D0E656E /* PreviewViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewViewController.swift; sourceTree = "<group>"; };
@@ -125,6 +131,7 @@
 				78176BDF8A0409D74304F7A5 /* MachStructApp.swift */,
 				EBB9B474EFCC206A7AF61136 /* ContentView.swift */,
 				4070DC5008EE4B8A99811DB5 /* WelcomeView.swift */,
+				08B0D3A62C114CDE92E1598E /* ClipboardWatcher.swift */,
 				9F481E1643CAA448B1EFC2EB /* Info.plist */,
 				A1B2C3D4E5F601234567890B /* Assets.xcassets */,
 				A1B2C3D4E5F601234567890C /* MachStruct.entitlements */,
@@ -158,11 +165,29 @@
 			path = Toolbar;
 			sourceTree = "<group>";
 		};
+		64E087749F6A48EBB64321E1 /* RawView */ = {
+			isa = PBXGroup;
+			children = (
+				7817C68AA5584BF5A6478410 /* SyntaxHighlighter.swift */,
+			);
+			path = RawView;
+			sourceTree = "<group>";
+		};
+		C886E16F4A0E423E9E2FD8A3 /* CSV */ = {
+			isa = PBXGroup;
+			children = (
+				695B4DB8E6174B26AE386E0D /* CSVStatsPanel.swift */,
+			);
+			path = CSV;
+			sourceTree = "<group>";
+		};
 		89DE75843AEE840DCD872D45 /* UI */ = {
 			isa = PBXGroup;
 			children = (
 				F3A91C502E8B4D769C150871 /* Bookmarks */,
+				C886E16F4A0E423E9E2FD8A3 /* CSV */,
 				1D94133E764AA1F23D57C5E2 /* Editing */,
+				64E087749F6A48EBB64321E1 /* RawView */,
 				684F1164AE9A4D818D53CB45 /* Search */,
 				47BB7154A417D0880DED309C /* TableView */,
 				7305384F0A1C76B22309846A /* Toolbar */,
@@ -295,6 +320,9 @@
 				53F06A2A8D9247B898B0E840 /* SearchEnvironment.swift in Sources */,
 				7FAE129CF28946DDA8168A29 /* ExpandedTreeView.swift in Sources */,
 				A2335F17FAC94F148FE8ACCC /* BookmarkEnvironment.swift in Sources */,
+				ABD657A1C90E4BD38E0DB6A7 /* SyntaxHighlighter.swift in Sources */,
+				ABBAF63D0B804F1FAABF0656 /* CSVStatsPanel.swift in Sources */,
+				1CD752A47CA249E1AEF25BDB /* ClipboardWatcher.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

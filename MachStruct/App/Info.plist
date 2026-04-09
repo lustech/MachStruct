@@ -127,5 +127,46 @@
             </dict>
         </dict>
     </array>
+    <key>NSServices</key>
+    <array>
+        <dict>
+            <key>NSMenuItem</key>
+            <dict>
+                <key>default</key>
+                <string>Format with MachStruct</string>
+            </dict>
+            <key>NSMessage</key>
+            <string>formatWithMachStruct</string>
+            <key>NSSendTypes</key>
+            <array>
+                <string>public.utf8-plain-text</string>
+            </array>
+            <key>NSReturnTypes</key>
+            <array>
+                <string>public.utf8-plain-text</string>
+            </array>
+            <key>NSPortName</key>
+            <string>MachStruct</string>
+        </dict>
+        <dict>
+            <key>NSMenuItem</key>
+            <dict>
+                <key>default</key>
+                <string>Minify with MachStruct</string>
+            </dict>
+            <key>NSMessage</key>
+            <string>minifyWithMachStruct</string>
+            <key>NSSendTypes</key>
+            <array>
+                <string>public.utf8-plain-text</string>
+            </array>
+            <key>NSReturnTypes</key>
+            <array>
+                <string>public.utf8-plain-text</string>
+            </array>
+            <key>NSPortName</key>
+            <string>MachStruct</string>
+        </dict>
+    </array>
 </dict>
 </plist>

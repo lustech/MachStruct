@@ -35,11 +35,18 @@ struct ContentView: View {
     /// so the main thread is never blocked.
     @State private var rawText: String = ""
 
+    /// Syntax-highlighted version of `rawText` (computed after serialisation).
+    /// `nil` while being computed or when text exceeds the highlight limit.
+    @State private var highlightedRawText: AttributedString? = nil
+
     /// True while raw text is being serialized in the background.
     @State private var isSerializingRaw: Bool = false
 
     /// When true the raw view shows pretty-printed output; false = minified. (P4-04)
     @State private var rawPretty: Bool = true
+
+    /// True when the CSV column statistics sheet is visible.
+    @State private var showCSVStats: Bool = false
 
     /// True while an export conversion is running in the background.
     @State private var isExporting: Bool = false
@@ -125,6 +132,11 @@ struct ContentView: View {
         }
         .frame(minWidth: 400, minHeight: 300)
         .toolbar { toolbarContent }
+        .sheet(isPresented: $showCSVStats) {
+            if let index = document.nodeIndex {
+                CSVStatsPanel(nodeIndex: index)
+            }
+        }
         // Cmd+D: toggle bookmark on the currently selected node (P4-03).
         // A hidden Button is the idiomatic SwiftUI way to bind a keyboard
         // shortcut to an action without a visible control.
@@ -233,6 +245,18 @@ struct ContentView: View {
             }
         }
 
+        // ── CSV column stats (P4 quick win) ──────────────────────────────
+        ToolbarItem(placement: .primaryAction) {
+            if document.nodeIndex != nil, document.formatName == "CSV" {
+                Button {
+                    showCSVStats = true
+                } label: {
+                    Label("Column Stats", systemImage: "chart.bar.xaxis")
+                }
+                .help("Show CSV column statistics")
+            }
+        }
+
         // ── Raw text toggle ────────────────────────────────────────────────
         ToolbarItem(placement: .primaryAction) {
             if document.nodeIndex != nil {
@@ -330,31 +354,54 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Raw view (P2-09)
+    // MARK: - Raw view (P2-09, syntax highlighting added as quick win)
 
     private var rawView: some View {
         ScrollView([.horizontal, .vertical]) {
-            Text(rawText)
-                .font(.system(.body, design: .monospaced))
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .padding()
+            Group {
+                if let highlighted = highlightedRawText {
+                    // Highlighted AttributedString — font is baked in by SyntaxHighlighter.
+                    Text(highlighted)
+                        .textSelection(.enabled)
+                } else {
+                    // Plain fallback while highlighting runs, or for oversized files.
+                    Text(rawText)
+                        .font(.system(.body, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding()
         }
         .background(Color(NSColor.textBackgroundColor))
     }
 
-    /// Serialize the document asynchronously and update `rawText`.
+    /// Serialize the document asynchronously, then apply syntax highlighting.
     ///
     /// Respects `rawPretty`: pretty-prints when `true`, minifies when `false` (P4-04).
+    /// Highlighting runs on a second background task so serialisation latency is
+    /// unchanged for large files.
     private func refreshRawText() {
         guard !isSerializingRaw else { return }
-        isSerializingRaw = true
-        let pretty = rawPretty      // capture before Task so mutations don't race
+        isSerializingRaw   = true
+        highlightedRawText = nil
+        let pretty     = rawPretty
+        let formatName = document.formatName
         Task {
             do {
-                rawText = try await document.serializeDocument(pretty: pretty)
+                let text = try await document.serializeDocument(pretty: pretty)
+                rawText = text
+
+                // Highlight on a utility-priority background thread.
+                if let fmt = SyntaxHighlighter.Format(formatName: formatName) {
+                    let attributed = await Task.detached(priority: .utility) {
+                        SyntaxHighlighter.highlight(text, format: fmt)
+                    }.value
+                    highlightedRawText = attributed
+                }
             } catch {
-                rawText = "// Serialization error: \(error.localizedDescription)"
+                rawText            = "// Serialization error: \(error.localizedDescription)"
+                highlightedRawText = nil
             }
             isSerializingRaw = false
         }
