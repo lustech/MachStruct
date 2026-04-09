@@ -1,4 +1,5 @@
 import SwiftUI
+import Sparkle
 
 // MARK: - MachStructDocumentController
 
@@ -58,6 +59,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private static var _welcomeWindow: NSWindow?
     private var launchPanelObserver: Any?
+
+    // MARK: - Sparkle auto-update (P5-06)
+    //
+    // `SPUStandardUpdaterController` must be held for the lifetime of the app.
+    // It reads SUFeedURL and SUPublicEDKey from Info.plist automatically.
+    // On first launch after install it schedules a background check; subsequent
+    // checks run on the Sparkle default interval (once per day).
+    let updaterController = SPUStandardUpdaterController(
+        startingUpdater: true,
+        updaterDelegate: nil,
+        userDriverDelegate: nil
+    )
 
     // MARK: Launch
 
@@ -159,6 +172,17 @@ struct MachStructApp: App {
                 .frame(minWidth: 600, minHeight: 400)
         }
         .commands {
+            // "Check for Updates…" in the application menu (P5-06).
+            // CommandGroup(replacing: .appInfo) puts it right after "About MachStruct".
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") {
+                    appDelegate.updaterController.checkForUpdates(nil)
+                }
+                // Disabled while the updater is still initialising or an update
+                // check is already in flight.
+                .disabled(!appDelegate.updaterController.updater.canCheckForUpdates)
+            }
+
             CommandGroup(after: .windowList) {
                 Divider()
                 Button("Show Welcome Window") {

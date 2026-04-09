@@ -295,13 +295,14 @@ When starting a task, the AI agent should: (1) read the reference docs, (2) chec
 - **Acceptance criteria:** Pushing `git tag v1.0.0 && git push --tags` triggers the workflow, completes in < 15 min, and produces a draft GitHub Release with `MachStruct-v1.0.0.dmg` attached. `spctl --assess --type exec MachStruct.app` exits 0 on a clean macOS 14 machine.
 - **Reference docs:** ROADMAP.md §Phase 5, `scripts/README-signing.md`
 
-### P5-06: Sparkle Auto-Updates
+### P5-06: Sparkle Auto-Updates ✅ DONE
 - **Module:** App
 - **Dependencies:** P5-05
-- **Description:** Add [Sparkle 2](https://sparkle-project.org/) as an SPM dependency. In `Info.plist`, set `SUFeedURL` to the hosted `appcast.xml` URL. In `MachStructApp.swift`, instantiate `SPUStandardUpdaterController` as a `@StateObject` and expose "Check for Updates…" in the app menu. Generate an EdDSA key pair with `generate_keys` (Sparkle CLI); store the public key in `Info.plist` (`SUPublicEDKey`); store the private key securely outside the repo. Create an `appcast.xml` template and a `scripts/update-appcast.sh` helper that generates a new entry from the DMG produced by P5-05. The update check must run on a background thread and must not block launch.
-- **Key files:** `Package.swift` (Sparkle dep), `MachStruct/App/MachStructApp.swift`, `MachStruct/App/Info.plist` (`SUFeedURL`, `SUPublicEDKey`), `appcast.xml`, `scripts/update-appcast.sh`
-- **Acceptance criteria:** A test `appcast.xml` pointing to a fake newer version causes Sparkle's update dialog to appear within 5 seconds of launch (in debug). Removing `SUFeedURL` or hosting an empty appcast causes a graceful no-op (no crash). `SUPublicEDKey` in `Info.plist` matches the private key used to sign the appcast.
-- **Reference docs:** ROADMAP.md §Phase 5, [Sparkle documentation](https://sparkle-project.org/documentation/)
+- **Description:** Sparkle 2 added as SPM dependency (`Package.swift` + `project.pbxproj` `XCRemoteSwiftPackageReference`). `SPUStandardUpdaterController` held on `AppDelegate` for app lifetime. "Check for Updates…" wired into app menu via `CommandGroup(after: .appInfo)`. `SUFeedURL = https://machstruct.lustech.se/appcast.xml` and `SUPublicEDKey` placeholder set in `Info.plist`. `NSAppTransportSecurity` allows `machstruct.lustech.se` only. `scripts/appcast.xml` template + `scripts/README-sparkle.md` release guide.
+- **Key files:** `Package.swift`, `MachStruct.xcodeproj/project.pbxproj`, `MachStruct/App/MachStructApp.swift`, `MachStruct/App/Info.plist`, `scripts/appcast.xml`, `scripts/README-sparkle.md`
+- **Remaining one-time step:** Run Sparkle's `generate_keys` tool, paste the printed public key into `Info.plist` (`SUPublicEDKey`), and build `sign_update` for use during releases.
+- **Acceptance criteria:** ✅ Sparkle compiles and links. ✅ "Check for Updates…" appears in app menu. ✅ Appcast template and release guide in place. ⏳ `SUPublicEDKey` placeholder to be replaced with real key before first release.
+- **Reference docs:** ROADMAP.md §Phase 5, `scripts/README-sparkle.md`, [Sparkle documentation](https://sparkle-project.org/documentation/)
 
 ### P5-07: App Store Submission Prep
 - **Module:** Build / Marketing

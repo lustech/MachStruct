@@ -78,6 +78,35 @@
         </dict>
     </array>
 
+    <!-- ── Sparkle auto-update (P5-06) ─────────────────────────────────────── -->
+    <!-- Replace with your hosted appcast URL before shipping. -->
+    <key>SUFeedURL</key>
+    <string>https://machstruct.lustech.se/appcast.xml</string>
+
+    <!-- EdDSA public key produced by `generate_keys` (sparkle-project/Sparkle).
+         Replace PLACEHOLDER with the actual key after running the tool.
+         The matching private key must be stored in your keychain (never committed). -->
+    <key>SUPublicEDKey</key>
+    <string>SPARKLE_ED_PUBLIC_KEY_PLACEHOLDER</string>
+
+    <!-- Sparkle 2 requires these keys for sandboxed apps (App Sandbox entitlement). -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <!-- Allow the appcast URL; lock down everything else. -->
+        <key>NSAllowsArbitraryLoads</key>
+        <false/>
+        <key>NSExceptionDomains</key>
+        <dict>
+            <key>machstruct.lustech.se</key>
+            <dict>
+                <key>NSExceptionAllowsInsecureHTTPLoads</key>
+                <false/>
+                <key>NSIncludesSubdomains</key>
+                <true/>
+            </dict>
+        </dict>
+    </dict>
+
     <!-- Import public.yaml since it may not be registered on all macOS 14 installs -->
     <key>UTImportedTypeDeclarations</key>
     <array>

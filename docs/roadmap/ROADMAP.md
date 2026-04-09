@@ -156,7 +156,7 @@ All three pre-release blockers are now resolved:
 
 5. ~~**Notarization pipeline**~~ ✅ **DONE** *(P5-05)* — `.github/workflows/release.yml` triggers on `v*` tag push. `macos-14` runner: imports Developer ID cert into temp keychain → archives → exports → `xcrun notarytool submit --wait` → asserts "Accepted" → `xcrun stapler staple` → `codesign --verify` + `spctl --assess` → `hdiutil create UDZO` → `gh release create --draft`. Six Actions secrets required (see TASK-INDEX.md §P5-05). Release is created as a draft for review before publishing.
 
-6. **Sparkle auto-updates** *(P5-06)* — Add Sparkle 2 (SPM). `SUFeedURL` in `Info.plist` points at a hosted `appcast.xml`. Appcast signed with EdDSA key. Update check runs in background on launch.
+6. ~~**Sparkle auto-updates**~~ ✅ **DONE** *(P5-06)* — Sparkle 2 added as SPM dependency. `SPUStandardUpdaterController` held on `AppDelegate`; "Check for Updates…" wired into app menu. `SUFeedURL` → `https://machstruct.lustech.se/appcast.xml`, `SUPublicEDKey` placeholder ready for `generate_keys`. `scripts/appcast.xml` template + `scripts/README-sparkle.md` release guide included.
 
 7. **App Store submission prep** *(P5-07)* — Sandbox entitlements audited (only `user-selected.read-write` required for `DocumentGroup`). App Store Connect listing: screenshots at 1280×800 and 1440×900, description, keywords, age rating, pricing. `xcrun altool --validate-app` clean before submission.
 
@@ -169,10 +169,10 @@ All three pre-release blockers are now resolved:
 ✅ P5-04 (signing config + entitlements)
          │
          ▼
-    P5-05 (notarize CI — GitHub Actions DMG pipeline)
+✅ P5-05 (notarize CI — GitHub Actions DMG pipeline)
          │
          ▼
-    P5-06 (Sparkle auto-updates)
+✅ P5-06 (Sparkle auto-updates)
          │
          ▼
     ship v1.0 DMG

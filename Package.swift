@@ -11,6 +11,9 @@ let package = Package(
     dependencies: [
         // Yams: Swift YAML parser wrapping libyaml (bundled — no brew install required).
         .package(url: "https://github.com/jpsim/Yams.git", from: "5.0.0"),
+        // Sparkle 2: auto-update framework for macOS notarized DMG builds (P5-06).
+        // Only linked by the app target; not needed by Core or tests.
+        .package(url: "https://github.com/sparkle-project/Sparkle.git", from: "2.0.0"),
     ],
     targets: [
         // C++ bridge: thin extern "C" wrapper around simdjson.
@@ -49,7 +52,10 @@ let package = Package(
         // Full UI: P1-07 (StructDocument), P1-08 (TreeView), P1-09 (StatusBar).
         .executableTarget(
             name: "MachStruct",
-            dependencies: ["MachStructCore"],
+            dependencies: [
+                "MachStructCore",
+                .product(name: "Sparkle", package: "Sparkle"),
+            ],
             path: "MachStruct/App"
         ),
 
