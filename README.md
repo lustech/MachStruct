@@ -13,22 +13,24 @@ MachStruct opens, navigates, edits, and converts large JSON, XML, YAML, and CSV 
 
 ## Features
 
-### Viewing
-- **Full-text search** — Cmd+F searches all keys and scalar values; yellow highlights across the tree with amber active-match indicator and ↑↓ navigation counter in the toolbar; navigating to a match inside a collapsed subtree auto-expands the full ancestor chain and scrolls the row into view
-- **Welcome screen** — drag files onto the drop zone, paste raw text directly, or pick from recents; no bare Open dialog on launch
-- **Instant open** — simdjson SIMD parsing on a background actor; top-level nodes appear while the rest indexes
-- **Zero-copy I/O** — memory-mapped files via `mmap`; a 100 MB file uses < 5 MB of resident memory while browsing
-- **Lazy value parsing** — only nodes you expand are fully parsed
-- **Progressive tree** — `AsyncStream` feeds the UI in batches so the tree is interactive before parsing finishes
-- **Table view** — automatic spreadsheet grid for CSV files and uniform JSON/YAML arrays of objects
-- **Raw text view** — toolbar toggle shows the full document as formatted text in a monospaced pane
-- **Status bar** — live node count, file size, format label, and path to the selected node (`root.items[42].name`)
+### Viewing & Navigation
+- **Full-text search** — Cmd+F; yellow highlights on all matches, amber on the active one; ↑↓ navigation counter; navigating to a match auto-expands collapsed ancestors and scrolls the row into view
+- **Navigation history** — Cmd+[ / Cmd+] step back and forward through every node visited this session; toolbar chevrons show the current position
+- **Bookmarks** — Cmd+D toggles a bookmark on any node; toolbar menu lists bookmarks by path string; `bookmark.fill` icon in each bookmarked row; Cmd+D or context menu removes them
+- **Tree view** — expandable outline; drag-and-drop to reorder array items; context-menu add/delete
+- **Table view** — sticky-header spreadsheet grid for CSV files and uniform JSON/YAML arrays of objects
+- **Raw text view** — syntax-highlighted (JSON, XML, YAML, CSV) with font-size control; pretty/minify toggle; text selection enabled
+- **CSV column statistics** — "Column Stats" toolbar button opens a per-column breakdown: row count, non-empty, unique count, detected type (Integer/Decimal/String/Mixed), numeric min/max
+- **Status bar** — live node count, file size, format label, and full path to the selected node (`root.items[42].name`)
+- **Instant open** — simdjson SIMD parsing on a background thread; top-level nodes appear while the rest indexes
+- **Zero-copy I/O** — memory-mapped files via `mmap`; a 100 MB file uses < 5 MB of resident memory
+- **Lazy value parsing** — only nodes you expand are fully parsed; `AsyncStream` feeds the UI in batches
 
 ### Editing
-- **Inline value editing** — click any scalar to edit; auto-detects type (null › bool › int › float › string)
+- **Inline value editing** — click any scalar to edit; type auto-detected (null › bool › int › float › string)
 - **Key renaming** — double-click a key label
 - **Add / delete nodes** — context-menu "Add Key-Value", "Add Item", "Delete"
-- **Array reordering** — Move Up / Move Down via context menu with full undo/redo
+- **Array reordering** — drag-and-drop rows within the tree view (array children only); Move Up / Move Down also available via context menu
 - **Copy / paste** — "Copy as JSON" for any subtree; "Paste from Clipboard" into containers
 - **Unlimited undo/redo** — Cmd+Z / Cmd+Shift+Z via native `UndoManager`
 - **Save** — Cmd+S round-trips correctly; window dirty dot appears on first edit
@@ -39,18 +41,31 @@ MachStruct opens, navigates, edits, and converts large JSON, XML, YAML, and CSV 
 - **YAML** — Yams/libyaml AST walk; anchor, scalar-style, and tag badges
 - **CSV** — auto-delimiter detection (`,` `;` `\t` `|`); auto-header detection; RFC 4180 quoting
 - **Auto-detection** — format sniffed from file content (first 512 bytes), not just extension
-- **Export** — "Export as JSON / YAML / CSV…" toolbar menu with native save panel
+- **Export / convert** — "Export as JSON / YAML / CSV…" toolbar menu with native save panel; format conversion in one click
+
+### macOS Integration
+- **Welcome window** — drop zone, paste raw text directly into an inline editor, recent files list; no bare Open dialog on launch; Cmd+Shift+0 reopens it
+- **Quick Look** — Space bar in Finder previews JSON, XML, YAML, and CSV files (rendered by the embedded `.appex` extension)
+- **Spotlight** — all keys and string values are full-text indexed so `mdfind` and Spotlight search find content inside your documents
+- **macOS Services** — "Format with MachStruct" and "Minify with MachStruct" appear in the Services menu when text is selected in any app
+- **Clipboard watch** — the welcome window detects structured data on the clipboard and offers a one-click "Open" banner
+- **Sparkle auto-updates** — background update check on launch; "Check for Updates…" in the app menu
+
+### Settings & Onboarding
+- **Preferences (⌘,)** — tree view and raw view font size (11–16 pt); default raw view mode (pretty/minify); show welcome window at launch toggle
+- **Onboarding** — feature overview shown once on first launch; re-openable via Help › Show Welcome Guide…
 
 ---
 
 ## Requirements
 
-| Dependency | Version |
-|---|---|
-| macOS | 14.0+ |
-| Xcode | 15+ |
-| simdjson | 3.12.3 (vendored — no install required) |
-| Yams | 5.4+ (resolved automatically via SPM) |
+| Dependency | Version | Notes |
+|---|---|---|
+| macOS | 14.0+ | |
+| Xcode | 15+ | |
+| simdjson | 3.12.3 | Vendored — no install required |
+| Yams | 5.4+ | Resolved automatically via SPM |
+| Sparkle | 2.x | Resolved automatically via SPM |
 
 No external dependencies to install. simdjson is bundled as a single-header amalgamation under `Sources/CSimdjsonBridge/vendor/`.
 
@@ -86,79 +101,88 @@ The first test run generates ~120 MB of corpus files in `NSTemporaryDirectory()`
 ```
 MachStruct/
 ├── Package.swift
-├── MachStruct.xcodeproj          macOS app target (Info.plist, signing, assets)
+├── MachStruct.xcodeproj            macOS app target (Info.plist, signing, assets)
 ├── Sources/
-│   └── CSimdjsonBridge/          C++ DOM walker → flat MSIndexEntry[]
+│   └── CSimdjsonBridge/            C++ DOM walker → flat MSIndexEntry[]
 │       ├── include/MachStructBridge.h
 │       ├── MachStructBridge.cpp
-│       └── vendor/               simdjson 3.12.3 single-header amalgamation
-│           ├── simdjson.h
-│           └── simdjson.cpp
+│       └── vendor/                 simdjson 3.12.3 single-header amalgamation
 ├── MachStruct/
-│   ├── Assets.xcassets/          App icon (all macOS sizes)
-│   ├── Core/                     MachStructCore library (no UI deps)
+│   ├── Assets.xcassets/            App icon (all macOS sizes, dark navy + node-tree motif)
+│   ├── Core/                       MachStructCore library (no UI deps)
 │   │   ├── Model/
-│   │   │   ├── DocumentNode.swift    NodeID · NodeType · NodeValue · DocumentNode
-│   │   │   ├── NodeIndex.swift       O(1) flat lookup + COW mutation + isTabular()
-│   │   │   ├── ScalarValue.swift     Typed leaf values + parseScalarValue()
-│   │   │   ├── EditTransaction.swift Reversible edit ops + factory methods
-│   │   │   └── FormatMetadata.swift  Per-format annotations (XML/YAML/CSV metadata)
+│   │   │   ├── DocumentNode.swift      NodeID · NodeType · NodeValue · DocumentNode
+│   │   │   ├── NodeIndex.swift         O(1) flat lookup + COW mutation + isTabular()
+│   │   │   ├── ScalarValue.swift       Typed leaf values + parseScalarValue()
+│   │   │   ├── EditTransaction.swift   Reversible edit ops + factory methods
+│   │   │   ├── FormatMetadata.swift    Per-format annotations (XML/YAML/CSV metadata)
+│   │   │   └── SearchEngine.swift      DFS full-text scan; SearchMatch with rowNodeID
 │   │   ├── FileIO/
-│   │   │   └── MappedFile.swift      mmap wrapper with madvise hints
+│   │   │   └── MappedFile.swift        mmap wrapper with madvise hints
 │   │   ├── Parsers/
-│   │   │   ├── StructParser.swift    Protocol · IndexEntry · StructuralIndex · ParserRegistry
-│   │   │   ├── JSONParser.swift      Two-phase parser (simdjson + Foundation)
-│   │   │   ├── XMLParser.swift       libxml2 SAX parser
-│   │   │   ├── YAMLParser.swift      Yams/libyaml AST walker
-│   │   │   ├── CSVParser.swift       RFC 4180 + auto-delimiter/header detection
-│   │   │   └── FormatDetector.swift  512-byte content sniffer (JSON/XML/YAML/CSV)
+│   │   │   ├── StructParser.swift      Protocol · IndexEntry · StructuralIndex
+│   │   │   ├── JSONParser.swift        Two-phase parser (simdjson + Foundation)
+│   │   │   ├── XMLParser.swift         libxml2 SAX parser
+│   │   │   ├── YAMLParser.swift        Yams/libyaml AST walker
+│   │   │   ├── CSVParser.swift         RFC 4180 + auto-delimiter/header detection
+│   │   │   └── FormatDetector.swift    512-byte content sniffer (JSON/XML/YAML/CSV)
 │   │   └── Serializers/
 │   │       ├── JSONDocumentSerializer.swift  NodeIndex → JSON Data
 │   │       ├── YAMLDocumentSerializer.swift  NodeIndex → YAML text (block style)
 │   │       ├── CSVDocumentSerializer.swift   NodeIndex → RFC 4180 CSV (tabular only)
 │   │       └── FormatConverter.swift         Unified convert(index:to:) entry point
-│   └── App/                      MachStruct executable
-│       ├── MachStructApp.swift     AppDelegate + MachStructDocumentController + DocumentGroup
-│       ├── WelcomeView.swift       Launch window (drop zone, Open File, recent files)
-│       ├── ContentView.swift       Tree / table / raw view switcher + toolbar
-│       ├── MachStruct.entitlements App Sandbox + user-selected read-write
-│       ├── Info.plist              UTType declarations, bundle ID, document types
+│   └── App/                        MachStruct executable
+│       ├── MachStructApp.swift       AppDelegate · DocumentController · Sparkle · Services
+│       ├── WelcomeView.swift         Drop zone · paste editor · recent files · clipboard banner
+│       ├── ContentView.swift         Tree/table/raw switcher · toolbar · history · bookmarks
+│       ├── ClipboardWatcher.swift    NSPasteboard polling · DetectedClipboard · ClipboardBanner
+│       ├── MachStruct.entitlements   App Sandbox + user-selected read-write
+│       ├── Info.plist                UTType declarations · NSServices · Sparkle keys
 │       ├── Document/
-│       │   └── StructDocument.swift  ReferenceFileDocument; auto-detect format on open
+│       │   └── StructDocument.swift    ReferenceFileDocument; async load; format dispatch
 │       └── UI/
-│           ├── TreeView/
-│           │   ├── TreeView.swift    SwiftUI List + OutlineGroup
-│           │   ├── TreeNode.swift    Recursive data wrapper; format-specific badge helpers
-│           │   ├── NodeRow.swift     Editing · move · copy/paste · XML/YAML badges
-│           │   └── TypeBadge.swift   Colored capsule pills (str/int/bool/obj/arr/xml/yaml…)
-│           ├── TableView/
-│           │   └── TableView.swift   Sticky header + LazyVStack grid for tabular data
+│           ├── Bookmarks/
+│           │   └── BookmarkEnvironment.swift  bookmarkedNodeIDs + toggleBookmark env keys
+│           ├── CSV/
+│           │   └── CSVStatsPanel.swift         Per-column stats sheet (count/unique/type/min/max)
 │           ├── Editing/
 │           │   └── CommitEditEnvironment.swift  commitEdit / serializeNode env keys
-│           └── Toolbar/
-│               └── StatusBar.swift   Node count · file size · format name · node path
-├── MachStructTests/
-│   ├── ModelTests.swift              DocumentNode, COW, Sendable
-│   ├── MappedFileTests.swift         mmap, slices, madvise
-│   ├── SimdjsonBridgeTests.swift     C bridge, all scalar types
-│   ├── JSONParserTests.swift         Foundation + simdjson paths
-│   ├── XMLParserTests.swift          Elements, attributes, namespaces, CDATA
-│   ├── YAMLParserTests.swift         Mappings, sequences, scalars, anchors, styles
-│   ├── CSVParserTests.swift          RFC 4180, delimiter/header detection, CRLF
-│   ├── TableViewTests.swift          isTabular(), tabularColumns
-│   ├── EditTransactionTests.swift    All factory methods + undo
-│   ├── JSONSerializerTests.swift     Round-trips, move, paste
-│   ├── FormatConverterTests.swift    YAML/CSV serializers + cross-format round-trips
-│   ├── FormatDetectorTests.swift     Content sniffing, BOM, extension fallback
-│   ├── Generators/
-│   │   └── TestCorpusGenerator.swift 7 corpus files, cached in tmp/
+│           ├── Onboarding/
+│           │   └── OnboardingView.swift         First-launch 6-card feature grid
+│           ├── RawView/
+│           │   └── SyntaxHighlighter.swift      NSMutableAttributedString regex highlighter
+│           ├── Search/
+│           │   └── SearchEnvironment.swift      searchMatchIDs + activeSearchMatchID env keys
+│           ├── Settings/
+│           │   └── SettingsView.swift           Tabbed ⌘, Preferences (AppSettings.Keys)
+│           ├── TableView/
+│           │   └── TableView.swift              Sticky header + LazyVStack grid for tabular data
+│           ├── Toolbar/
+│           │   └── StatusBar.swift              Node count · file size · format · node path
+│           └── TreeView/
+│               ├── ExpandedTreeView.swift       Flat [FlatRow] tree · drag-and-drop · scroll
+│               ├── NodeRow.swift                Editing · bookmarks · copy/paste · badges
+│               ├── TreeNode.swift               Recursive data wrapper; badge helpers
+│               ├── TreeView.swift               SwiftUI List + OutlineGroup (legacy entry)
+│               └── TypeBadge.swift              Colored capsule pills (str/int/bool/obj/arr…)
+├── MachStructQuickLook/            Quick Look Preview Extension (.appex)
+│   ├── PreviewViewController.swift   QLPreviewingController; UTF-8 NSTextView; 256 KB limit
+│   └── Info.plist
+├── MachStructSpotlight/            Spotlight Importer (.mdimporter)
+│   ├── GetMetadata.swift             @_cdecl("GetMetadataForFile"); kMDItemTextContent ≤ 1 MB
+│   ├── schema.strings
+│   └── Info.plist
+├── MachStructTests/                332 tests
+│   ├── …Parser/Serializer/Model tests
 │   └── Performance/
 │       └── ParseBenchmarks.swift     Hard timing assertions with os_signpost
 ├── .github/
 │   └── workflows/
-│       └── release.yml               CI: archive → notarize → staple → DMG → GitHub Release
+│       └── release.yml               CI: archive → notarize → staple → DMG → GitHub Release draft
 └── scripts/
-    └── README-signing.md             Certificate setup, archiving, notarization guide
+    ├── appcast.xml                   Sparkle RSS feed template
+    ├── README-signing.md             Certificate setup, archiving, notarization guide
+    └── README-sparkle.md             generate_keys, sign_update, per-release appcast workflow
 ```
 
 ### Two-Phase Parsing
@@ -233,36 +257,37 @@ Phase 2 — On-demand value parsing
 - [x] P3-07 Format conversion — `YAMLDocumentSerializer`, `CSVDocumentSerializer`, `FormatConverter`, export menu
 - [x] P3-08 Auto-detection — `FormatDetector` content sniffer; `StructDocument` opens all four formats
 
-### Phase 4 — Power Tools 🔄
+### Phase 4 — Power Tools ✅ v1.0 complete
 - [x] P4-01 Full-text search — Cmd+F, keys + values, yellow/amber highlights, ↑↓ navigation
-- [x] P4-02 Auto-expand on search nav — navigating to a match inside a collapsed subtree auto-expands ancestors and scrolls the row into view
-- [ ] Path queries (JQ-style expressions)
-- [ ] Diff view — compare two documents or two revisions
-- [ ] Schema validation (JSON Schema, XSD/DTD)
-- [ ] Format/minify — pretty-print or minify JSON/XML/YAML
-- [ ] Syntax highlighting in raw text view (deferred from Phase 3)
-- [ ] CSV column statistics — type distribution, unique count, min/max (deferred from Phase 3)
-- [ ] Drag-and-drop reordering in tree view (deferred from Phase 2)
-- [ ] Bookmarks and in-document navigation history
-- [ ] Clipboard watch — detect structured data and offer to open
+- [x] P4-02 Auto-expand on search nav — navigating to a match auto-expands ancestors, scrolls into view
+- [x] P4-03 Bookmarks — Cmd+D toggle; toolbar menu with path-string labels; `bookmark.fill` in NodeRow
+- [x] P4-04 Format/minify — segmented picker in raw view toolbar; async re-serialization
+- [x] P4-05 Drag-and-drop reordering — `ForEach.onMove` in `ExpandedTreeView`; array children only
+- [x] Syntax highlighting — JSON/XML/YAML/CSV regex colouring via `SyntaxHighlighter`; 150 KB limit
+- [x] CSV column statistics — per-column sheet: count, unique, type, min/max
+- [x] Navigation history — Cmd+[ / Cmd+] back/forward; toolbar chevrons; deduplication
+- [x] Clipboard watch — 1.5 s poll; format sniff; animated banner with one-click Open
 
-### Phase 5 — Release Engineering 🔄
+### Phase 5 — Release Engineering ✅ v1.0 complete
 - [x] P5-01 Vendor simdjson (bundled amalgamation v3.12.3 — no Homebrew required)
-- [x] P5-02 Xcode app target + `Info.plist` UTType declarations
-- [x] P5-03 App icon (`AppIcon.appiconset`, all required sizes)
+- [x] P5-02 Xcode app target + `Info.plist` UTType declarations + `GENERATE_INFOPLIST_FILE = NO`
+- [x] P5-03 App icon (`AppIcon.appiconset` — dark navy + node-tree motif, all macOS sizes)
 - [x] P5-04 Code signing (entitlements, `ExportOptions-Direct.plist`, `ExportOptions-AppStore.plist`, Hardened Runtime)
-- [x] P5-05 Notarization + GitHub Actions release pipeline → notarized DMG on tag push
-- [ ] P5-06 Sparkle 2 auto-updates (appcast, EdDSA signing, background update check)
-- [ ] P5-07 App Store submission prep (screenshots, listing copy, `xcrun altool` validation)
+- [x] P5-05 Notarization + GitHub Actions release pipeline → notarized DMG draft on tag push
+- [x] P5-06 Sparkle 2 auto-updates — `SPUStandardUpdaterController`; appcast template; EdDSA key placeholder
+- [ ] P5-07 App Store submission prep — screenshots, listing copy, `xcrun altool` validation *(v1.1)*
 
-### Phase 6 — Polish 🔄
-- [x] P6-02 Welcome / launch window (drop zone, Open File button, recent files list)
-- [x] P6-03 Paste raw text on welcome screen (inline TextEditor, auto-detect format, opens as untitled doc)
-- [ ] Settings UI (theme, font size, keyboard shortcut customisation)
-- [ ] Quick Look plugin
-- [ ] Spotlight importer
-- [ ] Accessibility audit (VoiceOver, keyboard-only navigation)
-- [ ] Localisation (en, de, fr, ja)
+### Phase 6 — Polish ✅ v1.0 complete
+- [x] P6-01 Settings UI — tabbed ⌘, Preferences: font sizes, default raw mode, welcome-on-launch toggle
+- [x] P6-02 Welcome / launch window — drop zone, Open File button, recent files list, Cmd+Shift+0
+- [x] P6-03 Paste raw text on welcome screen — inline TextEditor, auto-detect format, opens as untitled doc
+- [x] P6-04 Onboarding — first-launch 6-card feature grid; Help › Show Welcome Guide… re-opens it
+- [x] P6-05 Quick Look plugin — `.appex` embedded; UTF-8 preview; 256 KB limit; JSON/XML/YAML/CSV
+- [x] P6-06 Spotlight importer — `.mdimporter` embedded; `kMDItemTextContent` ≤ 1 MB full-text index
+- [x] macOS Services — "Format with MachStruct" / "Minify with MachStruct" in system Services menu
+- [ ] Accessibility audit — VoiceOver, keyboard-only navigation, Dynamic Type *(v1.1)*
+- [ ] Performance audit — profile against PERFORMANCE.md targets on current hardware *(v1.1)*
+- [ ] Localisation — en, de, fr, ja *(v1.1)*
 
 ---
 
@@ -288,7 +313,8 @@ See [`docs/`](docs/) for the full design documentation:
 | [`docs/roadmap/ROADMAP.md`](docs/roadmap/ROADMAP.md) | Full phase breakdown with implementation notes |
 | [`docs/tasks/TASK-INDEX.md`](docs/tasks/TASK-INDEX.md) | AI-agent task breakdown with acceptance criteria |
 | [`scripts/README-signing.md`](scripts/README-signing.md) | Certificate setup, archiving, notarization guide |
-| [`.github/workflows/release.yml`](.github/workflows/release.yml) | CI release pipeline: notarize → DMG → GitHub Release |
+| [`scripts/README-sparkle.md`](scripts/README-sparkle.md) | generate_keys, sign_update, per-release appcast workflow |
+| [`.github/workflows/release.yml`](.github/workflows/release.yml) | CI release pipeline: notarize → DMG → GitHub Release draft |
 
 ---
 

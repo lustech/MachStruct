@@ -509,6 +509,40 @@ Add to `MachStructTests/UI/WelcomeViewTests.swift` (or a new `PasteParserTests.s
 
 ---
 
+## v1.0 Quick-Win & Polish Features (all ✅ DONE)
+
+The following features were implemented as quick-win or medium-effort polish items during the pre-v1.0 sprint. Each is self-contained and does not have its own P-series ID.
+
+### Syntax Highlighting ✅ DONE
+- **Key file:** `MachStruct/App/UI/RawView/SyntaxHighlighter.swift`
+- **Description:** Regex-based `NSMutableAttributedString` highlighter for JSON (keys blue, values orange, numbers purple, booleans/null red), XML (tag names blue, attribute names teal, attribute values orange, comments dimmed), YAML (keys blue, comments green, numbers purple), CSV (header bold blue, numbers purple). Limit 150 KB; plain monospaced fallback above the limit. Runs on a utility background thread after serialisation; `ContentView` holds `highlightedRawText: AttributedString?`.
+
+### CSV Column Statistics ✅ DONE
+- **Key file:** `MachStruct/App/UI/CSV/CSVStatsPanel.swift`
+- **Description:** Sheet opened by a "Column Stats" toolbar button (visible only for CSV documents). Shows a card per column: row count, non-empty count, empty count, unique count (capped at 100), detected type (Integer/Decimal/String/Mixed/Empty), numeric min/max. Computation runs on `Task.detached`.
+
+### Navigation History ✅ DONE
+- **Key file:** `MachStruct/App/ContentView.swift` (history state + helpers)
+- **Description:** `navHistory: [NodeID]` + `navHistoryIndex: Int` + `isNavigatingHistory: Bool` flag. `pushHistory()` deduplicates consecutive entries and truncates forward stack on manual navigation. `goBack()` / `goForward()` share `navigate(to:in:)` which expands ancestors, selects, and scrolls. Cmd+[ / Cmd+] keyboard shortcuts; back/forward chevron buttons in `.navigation` toolbar placement.
+
+### Clipboard Watch ✅ DONE
+- **Key file:** `MachStruct/App/ClipboardWatcher.swift`
+- **Description:** `ClipboardWatcher` ObservableObject polls `NSPasteboard` every 1.5 s. Lightweight heuristic sniffer detects JSON (`{`/`[`), XML (`<`), YAML (key: lines), CSV (uniform delimiter count). Ignores text > 2 MB. `ClipboardBanner` is a dismissible animated overlay shown in `WelcomeView` with format icon, character count, "Open" (routes through `parsePastedText()`), and × dismiss.
+
+### macOS Services ✅ DONE
+- **Key files:** `MachStruct/App/Info.plist` (`NSServices`), `MachStruct/App/MachStructApp.swift` (`AppDelegate`)
+- **Description:** "Format with MachStruct" and "Minify with MachStruct" registered in `NSServices`. `@objc formatWithMachStruct` / `minifyWithMachStruct` handlers on `AppDelegate`. JSON text is round-tripped through `JSONParser` → `JSONDocumentSerializer`; XML/YAML/CSV pass through unchanged. A `DispatchSemaphore` helper bridges the async parse to the synchronous Services API. Note: macOS caches the Services menu — `pbs -update` or logout/login required after first install.
+
+### Settings UI (P6-01) ✅ DONE
+- **Key file:** `MachStruct/App/UI/Settings/SettingsView.swift`
+- **Description:** Tabbed `Settings` scene (⌘,). `AppSettings.Keys` and `AppSettings.Defaults` centralise all `UserDefaults` key names and default values. Tabs: General (show welcome on launch toggle, version/build info), Appearance (tree view font size 11–14 pt), Raw View (font size 11–16 pt, default pretty/minify radio). All `@AppStorage`; changes apply immediately.
+
+### Onboarding (P6-04) ✅ DONE
+- **Key file:** `MachStruct/App/UI/Onboarding/OnboardingView.swift`
+- **Description:** `AppDelegate.showOnboardingWindow()` presents a standalone `NSWindow` containing a 2-column `LazyVGrid` of 6 feature cards (tree navigation, editing, search, export, syntax highlighting, Quick Look/Spotlight). Shown automatically 0.4 s after first launch if `hasSeenOnboarding` is false. "Get Started" sets the flag. Re-openable via Help › Show Welcome Guide…
+
+---
+
 ## Task Dependency Graph (Phase 5)
 
 ```
