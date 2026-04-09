@@ -467,6 +467,45 @@ Add to `MachStructTests/UI/WelcomeViewTests.swift` (or a new `PasteParserTests.s
   - 332 existing tests still pass.
 - **Reference docs:** ROADMAP.md §Phase 6, ARCHITECTURE.md §4.1 (FormatDetector)
 
+### P4-03: Node Bookmarks ✅ DONE
+- **Module:** App / UI / Bookmarks, App / ContentView
+- **Dependencies:** P4-02 (ExpandedTreeView + expandPath machinery)
+- **Key files:** `MachStruct/App/UI/Bookmarks/BookmarkEnvironment.swift` (new), `MachStruct/App/ContentView.swift`, `MachStruct/App/UI/TreeView/NodeRow.swift`
+- **Implementation notes:**
+  - `BookmarkEnvironment.swift` adds two environment keys: `\.bookmarkedNodeIDs: Set<NodeID>` (read, for NodeRow membership check) and `\.toggleBookmark: ((NodeID) -> Void)?` (write, dispatched via `makeToggleBookmark($bookmarks)` which captures the `Binding` to avoid stale captures in escaping closures).
+  - ContentView holds `@State var bookmarks: [NodeID]` (ordered, insertion-order preserved). A toolbar `Menu` with `bookmark`/`bookmark.fill` icon lists bookmarks by `NodeIndex.pathString`; clicking navigates using the existing `expandPath + scroll` machinery.
+  - Cmd+D keyboard shortcut: hidden `Button` in `.background` modifier with `.keyboardShortcut("d", modifiers: .command)`.
+  - NodeRow shows a `bookmark.fill` icon (orange, 9pt) before the TypeBadge, and adds "Add/Remove Bookmark" to the context menu.
+  - In-session only: NodeIDs are counter-based and reset on each parse. Path-based persistence deferred.
+- **Acceptance criteria:** Right-click any node → "Add Bookmark" pins it. Re-click → "Remove Bookmark" unpins. Cmd+D toggles. Toolbar shows bookmark count (filled icon when non-empty). Clicking a bookmark in the menu navigates to the node (expands, selects, scrolls). "Clear All Bookmarks" wipes the list.
+- **Reference docs:** ROADMAP.md §Phase 4
+
+### P6-05: Quick Look Preview Extension ✅ DONE
+- **Module:** MachStructQuickLook (new Xcode extension target)
+- **Dependencies:** None (standalone extension; no MachStructCore dependency)
+- **Key files:** `MachStructQuickLook/PreviewViewController.swift`, `MachStructQuickLook/Info.plist`
+- **Implementation notes:**
+  - `PreviewViewController: NSViewController, QLPreviewingController` reads file bytes on a background thread and displays UTF-8 text in a read-only `NSTextView` (monospaced, scrollable).
+  - Files > 256 KB are truncated with a visible notice so the QL daemon never blocks.
+  - Info.plist declares `NSExtensionPointIdentifier = com.apple.quicklook.preview` and `QLSupportedContentTypes` for JSON, XML, CSV, YAML.
+  - Extension embedded in main app via `Embed App Extensions` `PBXCopyFilesBuildPhase` (dstSubfolderSpec = 13).
+  - Product bundle ID: `se.lustech.MachStruct.QuickLook`.
+- **Acceptance criteria:** Space-bar preview of a JSON/XML/YAML/CSV file in Finder shows a scrollable text preview. Large files show a truncation notice. No crash or timeout.
+- **Reference docs:** ROADMAP.md §Phase 6
+
+### P6-06: Spotlight Importer ✅ DONE
+- **Module:** MachStructSpotlight (new Xcode spotlight-importer target)
+- **Dependencies:** None (standalone bundle; no MachStructCore dependency)
+- **Key files:** `MachStructSpotlight/GetMetadata.swift`, `MachStructSpotlight/schema.strings`, `MachStructSpotlight/Info.plist`
+- **Implementation notes:**
+  - `@_cdecl("GetMetadataForFile")` Swift function populates `kMDItemTextContent` (raw UTF-8 content, ≤ 1 MB), `kMDItemKind` ("JSON Document" etc.), and `kMDItemContentType`.
+  - `schema.strings` maps attribute names to human-readable display strings for the Spotlight UI.
+  - Info.plist lists `CFBundleDocumentTypes` for all four UTIs.
+  - Bundle embedded at `Contents/Library/Spotlight/` via a `PBXCopyFilesBuildPhase` with `dstSubfolderSpec = 16` and `dstPath = "$(CONTENTS_FOLDER_PATH)/Library/Spotlight"`.
+  - Product bundle ID: `se.lustech.MachStruct.Spotlight`.
+- **Acceptance criteria:** After first launch, `mdimport -d1 file.json` reports `kMDItemTextContent` populated. Spotlight search for a key name or string value in a JSON file returns the file. `kMDItemKind` shows "JSON Document" in Get Info.
+- **Reference docs:** ROADMAP.md §Phase 6
+
 ---
 
 ## Task Dependency Graph (Phase 5)

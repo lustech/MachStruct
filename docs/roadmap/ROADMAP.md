@@ -103,7 +103,7 @@
 3. **Diff view** — Compare two documents or two versions of the same document. Highlight added, removed, and changed nodes.
 4. **Schema validation** — Validate JSON against JSON Schema, XML against XSD/DTD.
 5. ~~**Format/minify**~~ ✅ **DONE** *(P4-04)* — Segmented picker in the raw text toolbar switches between pretty-printed and minified output. Re-serializes asynchronously; `rawPretty: Bool` state persists across document edits.
-6. **Bookmarks** — Pin frequently accessed nodes for quick return.
+6. ~~**Bookmarks**~~ ✅ **DONE** *(P4-03)* — `bookmark` toolbar menu lists bookmarked nodes by path string; Cmd+D toggles bookmark on the current selection; `bookmark.fill` icon shown in NodeRow. In-session only (path-based persistence planned).
 7. **History** — Recently viewed nodes within a document, like browser history.
 8. **Clipboard watch** — Detect JSON/XML on the clipboard and offer to open in MachStruct.
 9. **Syntax highlighting** in raw text view (JSON, XML, YAML, CSV) — deferred from Phase 3.
@@ -205,8 +205,8 @@ All three pre-release blockers are now resolved:
 2. ~~**Welcome / launch window**~~ ✅ **DONE** *(P6-02)* — Dedicated welcome window replaces the bare system Open panel on launch. Drop zone (drag JSON/XML/YAML/CSV), "Open File…" button, recent files list. Implemented via `NSWindow` + `NSHostingController` (not SwiftUI `Window` scene — avoids macOS 14 `DocumentGroup` ordering issues). Re-shown on Dock click (`applicationShouldHandleReopen`). Cmd+Shift+0 shortcut.
 3. ~~**Paste raw text**~~ ✅ **DONE** *(P6-03)* — Inline `TextEditor` in the welcome window's left panel (window grown to 560×460). User pastes any JSON/XML/YAML/CSV text, clicks Parse, and the content opens as an untitled document window titled "Pasted Content". `FormatDetector` auto-detects the format silently; routes through temp-file path so `StructDocument` required no changes.
 4. **Onboarding** — First-launch welcome sheet highlighting key features and pointing to docs.
-5. **Quick Look plugin** — Preview JSON/XML/YAML/CSV files in Finder with a read-only mini tree view.
-6. **Spotlight importer** — Index document keys and string values for Spotlight (`mdimport`).
+5. ~~**Quick Look plugin**~~ ✅ **DONE** *(P6-05)* — `MachStructQuickLook.appex` (Quick Look Preview Extension) embedded in the main app. `PreviewViewController: QLPreviewingController` renders UTF-8 file text in a read-only `NSTextView`; files > 256 KB are truncated with a notice. Supports JSON, XML, YAML, CSV.
+6. ~~**Spotlight importer**~~ ✅ **DONE** *(P6-06)* — `MachStructSpotlight.mdimporter` bundle embedded in `Contents/Library/Spotlight/`. `GetMetadataForFile` populates `kMDItemTextContent` (≤ 1 MB), `kMDItemKind`, and `kMDItemContentType` so all keys and string values are full-text indexed by Spotlight.
 7. **macOS Services** — "Format JSON" and "Minify JSON" in the system Services menu.
 8. **Performance audit** — Profile every target from PERFORMANCE.md on current hardware. Fix any regressions introduced since Phase 1.
 9. **Accessibility audit** — Full VoiceOver pass, keyboard-only navigation, high-contrast support, Dynamic Type.
