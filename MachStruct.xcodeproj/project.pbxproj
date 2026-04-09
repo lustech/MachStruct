@@ -15,6 +15,13 @@
 		5B683CF7AA4D92E9350EB2C5 /* TableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A19F7CF620D1FC01343CD19 /* TableView.swift */; };
 		7FAE129CF28946DDA8168A29 /* ExpandedTreeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A626FB5F07F4B2CB93B7E61 /* ExpandedTreeView.swift */; };
 		A2335F17FAC94F148FE8ACCC /* BookmarkEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = D817BE60797A41BDB6931DA1 /* BookmarkEnvironment.swift */; };
+		994F21CC7AA047A784422DC4 /* PreviewViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44591C000ABC43E39D0E656E /* PreviewViewController.swift */; };
+		8FDDE98294DF49118FE3E207 /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = C71A27CD196545979BECEE6E /* Info.plist (QuickLook) */; };
+		E50BD3A122FF4FF3A9DCFB8B /* MachStructQuickLook.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 030D7CBD99FD4D1A9BD1D818 /* MachStructQuickLook.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		711E05E41F0E43E4A74535C3 /* GetMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = 481AC1EF1C244A60B1FC3BE3 /* GetMetadata.swift */; };
+		35F1E97BC21344BFBB99FB85 /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 8EF7C32E7A864BD18355677F /* Info.plist (Spotlight) */; };
+		1271FEB154E84AA689509F4B /* schema.strings in Resources */ = {isa = PBXBuildFile; fileRef = 17A1C11ACF924BC58D9D4897 /* schema.strings */; };
+		875B28638E4E47FFB04DDA60 /* MachStructSpotlight.mdimporter in Embed Spotlight Importers */ = {isa = PBXBuildFile; fileRef = 9950AFB50854445F8A96416D /* MachStructSpotlight.mdimporter */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		83EE8B039E33902EF9E82A52 /* MachStructCore in Frameworks */ = {isa = PBXBuildFile; productRef = 7F85AA182BEBE07716D6B554 /* MachStructCore */; };
 		A1B2C3D4E5F601234567890A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F601234567890B /* Assets.xcassets */; };
 		BB406DF6750F302763B02B70 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBB9B474EFCC206A7AF61136 /* ContentView.swift */; };
@@ -35,6 +42,13 @@
 		78176BDF8A0409D74304F7A5 /* MachStructApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MachStructApp.swift; sourceTree = "<group>"; };
 		8244AF5100B0479086F6CA72 /* SearchEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchEnvironment.swift; sourceTree = "<group>"; };
 		D817BE60797A41BDB6931DA1 /* BookmarkEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkEnvironment.swift; sourceTree = "<group>"; };
+		44591C000ABC43E39D0E656E /* PreviewViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewViewController.swift; sourceTree = "<group>"; };
+		C71A27CD196545979BECEE6E /* Info.plist (QuickLook) */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		030D7CBD99FD4D1A9BD1D818 /* MachStructQuickLook.appex */ = {isa = PBXFileReference; explicitFileType = wrapper.app-extension; includeInIndex = 0; path = MachStructQuickLook.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		481AC1EF1C244A60B1FC3BE3 /* GetMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GetMetadata.swift; sourceTree = "<group>"; };
+		8EF7C32E7A864BD18355677F /* Info.plist (Spotlight) */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		17A1C11ACF924BC58D9D4897 /* schema.strings */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; path = schema.strings; sourceTree = "<group>"; };
+		9950AFB50854445F8A96416D /* MachStructSpotlight.mdimporter */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MachStructSpotlight.mdimporter; sourceTree = BUILT_PRODUCTS_DIR; };
 		97DCCC1F62C267236BB1F89A /* TypeBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TypeBadge.swift; sourceTree = "<group>"; };
 		9B2FF72DBCCACDFFD557BEA1 /* StatusBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBar.swift; sourceTree = "<group>"; };
 		9F481E1643CAA448B1EFC2EB /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -70,8 +84,29 @@
 			isa = PBXGroup;
 			children = (
 				2869AF341CDBC3FA73E9E4E8 /* MachStruct.app */,
+				030D7CBD99FD4D1A9BD1D818 /* MachStructQuickLook.appex */,
+				9950AFB50854445F8A96416D /* MachStructSpotlight.mdimporter */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		1E3DACDFE7A4470EA529C9A5 /* MachStructQuickLook */ = {
+			isa = PBXGroup;
+			children = (
+				44591C000ABC43E39D0E656E /* PreviewViewController.swift */,
+				C71A27CD196545979BECEE6E /* Info.plist (QuickLook) */,
+			);
+			path = MachStructQuickLook;
+			sourceTree = "<group>";
+		};
+		57389D9417344BB491BFBD36 /* MachStructSpotlight */ = {
+			isa = PBXGroup;
+			children = (
+				481AC1EF1C244A60B1FC3BE3 /* GetMetadata.swift */,
+				17A1C11ACF924BC58D9D4897 /* schema.strings */,
+				8EF7C32E7A864BD18355677F /* Info.plist (Spotlight) */,
+			);
+			path = MachStructSpotlight;
 			sourceTree = "<group>";
 		};
 		47BB7154A417D0880DED309C /* TableView */ = {
@@ -158,6 +193,8 @@
 			isa = PBXGroup;
 			children = (
 				5C929680C2FCD90B6747114D /* MachStruct/App */,
+				1E3DACDFE7A4470EA529C9A5 /* MachStructQuickLook */,
+				57389D9417344BB491BFBD36 /* MachStructSpotlight */,
 				21E155D6FE28ADA886C1B619 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -172,6 +209,8 @@
 				A7AB45DDD25B3B95E7B07D6B /* Sources */,
 				78587FAB89352DA004CD8DB9 /* Frameworks */,
 				C5B6635B71B27FD269A22291 /* Resources */,
+				D79373D8BF3249DCADEBB244 /* Embed App Extensions */,
+				02A79DE9C785432A84AB6D54 /* Embed Spotlight Importers */,
 			);
 			buildRules = (
 			);
@@ -216,6 +255,8 @@
 			projectRoot = "";
 			targets = (
 				C123C8EF7469F5F53F566E9B /* MachStruct */,
+				C3A2DB6B32D14205A7E206CA /* MachStructQuickLook */,
+				0E6F4994D9E0470EAFBA9894 /* MachStructSpotlight */,
 			);
 		};
 /* End PBXProject section */
@@ -254,6 +295,124 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		D79373D8BF3249DCADEBB244 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				E50BD3A122FF4FF3A9DCFB8B /* MachStructQuickLook.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		02A79DE9C785432A84AB6D54 /* Embed Spotlight Importers */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Library/Spotlight";
+			dstSubfolderSpec = 16;
+			files = (
+				875B28638E4E47FFB04DDA60 /* MachStructSpotlight.mdimporter in Embed Spotlight Importers */,
+			);
+			name = "Embed Spotlight Importers";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXResourcesBuildPhase section */
+		F9A93E9A320748ACBF58C1DF /* Resources (QuickLook) */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8FDDE98294DF49118FE3E207 /* Info.plist in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		ADBA4C5E21594FBCB92411A9 /* Resources (Spotlight) */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				35F1E97BC21344BFBB99FB85 /* Info.plist in Resources */,
+				1271FEB154E84AA689509F4B /* schema.strings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXFrameworksBuildPhase section (extensions) */
+		FC0D969795B449AFB882A681 /* Frameworks (QuickLook) */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		EF416BE31B9348D3915F6107 /* Frameworks (Spotlight) */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section (extensions) */
+
+/* Begin PBXSourcesBuildPhase section (extensions) */
+		1EBD5C9D512442FEB2A2C041 /* Sources (QuickLook) */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				994F21CC7AA047A784422DC4 /* PreviewViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		20400D09BF61456990C66640 /* Sources (Spotlight) */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				711E05E41F0E43E4A74535C3 /* GetMetadata.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section (extensions) */
+
+/* Begin PBXNativeTarget section (extensions) */
+		C3A2DB6B32D14205A7E206CA /* MachStructQuickLook */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 38D9D6FCEB3B492F8622320B /* Build configuration list for PBXNativeTarget "MachStructQuickLook" */;
+			buildPhases = (
+				1EBD5C9D512442FEB2A2C041 /* Sources (QuickLook) */,
+				FC0D969795B449AFB882A681 /* Frameworks (QuickLook) */,
+				F9A93E9A320748ACBF58C1DF /* Resources (QuickLook) */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MachStructQuickLook;
+			productName = MachStructQuickLook;
+			productReference = 030D7CBD99FD4D1A9BD1D818 /* MachStructQuickLook.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		0E6F4994D9E0470EAFBA9894 /* MachStructSpotlight */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 81092688CAF14EB0BBE871D7 /* Build configuration list for PBXNativeTarget "MachStructSpotlight" */;
+			buildPhases = (
+				20400D09BF61456990C66640 /* Sources (Spotlight) */,
+				EF416BE31B9348D3915F6107 /* Frameworks (Spotlight) */,
+				ADBA4C5E21594FBCB92411A9 /* Resources (Spotlight) */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MachStructSpotlight;
+			productName = MachStructSpotlight;
+			productReference = 9950AFB50854445F8A96416D /* MachStructSpotlight.mdimporter */;
+			productType = "com.apple.product-type.spotlight-importer";
+		};
+/* End PBXNativeTarget section (extensions) */
 
 /* Begin XCBuildConfiguration section */
 		10409C1F143F4747C1908577 /* Release */ = {
@@ -419,6 +578,58 @@
 			};
 			name = Debug;
 		};
+		EA2ACC9E2AF749FCAB5B1351 /* Debug (QuickLook) */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MachStructQuickLook/Info.plist;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = se.lustech.MachStruct.QuickLook;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		1223BC576AB14686B330F31F /* Release (QuickLook) */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MachStructQuickLook/Info.plist;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = se.lustech.MachStruct.QuickLook;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		B59059B2578A43F0BD652C29 /* Debug (Spotlight) */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MachStructSpotlight/Info.plist;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = se.lustech.MachStruct.Spotlight;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		249179CDE7F6401D94D39B48 /* Release (Spotlight) */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MachStructSpotlight/Info.plist;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = se.lustech.MachStruct.Spotlight;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -436,6 +647,24 @@
 			buildConfigurations = (
 				FD37C644F1EDACF7DB908913 /* Debug */,
 				10409C1F143F4747C1908577 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		38D9D6FCEB3B492F8622320B /* Build configuration list for PBXNativeTarget "MachStructQuickLook" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EA2ACC9E2AF749FCAB5B1351 /* Debug (QuickLook) */,
+				1223BC576AB14686B330F31F /* Release (QuickLook) */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		81092688CAF14EB0BBE871D7 /* Build configuration list for PBXNativeTarget "MachStructSpotlight" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B59059B2578A43F0BD652C29 /* Debug (Spotlight) */,
+				249179CDE7F6401D94D39B48 /* Release (Spotlight) */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

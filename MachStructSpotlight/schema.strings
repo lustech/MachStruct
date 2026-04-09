@@ -1,0 +1,9 @@
+/* Spotlight Importer schema.strings — maps MDItem attribute names to
+   human-readable strings shown in the Spotlight UI.
+
+   These are required by the Spotlight infrastructure even if empty.
+   Format: "MDItemAttributeName" = "Display Name";
+*/
+
+"kMDItemTextContent" = "Content";
+"kMDItemKind"        = "Kind";

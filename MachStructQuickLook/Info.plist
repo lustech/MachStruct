@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+    "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDisplayName</key>
+    <string>MachStruct Quick Look</string>
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>$(PRODUCT_NAME)</string>
+    <key>CFBundlePackageType</key>
+    <string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+
+    <!-- Quick Look Preview Extension entry point -->
+    <key>NSExtension</key>
+    <dict>
+        <key>NSExtensionAttributes</key>
+        <dict>
+            <!-- Content types this extension handles -->
+            <key>QLSupportedContentTypes</key>
+            <array>
+                <string>public.json</string>
+                <string>public.xml</string>
+                <string>public.comma-separated-values-text</string>
+                <string>public.yaml</string>
+            </array>
+            <key>QLSupportsSearchableItems</key>
+            <false/>
+        </dict>
+        <key>NSExtensionPointIdentifier</key>
+        <string>com.apple.quicklook.preview</string>
+        <key>NSExtensionPrincipalClass</key>
+        <string>$(PRODUCT_MODULE_NAME).PreviewViewController</string>
+    </dict>
+</dict>
+</plist>
