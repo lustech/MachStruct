@@ -189,6 +189,29 @@ When starting a task, the AI agent should: (1) read the reference docs, (2) chec
 - **Acceptance criteria:** Pressing ↑↓ (or Return in search) to navigate to a match inside a collapsed subtree automatically expands the full ancestor chain and scrolls the match row into view. Manually collapsed nodes stay collapsed when the search clears. Existing search highlight behaviour (P4-01) is unchanged.
 - **Reference docs:** ROADMAP.md §Phase 4
 
+### P4-04: Format / Minify Toggle ✅ DONE
+- **Module:** App / ContentView
+- **Dependencies:** P4-01 (raw view already in place)
+- **Key files:** `MachStruct/App/ContentView.swift`
+- **Implementation notes:**
+  - `@State private var rawPretty: Bool = true` drives pretty vs. minified serialisation.
+  - Segmented `Picker` with SF Symbols (`text.alignleft` / `arrow.left.and.right.text.vertical`) added to `.primaryAction` toolbar, visible only when `viewMode == .raw`.
+  - `refreshRawText()` parameterised on `rawPretty`; value captured before `Task.detached` dispatch to avoid data-race.
+- **Acceptance criteria:** Toggling the picker in raw view re-serialises immediately. Pretty output is indented; minified output is a single line. Toggle is disabled during async serialisation.
+- **Reference docs:** ROADMAP.md §Phase 4
+
+### P4-05: Drag-and-Drop Reordering ✅ DONE
+- **Module:** App / UI / TreeView / ExpandedTreeView
+- **Dependencies:** P2-04 (EditTransaction.moveArrayItem), P4-02 (ExpandedTreeView flat list)
+- **Key files:** `MachStruct/App/UI/TreeView/ExpandedTreeView.swift`
+- **Implementation notes:**
+  - Switched `List(flatRows, selection:)` to `List(selection:) { ForEach(flatRows) { }.onMove { } }` to attach `.onMove`.
+  - `isMovableRow(_:)` restricts drag handles to rows whose direct parent has `.type == .array`.
+  - `handleDragMove(from:to:)` translates flat-array destination index to parent-relative sibling index: count sibling flat indices (same parentID) that are less than `destination`, excluding the source row.
+  - Dispatches `EditTransaction.moveArrayItem` through `@Environment(\.commitEdit)` for full undo/redo support.
+- **Acceptance criteria:** Array items can be dragged to reorder within their parent array. Non-array children (object key-value pairs) show no drag handle. Move is undoable with Cmd+Z. Document is dirtied after reorder.
+- **Reference docs:** ROADMAP.md §Phase 4
+
 ---
 
 ## Phase 5: Release Engineering

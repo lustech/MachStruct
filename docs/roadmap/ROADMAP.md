@@ -108,7 +108,7 @@
 8. **Clipboard watch** — Detect JSON/XML on the clipboard and offer to open in MachStruct.
 9. **Syntax highlighting** in raw text view (JSON, XML, YAML, CSV) — deferred from Phase 3.
 10. **CSV column statistics** — Type distribution, unique count, min/max per column — deferred from Phase 3.
-11. **Drag-and-drop reordering** in tree view — deferred from Phase 2 (native `List` reorder support).
+11. ~~**Drag-and-drop reordering**~~ ✅ **DONE** *(P4-05)* — `ForEach.onMove` in `ExpandedTreeView` with sibling-index translation from flat to parent-relative positions. Restricted to `.array` children; dispatches `EditTransaction.moveArrayItem` through `@Environment(\.commitEdit)`.
 
 ### Exit Criteria
 - Search returns results in < 1s for 100MB files.

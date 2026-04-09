@@ -46,6 +46,9 @@ struct ExpandedTreeView: View {
     /// IDs of nodes whose children are currently shown.
     @Binding var expandedIDs: Set<NodeID>
 
+    /// Injected by `ContentView` — commits an edit transaction with undo support.
+    @Environment(\.commitEdit) private var commitEdit
+
     /// Incremented each time the host wants to scroll.  Using a counter (rather
     /// than comparing the target ID) ensures the scroll fires even when
     /// navigating back to a previously-visited match with the same ID.
@@ -58,15 +61,19 @@ struct ExpandedTreeView: View {
 
     var body: some View {
         ScrollViewReader { proxy in
-            List(flatRows, selection: $selection) { row in
-                rowView(row)
-                    .tag(row.id)
-                    .listRowInsets(EdgeInsets(
-                        top:     1,
-                        leading: CGFloat(row.indentLevel) * 18 + 6,
-                        bottom:  1,
-                        trailing: 8
-                    ))
+            List(selection: $selection) {
+                ForEach(flatRows) { row in
+                    rowView(row)
+                        .tag(row.id)
+                        .listRowInsets(EdgeInsets(
+                            top:     1,
+                            leading: CGFloat(row.indentLevel) * 18 + 6,
+                            bottom:  1,
+                            trailing: 8
+                        ))
+                        .moveDisabled(!isMovableRow(row))
+                }
+                .onMove { handleDragMove(from: $0, to: $1) }
             }
             .listStyle(.sidebar)
             .onChange(of: scrollTrigger) { _, _ in
@@ -164,6 +171,63 @@ struct ExpandedTreeView: View {
         } else {
             expandedIDs.insert(id)
         }
+    }
+
+    // MARK: - Drag-and-drop reordering (P4-05)
+
+    /// Only rows whose parent is an `.array` node may be reordered via drag.
+    /// Object key-value pairs have a defined order too, but reordering object
+    /// keys is semantically ambiguous (JSON doesn't guarantee key order), so
+    /// we restrict to arrays where index order is meaningful.
+    private func isMovableRow(_ row: FlatRow) -> Bool {
+        guard let parentID = row.treeNode.documentNode.parentID,
+              let parent   = nodeIndex.node(for: parentID) else { return false }
+        return parent.type == .array
+    }
+
+    /// Translates a SwiftUI `.onMove` callback (which works in flat-array
+    /// coordinates) into a parent-relative sibling index move, then dispatches
+    /// an `EditTransaction` through the injected `commitEdit` closure.
+    ///
+    /// ### Index translation
+    ///
+    /// `flatRows` contains rows from *all* depths interleaved.  When the user
+    /// drags row at `fromFlatIdx` to `destination`, we need sibling positions
+    /// within the parent array — not flat positions.  We:
+    ///
+    /// 1. Collect the flat indices of every sibling (same `parentID`).
+    /// 2. Count how many of those sibling indices appear before `destination`
+    ///    (excluding the source row itself) → that is `toSiblingPos`.
+    private func handleDragMove(from source: IndexSet, to destination: Int) {
+        guard let fromFlatIdx = source.first else { return }
+        let sourceRow = flatRows[fromFlatIdx]
+
+        guard let parentID = sourceRow.treeNode.documentNode.parentID,
+              let parent   = nodeIndex.node(for: parentID),
+              parent.type == .array else { return }
+
+        // All flat indices that belong to direct children of the same parent.
+        let siblingFlatIndices = flatRows.indices.filter {
+            flatRows[$0].treeNode.documentNode.parentID == parentID
+        }
+
+        guard let fromSiblingPos = siblingFlatIndices.firstIndex(of: fromFlatIdx)
+        else { return }
+
+        // Count siblings whose flat index < destination, skipping the source.
+        let toSiblingPos = siblingFlatIndices.filter {
+            $0 != fromFlatIdx && $0 < destination
+        }.count
+
+        guard fromSiblingPos != toSiblingPos,
+              let tx = EditTransaction.moveArrayItem(
+                  in: parentID,
+                  fromIndex: fromSiblingPos,
+                  toIndex: toSiblingPos,
+                  in: nodeIndex)
+        else { return }
+
+        commitEdit?(tx)
     }
 }
 
