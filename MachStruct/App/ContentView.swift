@@ -25,6 +25,19 @@ struct ContentView: View {
 
     @ObservedObject var document: StructDocument
 
+    // MARK: - Persisted settings (P6-01)
+
+    @AppStorage(AppSettings.Keys.rawFontSize)
+    private var rawFontSize = AppSettings.Defaults.rawFontSize
+
+    @AppStorage(AppSettings.Keys.treeFontSize)
+    private var treeFontSize = AppSettings.Defaults.treeFontSize
+
+    @AppStorage(AppSettings.Keys.defaultRawPretty)
+    private var defaultRawPretty = AppSettings.Defaults.defaultRawPretty
+
+    // MARK: - View state
+
     /// Lifted here so StatusBar can observe selection changes.
     @State private var selectedNodeID: NodeID?
 
@@ -43,10 +56,25 @@ struct ContentView: View {
     @State private var isSerializingRaw: Bool = false
 
     /// When true the raw view shows pretty-printed output; false = minified. (P4-04)
+    /// Initialised from the user's `defaultRawPretty` preference when first
+    /// entering raw view; the segmented picker can then override it per-session.
     @State private var rawPretty: Bool = true
 
     /// True when the CSV column statistics sheet is visible.
     @State private var showCSVStats: Bool = false
+
+    // MARK: - Navigation history
+
+    /// Ordered list of node IDs visited during this session.
+    @State private var navHistory: [NodeID] = []
+
+    /// Index into `navHistory` of the currently displayed node.
+    /// -1 = no history yet.
+    @State private var navHistoryIndex: Int = -1
+
+    /// Set to `true` while `goBack()` / `goForward()` update `selectedNodeID`
+    /// to suppress re-pushing to history.
+    @State private var isNavigatingHistory: Bool = false
 
     /// True while an export conversion is running in the background.
     @State private var isExporting: Bool = false
@@ -118,7 +146,17 @@ struct ContentView: View {
                     .environment(\.bookmarkedNodeIDs, Set(bookmarks))
                     .environment(\.toggleBookmark, makeToggleBookmark($bookmarks))
                     .onChange(of: viewMode) { _, mode in
-                        if mode == .raw { refreshRawText() }
+                        if mode == .raw {
+                            // Honour the user's preferred default mode each
+                            // time they open raw view (can still be overridden
+                            // per-session by the pretty/minify picker).
+                            rawPretty = defaultRawPretty
+                            refreshRawText()
+                        }
+                    }
+                    .onChange(of: selectedNodeID) { _, newID in
+                        guard !isNavigatingHistory, let id = newID else { return }
+                        pushHistory(id)
                     }
                     .onChange(of: index.count) { _, _ in
                         if viewMode == .raw { refreshRawText() }
@@ -141,11 +179,22 @@ struct ContentView: View {
         // A hidden Button is the idiomatic SwiftUI way to bind a keyboard
         // shortcut to an action without a visible control.
         .background {
+            // Cmd+D — toggle bookmark on selected node (P4-03)
             Button("Toggle Bookmark") {
                 if let id = selectedNodeID { toggleBookmark(id) }
             }
             .keyboardShortcut("d", modifiers: .command)
             .hidden()
+
+            // Cmd+[ / Cmd+] — back / forward history
+            if let index = document.nodeIndex {
+                Button("Go Back")    { goBack(in: index)    }
+                    .keyboardShortcut("[", modifiers: .command)
+                    .hidden()
+                Button("Go Forward") { goForward(in: index) }
+                    .keyboardShortcut("]", modifiers: .command)
+                    .hidden()
+            }
         }
         .searchable(text: $searchQuery,
                     placement: .toolbar,
@@ -324,6 +373,26 @@ struct ContentView: View {
             }
         }
 
+        // ── Navigation history (back / forward) ───────────────────────────
+        ToolbarItem(placement: .navigation) {
+            if let index = document.nodeIndex {
+                HStack(spacing: 0) {
+                    Button(action: { goBack(in: index) }) {
+                        Image(systemName: "chevron.left")
+                    }
+                    .disabled(navHistoryIndex <= 0)
+                    .help("Go back (⌘[)")
+
+                    Button(action: { goForward(in: index) }) {
+                        Image(systemName: "chevron.right")
+                    }
+                    .disabled(navHistoryIndex >= navHistory.count - 1)
+                    .help("Go forward (⌘])")
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+
         // ── Search navigation (P4-01) ──────────────────────────────────────
         // Shown only when a search is active and produced results.
         ToolbarItem(placement: .primaryAction) {
@@ -366,7 +435,7 @@ struct ContentView: View {
                 } else {
                     // Plain fallback while highlighting runs, or for oversized files.
                     Text(rawText)
-                        .font(.system(.body, design: .monospaced))
+                        .font(.system(size: rawFontSize, design: .monospaced))
                         .textSelection(.enabled)
                 }
             }
@@ -387,6 +456,7 @@ struct ContentView: View {
         highlightedRawText = nil
         let pretty     = rawPretty
         let formatName = document.formatName
+        let fontSize   = rawFontSize
         Task {
             do {
                 let text = try await document.serializeDocument(pretty: pretty)
@@ -395,7 +465,7 @@ struct ContentView: View {
                 // Highlight on a utility-priority background thread.
                 if let fmt = SyntaxHighlighter.Format(formatName: formatName) {
                     let attributed = await Task.detached(priority: .utility) {
-                        SyntaxHighlighter.highlight(text, format: fmt)
+                        SyntaxHighlighter.highlight(text, format: fmt, fontSize: fontSize)
                     }.value
                     highlightedRawText = attributed
                 }
@@ -567,6 +637,45 @@ struct ContentView: View {
         case .yaml: return UTType(filenameExtension: "yaml") ?? .data
         case .csv:  return .commaSeparatedText
         }
+    }
+
+    // MARK: - Navigation history
+
+    /// Push `id` onto the history stack, truncating any forward entries.
+    private func pushHistory(_ id: NodeID) {
+        // Avoid duplicate consecutive entries (e.g. repeated selection of the
+        // same row shouldn't pollute the stack).
+        if navHistory.last == id { return }
+
+        // Truncate forward history so going forward after a manual nav is a no-op.
+        if navHistoryIndex < navHistory.count - 1 {
+            navHistory = Array(navHistory.prefix(navHistoryIndex + 1))
+        }
+        navHistory.append(id)
+        navHistoryIndex = navHistory.count - 1
+    }
+
+    private func goBack(in index: NodeIndex) {
+        guard navHistoryIndex > 0 else { return }
+        navHistoryIndex -= 1
+        navigate(to: navHistory[navHistoryIndex], in: index)
+    }
+
+    private func goForward(in index: NodeIndex) {
+        guard navHistoryIndex < navHistory.count - 1 else { return }
+        navHistoryIndex += 1
+        navigate(to: navHistory[navHistoryIndex], in: index)
+    }
+
+    /// Shared navigation for history back/forward — expands ancestors, selects,
+    /// and scrolls without triggering a new history push.
+    private func navigate(to id: NodeID, in index: NodeIndex) {
+        isNavigatingHistory = true
+        expandPath(to: id, in: index)
+        selectedNodeID = id
+        scrollTrigger += 1
+        scrollTarget   = id
+        isNavigatingHistory = false
     }
 
     // MARK: - State views

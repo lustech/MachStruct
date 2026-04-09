@@ -36,9 +36,15 @@ struct SyntaxHighlighter {
 
     /// Returns an `AttributedString` with syntax colours applied.
     ///
+    /// - Parameters:
+    ///   - text:     The serialised document text.
+    ///   - format:   Source format (determines token colours).
+    ///   - fontSize: Monospaced font size in points (default 13).
+    ///
     /// Safe to call from any thread.
-    static func highlight(_ text: String, format: Format) -> AttributedString {
-        let mono = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+    static func highlight(_ text: String, format: Format,
+                          fontSize: CGFloat = 13) -> AttributedString {
+        let mono = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
         let ns   = NSMutableAttributedString(string: text)
         ns.addAttribute(.font, value: mono,
                         range: NSRange(location: 0, length: ns.length))

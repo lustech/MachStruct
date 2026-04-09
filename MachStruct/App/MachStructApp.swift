@@ -59,6 +59,7 @@ final class MachStructDocumentController: NSDocumentController {
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private static var _welcomeWindow: NSWindow?
+    private static var _onboardingWindow: NSWindow?
     private var launchPanelObserver: Any?
 
     // MARK: - Sparkle auto-update (P5-06)
@@ -85,7 +86,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        AppDelegate.showWelcomeWindow()
+        let showWelcome = UserDefaults.standard.object(forKey: AppSettings.Keys.showWelcomeOnLaunch)
+            .flatMap { $0 as? Bool } ?? AppSettings.Defaults.showWelcomeOnLaunch
+        if showWelcome {
+            AppDelegate.showWelcomeWindow()
+        }
+        let seen = UserDefaults.standard.bool(forKey: AppSettings.Keys.hasSeenOnboarding)
+        if !seen {
+            // Slight delay so the welcome window settles first.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                AppDelegate.showOnboardingWindow()
+            }
+        }
 
         // Strategy A: defer flag-clear to next cycle so DocumentGroup's async
         // openDocument call arrives while suppressOpen is still true.
@@ -209,7 +221,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    // MARK: Welcome window
+    // MARK: - Welcome + Onboarding windows
 
     /// Opens the welcome window, or brings an existing one to the front.
     static func showWelcomeWindow() {
@@ -232,6 +244,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         _welcomeWindow = window
+    }
+
+    /// Presents the onboarding sheet as a standalone utility window.
+    ///
+    /// Called automatically on first launch and from Help > Show Welcome Guide.
+    static func showOnboardingWindow() {
+        if let existing = _onboardingWindow {
+            existing.makeKeyAndOrderFront(nil)
+            return
+        }
+        let hosting = NSHostingController(rootView: OnboardingView())
+        let window  = NSWindow(contentViewController: hosting)
+        window.title            = "Welcome to MachStruct"
+        window.styleMask        = [.titled, .closable]
+        window.isReleasedWhenClosed = false
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        _onboardingWindow = window
     }
 }
 
@@ -271,7 +301,23 @@ struct MachStructApp: App {
             ContentView(document: file.document)
                 .frame(minWidth: 600, minHeight: 400)
         }
+
+        // ── Settings window (⌘,) ─────────────────────────────────────────
+        Settings {
+            SettingsView()
+        }
         .commands {
+            // "What's New / Onboarding" in the Help menu.
+            CommandGroup(replacing: .help) {
+                Button("MachStruct Help") {
+                    // Future: open documentation URL
+                }
+                .disabled(true)
+                Divider()
+                Button("Show Welcome Guide…") {
+                    AppDelegate.showOnboardingWindow()
+                }
+            }
             // "Check for Updates…" in the application menu (P5-06).
             // CommandGroup(replacing: .appInfo) puts it right after "About MachStruct".
             CommandGroup(after: .appInfo) {
