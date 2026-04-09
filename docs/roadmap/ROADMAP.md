@@ -4,14 +4,17 @@
 
 ## Phase Overview
 
-| Phase | Codename | Focus | Timeline Estimate |
+| Phase | Codename | Focus | Status |
 |---|---|---|---|
 | **Phase 1** | Foundation | JSON viewer with core tree UI | ✅ Complete |
 | **Phase 2** | Editor | JSON editing, undo, save | ✅ Complete |
 | **Phase 3** | Formats | XML, YAML, CSV support | ✅ Complete |
-| **Phase 4** | Power Tools | Search, diff, conversion, plugins | 🔄 In Progress |
-| **Phase 5** | Release Engineering | simdjson vendoring, Xcode target, signing, notarization, Sparkle, App Store | 🔄 In Progress |
-| **Phase 6** | Polish | Settings, onboarding, Quick Look, Spotlight, accessibility, localisation | 🔄 In Progress |
+| **Phase 4** | Power Tools | Search, syntax highlighting, CSV stats, bookmarks, history, drag-and-drop | ✅ **v1.0 scope complete** |
+| **Phase 5** | Release Engineering | simdjson, Xcode target, signing, notarization CI, Sparkle | ✅ **v1.0 scope complete** |
+| **Phase 6** | Polish | Settings, onboarding, Quick Look, Spotlight, clipboard watch, Services | ✅ **v1.0 scope complete** |
+| **Phase 4 cont.** | Power Tools v2 | Path queries, diff view, schema validation | 🗓 v1.1 |
+| **Phase 6 cont.** | Deep Polish | Accessibility audit, localisation, performance audit | 🗓 v1.1 |
+| **Phase 7+** | Future | Binary formats, collaboration, plugin system, iOS | 💡 Backlog |
 
 ---
 
@@ -175,10 +178,10 @@ All three pre-release blockers are now resolved:
 ✅ P5-06 (Sparkle auto-updates)
          │
          ▼
-    ship v1.0 DMG
+    ⬅ YOU ARE HERE: ready to ship v1.0 DMG
          │
          ▼
-    P5-07 (App Store submission)
+    P5-07 (App Store submission — v1.1)
 ```
 
 ### What's already in good shape
@@ -200,22 +203,25 @@ All three pre-release blockers are now resolved:
 
 **Goal:** Deep macOS integration, accessibility, onboarding, and App Store quality bar.
 
-### Deliverables
-1. **Settings UI** — Theme (light/dark/auto), font size, indent width, default format on paste, keyboard shortcut customisation.
+### v1.0 Deliverables (all done)
+1. ~~**Settings UI**~~ ✅ **DONE** *(P6-01)* — Tabbed Preferences window (⌘,): General (show welcome on launch, version), Appearance (tree font size 11–14 pt), Raw View (font size 11–16 pt, default pretty/minify). All backed by `@AppStorage`; changes apply immediately.
 2. ~~**Welcome / launch window**~~ ✅ **DONE** *(P6-02)* — Dedicated welcome window replaces the bare system Open panel on launch. Drop zone (drag JSON/XML/YAML/CSV), "Open File…" button, recent files list. Implemented via `NSWindow` + `NSHostingController` (not SwiftUI `Window` scene — avoids macOS 14 `DocumentGroup` ordering issues). Re-shown on Dock click (`applicationShouldHandleReopen`). Cmd+Shift+0 shortcut.
 3. ~~**Paste raw text**~~ ✅ **DONE** *(P6-03)* — Inline `TextEditor` in the welcome window's left panel (window grown to 560×460). User pastes any JSON/XML/YAML/CSV text, clicks Parse, and the content opens as an untitled document window titled "Pasted Content". `FormatDetector` auto-detects the format silently; routes through temp-file path so `StructDocument` required no changes.
-4. **Onboarding** — First-launch welcome sheet highlighting key features and pointing to docs.
-5. ~~**Quick Look plugin**~~ ✅ **DONE** *(P6-05)* — `MachStructQuickLook.appex` (Quick Look Preview Extension) embedded in the main app. `PreviewViewController: QLPreviewingController` renders UTF-8 file text in a read-only `NSTextView`; files > 256 KB are truncated with a notice. Supports JSON, XML, YAML, CSV.
-6. ~~**Spotlight importer**~~ ✅ **DONE** *(P6-06)* — `MachStructSpotlight.mdimporter` bundle embedded in `Contents/Library/Spotlight/`. `GetMetadataForFile` populates `kMDItemTextContent` (≤ 1 MB), `kMDItemKind`, and `kMDItemContentType` so all keys and string values are full-text indexed by Spotlight.
-7. **macOS Services** — "Format JSON" and "Minify JSON" in the system Services menu.
-8. **Performance audit** — Profile every target from PERFORMANCE.md on current hardware. Fix any regressions introduced since Phase 1.
-9. **Accessibility audit** — Full VoiceOver pass, keyboard-only navigation, high-contrast support, Dynamic Type.
-10. **Localisation** — At minimum en, de, fr, ja (the four largest Mac developer markets).
+4. ~~**Onboarding**~~ ✅ **DONE** *(P6-04)* — First-launch feature grid (6 cards, 2 columns). Shown automatically 0.4 s after first launch; never shown again. Re-openable via Help › Show Welcome Guide…
+5. ~~**Quick Look plugin**~~ ✅ **DONE** *(P6-05)* — `MachStructQuickLook.appex` embedded. `PreviewViewController: QLPreviewingController` renders UTF-8 text in read-only `NSTextView`; files > 256 KB truncated with notice. Supports JSON, XML, YAML, CSV.
+6. ~~**Spotlight importer**~~ ✅ **DONE** *(P6-06)* — `MachStructSpotlight.mdimporter` embedded at `Contents/Library/Spotlight/`. `GetMetadataForFile` populates `kMDItemTextContent` (≤ 1 MB), `kMDItemKind`, `kMDItemContentType`.
+7. ~~**macOS Services**~~ ✅ **DONE** — "Format with MachStruct" and "Minify with MachStruct" in system Services menu. JSON round-trip; XML/YAML/CSV pass-through.
+8. ~~**Clipboard watch**~~ ✅ **DONE** — `ClipboardWatcher` polls every 1.5 s; banner slides in on welcome window with format icon and "Open" button.
 
-### Exit Criteria
-- App passes App Store review (if not already submitted in Phase 5).
-- All PERFORMANCE.md targets met on the benchmark machine.
-- VoiceOver can navigate and read the full document tree without gaps.
+### v1.1 Backlog
+9. **Performance audit** — Profile every target from PERFORMANCE.md on current hardware.
+10. **Accessibility audit** — Full VoiceOver pass, keyboard-only navigation, high-contrast support, Dynamic Type.
+11. **Localisation** — At minimum en, de, fr, ja (the four largest Mac developer markets).
+
+### Exit Criteria (v1.0 — met)
+- All Phase 5 release engineering complete (signing, notarization CI, Sparkle).
+- Core feature set shipped: viewer + editor + search + bookmarks + history + quick wins + settings + onboarding.
+- Quick Look and Spotlight integration working.
 
 ---
 
