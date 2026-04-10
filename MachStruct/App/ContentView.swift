@@ -585,15 +585,18 @@ struct ContentView: View {
         let pathIDs = index.path(to: id)
         guard pathIDs.count > 2 else { return }   // nothing to expand between root and target
 
+        // Collect all IDs to expand first, then apply as a single batch so
+        // SwiftUI only re-renders once (not N times for N ancestors).
+        var toExpand = Set<NodeID>()
         for nodeID in pathIDs.dropFirst().dropLast() {
             guard let docNode = index.node(for: nodeID) else { continue }
             let treeNode = TreeNode(documentNode: docNode, nodeIndex: index)
-            // Only insert IDs that ExpandedTreeView recognises as expandable.
-            // Non-row nodes (e.g. the hidden container child of a keyValue row)
-            // will simply never appear in flatRows, so adding their IDs is safe.
             if treeNode.children != nil {
-                expandedIDs.insert(nodeID)
+                toExpand.insert(nodeID)
             }
+        }
+        if !toExpand.isEmpty {
+            expandedIDs.formUnion(toExpand)
         }
     }
 
@@ -642,6 +645,9 @@ struct ContentView: View {
     // MARK: - Navigation history
 
     /// Push `id` onto the history stack, truncating any forward entries.
+    /// Maximum number of entries kept in the back/forward navigation stack.
+    private static let maxHistorySize = 100
+
     private func pushHistory(_ id: NodeID) {
         // Avoid duplicate consecutive entries (e.g. repeated selection of the
         // same row shouldn't pollute the stack).
@@ -652,6 +658,12 @@ struct ContentView: View {
             navHistory = Array(navHistory.prefix(navHistoryIndex + 1))
         }
         navHistory.append(id)
+
+        // Drop oldest entries when the history exceeds the cap.
+        if navHistory.count > Self.maxHistorySize {
+            let overflow = navHistory.count - Self.maxHistorySize
+            navHistory.removeFirst(overflow)
+        }
         navHistoryIndex = navHistory.count - 1
     }
 

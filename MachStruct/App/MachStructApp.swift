@@ -173,6 +173,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         processService(pasteboard: pasteboard, pretty: false, error: error)
     }
 
+    /// Serial background queue for Services processing — avoids blocking the
+    /// main thread (macOS calls service providers on the main thread).
+    private static let serviceQueue = DispatchQueue(label: "com.machstruct.services")
+
     private func processService(
         pasteboard: NSPasteboard,
         pretty: Bool,
@@ -185,45 +189,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         guard let data = text.data(using: .utf8) else { return }
 
-        do {
-            // Write to a temp file so MappedFile / FormatDetector can work.
-            let tmp = FileManager.default.temporaryDirectory
-                .appendingPathComponent("\(UUID().uuidString).txt")
-            try data.write(to: tmp)
-            defer { try? FileManager.default.removeItem(at: tmp) }
+        // Dispatch heavy work off the main thread.  The DispatchSemaphore blocks
+        // the service queue (not the main actor), eliminating the deadlock risk.
+        let sem = DispatchSemaphore(value: 0)
+        var serviceResult: String?
+        var serviceError: String?
 
-            let mapped   = try MappedFile(url: tmp)
-            let detected = FormatDetector.detect(file: mapped, fileExtension: nil)
+        Self.serviceQueue.async {
+            do {
+                let tmp = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("\(UUID().uuidString).txt")
+                try data.write(to: tmp)
+                defer { try? FileManager.default.removeItem(at: tmp) }
 
-            // Use JSONDocumentSerializer for JSON; fall back to returning original
-            // text for other formats (full round-trip serialisers are in-progress).
-            var result: String?
-            switch detected {
-            case .json, .unknown:
-                let task = Task<String?, Never> {
-                    do {
-                        let idx  = try await JSONParser().buildIndex(from: mapped)
-                        let ni   = idx.buildNodeIndex()
-                        let ser  = JSONDocumentSerializer(index: ni, mappedFile: mapped)
-                        let d    = try ser.serialize(pretty: pretty)
-                        return String(data: d, encoding: .utf8)
-                    } catch { return nil }
+                let mapped   = try MappedFile(url: tmp)
+                let detected = FormatDetector.detect(file: mapped, fileExtension: nil)
+
+                switch detected {
+                case .json, .unknown:
+                    let task = Task<String?, Never> {
+                        do {
+                            let idx  = try await JSONParser().buildIndex(from: mapped)
+                            let ni   = idx.buildNodeIndex()
+                            let ser  = JSONDocumentSerializer(index: ni, mappedFile: mapped)
+                            let d    = try ser.serialize(pretty: pretty)
+                            return String(data: d, encoding: .utf8)
+                        } catch { return nil }
+                    }
+                    serviceResult = DispatchSemaphore.wait(for: task)
+                default:
+                    serviceResult = text
                 }
-                // Block until the async task completes (Services are synchronous).
-                result = DispatchSemaphore.wait(for: task)
-            default:
-                // For XML/YAML/CSV, return unchanged (future work).
-                result = text
+            } catch {
+                serviceError = error.localizedDescription
             }
+            sem.signal()
+        }
+        sem.wait()
 
-            if let out = result {
-                pasteboard.clearContents()
-                pasteboard.setString(out, forType: .string)
-            } else {
-                outError.pointee = "Could not parse the selected text." as NSString
-            }
-        } catch {
-            outError.pointee = error.localizedDescription as NSString
+        if let out = serviceResult {
+            pasteboard.clearContents()
+            pasteboard.setString(out, forType: .string)
+        } else {
+            outError.pointee = (serviceError ?? "Could not parse the selected text.") as NSString
         }
     }
 

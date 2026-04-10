@@ -87,8 +87,7 @@ struct SyntaxHighlighter {
     /// the string portion, not the colon.
     private static func paintKeys(in ns: NSMutableAttributedString,
                                   source: String) {
-        guard let rx = try? NSRegularExpression(
-            pattern: #""(?:[^"\\]|\\.)*"\s*:"#) else { return }
+        guard let rx = cachedRegex(#""(?:[^"\\]|\\.)*"\s*:"#) else { return }
         let nsSource = source as NSString
         rx.enumerateMatches(in: source, range: NSRange(location: 0, length: nsSource.length)) { m, _, _ in
             guard let m else { return }
@@ -189,6 +188,46 @@ struct SyntaxHighlighter {
               options: [.anchorsMatchLines])
     }
 
+    // MARK: - Cached regex instances
+
+    /// Pre-compiled regexes keyed by `(pattern, options)`.  Avoids recompiling
+    /// the same patterns on every `highlight()` call (5–10 compilations per
+    /// invocation × multiple calls during scroll / resize).
+    private static let regexCache: [String: NSRegularExpression] = {
+        let specs: [(String, NSRegularExpression.Options)] = [
+            // JSON
+            (#"-?\b\d+(\.\d+)?([eE][+-]?\d+)?\b"#, []),
+            (#"\b(true|false|null)\b"#, []),
+            (#""(?:[^"\\]|\\.)*""#, []),
+            (#""(?:[^"\\]|\\.)*"\s*:"#, []),
+            // XML
+            (#""[^"]*"|'[^']*'"#, []),
+            (#"\b([\w:.-]+)\s*="#, []),
+            (#"</?([A-Za-z][\w:.-]*)"#, []),
+            (#"<!--[\s\S]*?-->"#, [.dotMatchesLineSeparators]),
+            (#"<!\[CDATA\[[\s\S]*?\]\]>"#, [.dotMatchesLineSeparators]),
+            // YAML
+            (#"\b(true|false|null|yes|no|on|off|~)\b"#, []),
+            (#"^(\s*[\w. -]+)\s*:"#, [.anchorsMatchLines]),
+            (#"^\s*-(?=\s)"#, [.anchorsMatchLines]),
+            (#"#[^\n]*"#, []),
+            // CSV
+            (#"(?<=,|\t|^)\s*-?\d+(\.\d+)?\s*(?=,|\t|$)"#, [.anchorsMatchLines]),
+        ]
+        var cache = [String: NSRegularExpression]()
+        for (pattern, opts) in specs {
+            let key = "\(pattern)|\(opts.rawValue)"
+            cache[key] = try? NSRegularExpression(pattern: pattern, options: opts)
+        }
+        return cache
+    }()
+
+    private static func cachedRegex(_ pattern: String,
+                                     options: NSRegularExpression.Options = []) -> NSRegularExpression? {
+        let key = "\(pattern)|\(options.rawValue)"
+        return regexCache[key] ?? (try? NSRegularExpression(pattern: pattern, options: options))
+    }
+
     // MARK: - Generic regex painter
 
     private static func paint(
@@ -199,7 +238,7 @@ struct SyntaxHighlighter {
         captureGroup: Int = 0,
         options:      NSRegularExpression.Options = []
     ) {
-        guard let rx = try? NSRegularExpression(pattern: pattern, options: options) else { return }
+        guard let rx = cachedRegex(pattern, options: options) else { return }
         let fullRange = NSRange(location: 0, length: (source as NSString).length)
         rx.enumerateMatches(in: source, options: [], range: fullRange) { m, _, _ in
             guard let m else { return }

@@ -57,12 +57,17 @@ struct ExpandedTreeView: View {
     /// Node to scroll into view when `scrollTrigger` increments.
     let scrollTarget: NodeID?
 
+    /// Cached flat-row array.  Recomputed only when `expandedIDs` or
+    /// `nodeIndex` changes — not on every SwiftUI body evaluation (which
+    /// also fires on selection changes, scroll triggers, etc.).
+    @State private var cachedFlatRows: [FlatRow] = []
+
     // MARK: - Body
 
     var body: some View {
         ScrollViewReader { proxy in
             List(selection: $selection) {
-                ForEach(flatRows) { row in
+                ForEach(cachedFlatRows) { row in
                     rowView(row)
                         .tag(row.id)
                         .listRowInsets(EdgeInsets(
@@ -76,6 +81,9 @@ struct ExpandedTreeView: View {
                 .onMove { handleDragMove(from: $0, to: $1) }
             }
             .listStyle(.sidebar)
+            .onAppear { rebuildFlatRows() }
+            .onChange(of: expandedIDs) { _, _ in rebuildFlatRows() }
+            .onChange(of: nodeIndex.count) { _, _ in rebuildFlatRows() }
             .onChange(of: scrollTrigger) { _, _ in
                 guard let id = scrollTarget else { return }
                 // One async hop lets SwiftUI insert newly-expanded rows into
@@ -91,12 +99,13 @@ struct ExpandedTreeView: View {
 
     // MARK: - Flat row computation
 
-    private var flatRows: [FlatRow] {
+    /// Rebuild the cached flat-row array from the current expand state.
+    private func rebuildFlatRows() {
         var result: [FlatRow] = []
         for root in rootTreeNodes {
             appendRows(treeNode: root, level: 0, into: &result)
         }
-        return result
+        cachedFlatRows = result
     }
 
     /// DFS pre-order walk: append `treeNode`, then recurse into children if
@@ -200,15 +209,15 @@ struct ExpandedTreeView: View {
     ///    (excluding the source row itself) → that is `toSiblingPos`.
     private func handleDragMove(from source: IndexSet, to destination: Int) {
         guard let fromFlatIdx = source.first else { return }
-        let sourceRow = flatRows[fromFlatIdx]
+        let sourceRow = cachedFlatRows[fromFlatIdx]
 
         guard let parentID = sourceRow.treeNode.documentNode.parentID,
               let parent   = nodeIndex.node(for: parentID),
               parent.type == .array else { return }
 
         // All flat indices that belong to direct children of the same parent.
-        let siblingFlatIndices = flatRows.indices.filter {
-            flatRows[$0].treeNode.documentNode.parentID == parentID
+        let siblingFlatIndices = cachedFlatRows.indices.filter {
+            cachedFlatRows[$0].treeNode.documentNode.parentID == parentID
         }
 
         guard let fromSiblingPos = siblingFlatIndices.firstIndex(of: fromFlatIdx)
