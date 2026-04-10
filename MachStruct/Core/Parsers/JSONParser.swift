@@ -135,7 +135,11 @@ private extension JSONParser {
                         key: String?,
                         entries: inout [IndexEntry]) {
         switch any {
-        case let dict as [String: Any]:
+        case let dict as NSDictionary:
+            // Cast to NSDictionary (not [String: Any]) so we preserve the
+            // insertion order that Foundation records when parsing JSON left-to-right.
+            // Bridging to [String: Any] loses order because Swift Dictionary is
+            // an unordered hash table.
             let nodeID = NodeID.generate()
             entries.append(IndexEntry(
                 id: nodeID,
@@ -145,8 +149,7 @@ private extension JSONParser {
                 childCount: UInt32(dict.count),
                 key: key
             ))
-            // Sort keys for determinism (Foundation doesn't preserve JSON key order).
-            for k in dict.keys.sorted() {
+            for k in dict.allKeys.compactMap({ $0 as? String }) {
                 guard let v = dict[k] else { continue }
                 walkFoundationKeyValue(key: k, value: v,
                                        parentID: nodeID, depth: depth + 1,

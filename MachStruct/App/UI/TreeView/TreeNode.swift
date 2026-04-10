@@ -7,7 +7,7 @@ import MachStructCore
 ///
 /// All computed properties read from the shared `NodeIndex` value — no copies
 /// are made and Swift's COW ensures the index is not duplicated across rows.
-struct TreeNode: Identifiable {
+struct TreeNode: Identifiable, Sendable {
 
     let id: NodeID
     let documentNode: DocumentNode

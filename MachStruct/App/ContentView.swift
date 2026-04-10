@@ -526,6 +526,12 @@ struct ContentView: View {
         }
 
         searchTask = Task {
+            // Debounce: let the user finish typing before paying for a full scan.
+            // 150 ms is imperceptible to humans but eliminates most wasted work
+            // caused by fast keystrokes.
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            guard !Task.isCancelled else { return }
+
             // Run the O(n) scan on a background thread to keep the UI fluid
             // on very large documents (100 k+ nodes).
             let results = await Task.detached(priority: .userInitiated) {

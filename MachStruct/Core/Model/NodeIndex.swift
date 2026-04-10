@@ -15,6 +15,14 @@ public struct NodeIndex: Sendable {
     /// Total number of nodes in the index.
     public var count: Int { nodesById.count }
 
+    /// Monotonically increasing version stamp.
+    ///
+    /// Incremented by every structural or value mutation.  Observers (e.g.
+    /// `ExpandedTreeView`) watch this instead of `count` so that value edits —
+    /// which don't change `count` — still trigger a flat-row rebuild and prevent
+    /// stale data from showing in the tree.
+    public private(set) var generation: UInt64 = 0
+
     // MARK: - Initialization
 
     public init(root: DocumentNode) {
@@ -98,6 +106,7 @@ public struct NodeIndex: Sendable {
     /// Insert a node without touching parent references. Use `insertChild(_:in:at:)` for tree insertions.
     public mutating func insert(_ node: DocumentNode) {
         nodesById[node.id] = node
+        generation &+= 1
     }
 
     /// Apply a transform to the node with the given ID. No-op if the ID is unknown.
@@ -105,6 +114,7 @@ public struct NodeIndex: Sendable {
         guard var node = nodesById[id] else { return }
         transform(&node)
         nodesById[id] = node
+        generation &+= 1
     }
 
     /// Insert a child into the tree at the given position and register it in the parent's childIDs.
@@ -114,6 +124,7 @@ public struct NodeIndex: Sendable {
         let safeIndex = max(0, min(index, parent.childIDs.count))
         parent.childIDs.insert(node.id, at: safeIndex)
         nodesById[parentID] = parent
+        generation &+= 1
     }
 
     /// Remove a node and its entire subtree. Also removes the node from its parent's childIDs.
@@ -124,6 +135,7 @@ public struct NodeIndex: Sendable {
             nodesById[pid] = parent
         }
         removeSubtree(id)
+        generation &+= 1
     }
 
     /// Bulk-apply a snapshot from an `EditTransaction`.
@@ -137,6 +149,7 @@ public struct NodeIndex: Sendable {
                                         deletions: Set<NodeID> = []) {
         for (id, node) in updates { nodesById[id] = node }
         for id in deletions { nodesById.removeValue(forKey: id) }
+        generation &+= 1
     }
 
     // MARK: - Tabular detection

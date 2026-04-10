@@ -8,7 +8,7 @@ import MachStructCore
 /// Produced by a DFS pre-order traversal of `TreeNode.children` that skips
 /// nodes whose ancestors are not in `expandedIDs`.  The result is a flat
 /// `[FlatRow]` array that drives `ExpandedTreeView`'s `List`.
-struct FlatRow: Identifiable {
+struct FlatRow: Identifiable, Sendable {
     /// Same as `TreeNode.id` — interchangeable with `NodeID` used elsewhere.
     let id: NodeID
     let treeNode: TreeNode
@@ -58,9 +58,13 @@ struct ExpandedTreeView: View {
     let scrollTarget: NodeID?
 
     /// Cached flat-row array.  Recomputed only when `expandedIDs` or
-    /// `nodeIndex` changes — not on every SwiftUI body evaluation (which
-    /// also fires on selection changes, scroll triggers, etc.).
+    /// `nodeIndex.generation` changes — not on every SwiftUI body evaluation
+    /// (which also fires on selection changes, scroll triggers, etc.).
     @State private var cachedFlatRows: [FlatRow] = []
+
+    /// In-flight rebuild task.  Cancelled and replaced whenever `expandedIDs`
+    /// or `nodeIndex.generation` changes so rapid toggles don't pile up work.
+    @State private var rebuildTask: Task<Void, Never>? = nil
 
     // MARK: - Body
 
@@ -83,7 +87,9 @@ struct ExpandedTreeView: View {
             .listStyle(.sidebar)
             .onAppear { rebuildFlatRows() }
             .onChange(of: expandedIDs) { _, _ in rebuildFlatRows() }
-            .onChange(of: nodeIndex.count) { _, _ in rebuildFlatRows() }
+            // Watch `generation` instead of `count` so that value edits
+            // (which don't change the node count) also refresh the rows.
+            .onChange(of: nodeIndex.generation) { _, _ in rebuildFlatRows() }
             .onChange(of: scrollTrigger) { _, _ in
                 guard let id = scrollTarget else { return }
                 // One async hop lets SwiftUI insert newly-expanded rows into
@@ -99,20 +105,47 @@ struct ExpandedTreeView: View {
 
     // MARK: - Flat row computation
 
-    /// Rebuild the cached flat-row array from the current expand state.
+    /// Schedule an async rebuild of the flat-row cache.
+    ///
+    /// The heavy DFS walk is dispatched to a background thread so that expanding
+    /// a node with tens of thousands of children never blocks the main actor.
+    /// Any in-flight rebuild is cancelled before a new one begins, so rapid
+    /// expand/collapse toggles or edits coalesce into a single update.
     private func rebuildFlatRows() {
-        var result: [FlatRow] = []
-        for root in rootTreeNodes {
-            appendRows(treeNode: root, level: 0, into: &result)
+        rebuildTask?.cancel()
+        let snapshot     = nodeIndex      // capture current value types (Sendable)
+        let expandedSnap = expandedIDs    // Set<NodeID> is Sendable
+
+        rebuildTask = Task {
+            let rows = await Task.detached(priority: .userInitiated) {
+                Self.buildFlatRows(nodeIndex: snapshot, expandedIDs: expandedSnap)
+            }.value
+
+            guard !Task.isCancelled else { return }
+            cachedFlatRows = rows
         }
-        cachedFlatRows = result
+    }
+
+    /// Compute the visible flat-row array from `nodeIndex` + `expandedIDs`.
+    ///
+    /// Static so it can be called from a `Task.detached` closure without
+    /// capturing `self` (a mutable SwiftUI view struct).
+    private static func buildFlatRows(nodeIndex: NodeIndex,
+                                      expandedIDs: Set<NodeID>) -> [FlatRow] {
+        var result: [FlatRow] = []
+        for root in rootTreeNodes(for: nodeIndex) {
+            appendRows(treeNode: root, level: 0, into: &result,
+                       expandedIDs: expandedIDs)
+        }
+        return result
     }
 
     /// DFS pre-order walk: append `treeNode`, then recurse into children if
     /// the node is both expandable and currently open.
-    private func appendRows(treeNode: TreeNode,
-                            level: Int,
-                            into result: inout [FlatRow]) {
+    private static func appendRows(treeNode: TreeNode,
+                                   level: Int,
+                                   into result: inout [FlatRow],
+                                   expandedIDs: Set<NodeID>) {
         let kids         = treeNode.children   // [TreeNode]?
         let isExpandable = (kids != nil)
 
@@ -127,7 +160,8 @@ struct ExpandedTreeView: View {
            expandedIDs.contains(treeNode.id),
            let kids {
             for kid in kids {
-                appendRows(treeNode: kid, level: level + 1, into: &result)
+                appendRows(treeNode: kid, level: level + 1, into: &result,
+                           expandedIDs: expandedIDs)
             }
         }
     }
@@ -136,7 +170,7 @@ struct ExpandedTreeView: View {
     ///
     /// Root objects/arrays are unwrapped so users see content immediately without
     /// having to expand an extra level.
-    private var rootTreeNodes: [TreeNode] {
+    private static func rootTreeNodes(for nodeIndex: NodeIndex) -> [TreeNode] {
         guard let root = nodeIndex.root else { return [] }
         if root.type == .object || root.type == .array {
             return nodeIndex.children(of: nodeIndex.rootID)

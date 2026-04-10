@@ -174,7 +174,8 @@ final class StructDocument: ReferenceFileDocument {
                 let file = try MappedFile(url: tmp)
                 try? FileManager.default.removeItem(at: tmp)    // unlink is safe post-mmap
 
-                // 2. Detect format and parse structural index.
+                // 2. Detect format and parse structural index (Phase 1).
+                //    mmap is opened with MADV_SEQUENTIAL (set by MappedFile.init).
                 let detected = FormatDetector.detect(file: file,
                                                      fileExtension: ext.isEmpty ? nil : ext)
                 let si: StructuralIndex
@@ -189,6 +190,11 @@ final class StructDocument: ReferenceFileDocument {
                 case .csv:
                     si = try await CSVParser().buildIndex(from: file);  name = "CSV"
                 }
+
+                // Phase 1 complete — switch mmap advice from sequential to random.
+                // Phase 2 value parsing jumps to arbitrary byte offsets, so MADV_RANDOM
+                // tells the OS to stop read-ahead and page only what's actually needed.
+                file.adviseRandom()
 
                 // 3. Build the node index — O(n) dictionary construction over all nodes.
                 return LoadResult(file: file, nodeIndex: si.buildNodeIndex(), formatName: name)
