@@ -68,11 +68,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // It reads SUFeedURL and SUPublicEDKey from Info.plist automatically.
     // On first launch after install it schedules a background check; subsequent
     // checks run on the Sparkle default interval (once per day).
-    let updaterController = SPUStandardUpdaterController(
-        startingUpdater: true,
-        updaterDelegate: nil,
-        userDriverDelegate: nil
-    )
+    //
+    // startingUpdater is false in DEBUG: Sparkle refuses to start (and shows an
+    // error dialog) when the app runs unsigned from DerivedData. This flag keeps
+    // dev builds quiet; release builds get the real updater.
+    let updaterController: SPUStandardUpdaterController = {
+        #if DEBUG
+        return SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil)
+        #else
+        return SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+        #endif
+    }()
 
     // MARK: Launch
 
