@@ -320,4 +320,4 @@ See [`docs/`](docs/) for the full design documentation:
 
 ## License
 
-MIT © 2026 lustech
+MIT © 2026 Lustech

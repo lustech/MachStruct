@@ -22,6 +22,7 @@ struct DetectedClipboard: Equatable {
 ///   - comma-separated rows → CSV
 ///
 /// Text larger than 2 MB or smaller than 3 characters is ignored.
+@MainActor
 final class ClipboardWatcher: ObservableObject {
 
     @Published var detected: DetectedClipboard? = nil
@@ -71,7 +72,7 @@ final class ClipboardWatcher: ObservableObject {
     // MARK: - Heuristic sniffer
 
     /// Returns a format name if `text` looks like structured data, else `nil`.
-    private static func sniff(_ text: String) -> String? {
+    private nonisolated static func sniff(_ text: String) -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         let first = trimmed.unicodeScalars.first!.value
@@ -137,7 +138,7 @@ struct ClipboardBanner: View {
         HStack(spacing: 10) {
             Image(systemName: icon)
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.accent)
+                .foregroundStyle(Color.accentColor)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text("\(detected.format) detected on clipboard")

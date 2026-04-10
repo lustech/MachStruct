@@ -87,7 +87,7 @@
          Replace PLACEHOLDER with the actual key after running the tool.
          The matching private key must be stored in your keychain (never committed). -->
     <key>SUPublicEDKey</key>
-    <string>SPARKLE_ED_PUBLIC_KEY_PLACEHOLDER</string>
+    <string>JF1nlkXsXdpIRmzsxXBjQVvSxTZgPz0mdbGNLMshYac=</string>
 
     <!-- Sparkle 2 requires these keys for sandboxed apps (App Sandbox entitlement). -->
     <key>NSAppTransportSecurity</key>
