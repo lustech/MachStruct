@@ -152,49 +152,55 @@ final class StructDocument: ReferenceFileDocument {
         isLoading = true
         loadError = nil
         do {
-            // Derive the file extension so the detector can use it as a tiebreaker.
             let ext = (fileName as NSString).pathExtension.lowercased()
 
-            // Write to a temp file so we can mmap it.  We keep the original
-            // extension so madvise hints stay correct.
-            let tmp = FileManager.default.temporaryDirectory
-                .appendingPathComponent("\(UUID().uuidString).\(ext.isEmpty ? "dat" : ext)")
-            try data.write(to: tmp)
-            let file = try MappedFile(url: tmp)
-            try? FileManager.default.removeItem(at: tmp)    // unlink is safe post-mmap
+            // Run all heavy work on a background thread so the main actor stays
+            // responsive during the load.  Three operations were previously blocking
+            // the main actor and causing watchdog kills on large files:
+            //   1. data.write(to:)    — synchronous disk write (up to tens of MB)
+            //   2. parser.buildIndex  — structural parse (simdjson / Foundation)
+            //   3. si.buildNodeIndex  — O(n) DocumentNode tree construction
+            struct LoadResult: Sendable {
+                let file: MappedFile
+                let nodeIndex: NodeIndex
+                let formatName: String
+            }
 
-            mappedFile = file   // Keep alive for save / Phase 2 value parsing.
+            let result: LoadResult = try await Task.detached(priority: .userInitiated) {
+                // 1. Write to a temp file so we can mmap it.
+                let tmp = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("\(UUID().uuidString).\(ext.isEmpty ? "dat" : ext)")
+                try data.write(to: tmp)
+                let file = try MappedFile(url: tmp)
+                try? FileManager.default.removeItem(at: tmp)    // unlink is safe post-mmap
 
-            // ── Auto-detect format ──────────────────────────────────────────
-            let detected = FormatDetector.detect(file: file,
-                                                 fileExtension: ext.isEmpty ? nil : ext)
-            let (si, name) = try await parseFile(file, detectedAs: detected)
-            nodeIndex  = si.buildNodeIndex()
-            formatName = name
+                // 2. Detect format and parse structural index.
+                let detected = FormatDetector.detect(file: file,
+                                                     fileExtension: ext.isEmpty ? nil : ext)
+                let si: StructuralIndex
+                let name: String
+                switch detected {
+                case .json, .unknown:
+                    si = try await JSONParser().buildIndex(from: file); name = "JSON"
+                case .xml:
+                    si = try await XMLParser().buildIndex(from: file);  name = "XML"
+                case .yaml:
+                    si = try await YAMLParser().buildIndex(from: file); name = "YAML"
+                case .csv:
+                    si = try await CSVParser().buildIndex(from: file);  name = "CSV"
+                }
+
+                // 3. Build the node index — O(n) dictionary construction over all nodes.
+                return LoadResult(file: file, nodeIndex: si.buildNodeIndex(), formatName: name)
+            }.value
+
+            mappedFile = result.file
+            nodeIndex  = result.nodeIndex
+            formatName = result.formatName
         } catch {
             loadError = error
         }
         isLoading = false
-    }
-
-    // MARK: - Format dispatch
-
-    /// Pick the right parser for `detected` and return the structural index +
-    /// a human-readable format name for the status bar.
-    private func parseFile(
-        _ file: MappedFile,
-        detectedAs detected: FormatDetector.DetectedFormat
-    ) async throws -> (StructuralIndex, String) {
-        switch detected {
-        case .json, .unknown:
-            return (try await JSONParser().buildIndex(from: file), "JSON")
-        case .xml:
-            return (try await XMLParser().buildIndex(from: file), "XML")
-        case .yaml:
-            return (try await YAMLParser().buildIndex(from: file), "YAML")
-        case .csv:
-            return (try await CSVParser().buildIndex(from: file), "CSV")
-        }
     }
 }
 
