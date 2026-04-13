@@ -378,23 +378,18 @@ struct ContentView: View {
             }
         }
 
-        // ── Navigation history (back / forward) ───────────────────────────
-        ToolbarItem(placement: .navigation) {
-            if let index = document.nodeIndex {
-                HStack(spacing: 0) {
-                    Button(action: { goBack(in: index) }) {
-                        Image(systemName: "chevron.left")
-                    }
-                    .disabled(navHistoryIndex <= 0)
-                    .help("Go back (⌘[)")
+        // Navigation history buttons intentionally omitted from toolbar.
 
-                    Button(action: { goForward(in: index) }) {
-                        Image(systemName: "chevron.right")
-                    }
-                    .disabled(navHistoryIndex >= navHistory.count - 1)
-                    .help("Go forward (⌘])")
+        // ── Expand / Collapse all ─────────────────────────────────────────
+        ToolbarItem(placement: .primaryAction) {
+            if document.nodeIndex != nil, viewMode == .tree {
+                Menu {
+                    Button("Expand All") { expandAll() }
+                    Button("Collapse All") { collapseAll() }
+                } label: {
+                    Label("Expand / Collapse", systemImage: "arrow.up.and.line.horizontal.and.arrow.down")
                 }
-                .buttonStyle(.borderless)
+                .help("Expand or collapse all nodes")
             }
         }
 
@@ -614,6 +609,18 @@ struct ContentView: View {
         if !toExpand.isEmpty {
             expandedIDs.formUnion(toExpand)
         }
+    }
+
+    /// Inserts every node that has children into `expandedIDs`.
+    private func expandAll() {
+        guard let index = document.nodeIndex else { return }
+        let allExpandable = index.nodesMatching { !$0.childIDs.isEmpty }.map(\.id)
+        expandedIDs.formUnion(allExpandable)
+    }
+
+    /// Clears `expandedIDs` so every node collapses to the root level.
+    private func collapseAll() {
+        expandedIDs.removeAll()
     }
 
     // MARK: - Bookmarks (P4-03)

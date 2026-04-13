@@ -210,6 +210,10 @@ struct ExpandedTreeView: View {
             }
 
             NodeRow(node: row.treeNode)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    if row.isExpandable { toggleExpanded(row.id) }
+                }
         }
     }
 
