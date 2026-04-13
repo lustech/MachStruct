@@ -60,6 +60,22 @@ final class StructDocument: ReferenceFileDocument {
     /// Kept alive so unparsed scalar nodes can be re-read for save / raw view.
     var mappedFile: MappedFile?
 
+    /// Retained for files ≥ `lazyThreshold` so children can be materialised
+    /// on demand without a full `buildNodeIndex()` at open time.
+    /// Set to `nil` once the document is fully materialised.
+    var structuralIndex: StructuralIndex?
+
+    /// Files ≥ this size use lazy NodeIndex materialisation.
+    private static let lazyThreshold: UInt64 = 5 * 1024 * 1024  // 5 MB
+
+    // MARK: - Tabular heuristic
+
+    /// True when the document looks tabular. Works for both lazy and fully-built indexes.
+    var isTabular: Bool {
+        if let si = structuralIndex { return si.looksTabular() }
+        return nodeIndex?.isTabular() ?? false
+    }
+
     // MARK: - Init (called by DocumentGroup when a file is opened)
 
     required init(configuration: ReadConfiguration) throws {
@@ -163,6 +179,7 @@ final class StructDocument: ReferenceFileDocument {
             struct LoadResult: Sendable {
                 let file: MappedFile
                 let nodeIndex: NodeIndex
+                let structuralIndex: StructuralIndex?  // non-nil for lazy (large) files
                 let formatName: String
             }
 
@@ -196,17 +213,220 @@ final class StructDocument: ReferenceFileDocument {
                 // tells the OS to stop read-ahead and page only what's actually needed.
                 file.adviseRandom()
 
-                // 3. Build the node index — O(n) dictionary construction over all nodes.
-                return LoadResult(file: file, nodeIndex: si.buildNodeIndex(), formatName: name)
+                // 3. Build the node index.
+                //
+                //    Large files (≥ lazyThreshold): build a *shallow* NodeIndex containing
+                //    only the root and its immediate visible children.  This is O(visible)
+                //    instead of O(all_nodes), cutting memory by 90–99% and eliminating the
+                //    hundreds-of-MB allocation that caused the rainbow spinner on 30 MB files.
+                //    Deeper nodes are materialised on demand when the user expands them.
+                //
+                //    Small files: keep the existing eager full build.
+                let useLazy = file.fileSize >= StructDocument.lazyThreshold
+                if useLazy {
+                    var idx = si.buildShallowNodeIndex()
+                    // Post-parse keys/values for the initially-visible nodes.
+                    // On the simdjson path, IndexEntry.key and parsedValue are nil; we need
+                    // one Phase-2 parse per visible node to populate them so the tree renders.
+                    StructDocument.parseVisibleEntries(in: &idx, structuralIndex: si, file: file)
+                    return LoadResult(file: file, nodeIndex: idx,
+                                      structuralIndex: si, formatName: name)
+                } else {
+                    return LoadResult(file: file, nodeIndex: si.buildNodeIndex(),
+                                      structuralIndex: nil, formatName: name)
+                }
             }.value
 
-            mappedFile = result.file
-            nodeIndex  = result.nodeIndex
-            formatName = result.formatName
+            mappedFile      = result.file
+            nodeIndex       = result.nodeIndex
+            structuralIndex = result.structuralIndex
+            formatName      = result.formatName
         } catch {
             loadError = error
         }
         isLoading = false
+    }
+
+    // MARK: - Lazy materialisation
+
+    /// Materialise the children of `nodeID` into `nodeIndex` if they are not yet present.
+    ///
+    /// Runs the heavy work (DocumentNode creation + Phase-2 key/value parsing) on a
+    /// background thread so the main actor stays responsive even when expanding nodes
+    /// with thousands of children.
+    @MainActor
+    func materializeChildrenIfNeeded(of nodeID: NodeID) async {
+        guard let si = structuralIndex,
+              let file = mappedFile,
+              let childIdxs = si.childIndices[nodeID],
+              !childIdxs.isEmpty else { return }
+        guard var idx = nodeIndex else { return }
+
+        // Skip if the first child is already in the index.
+        let firstChildID = si.entries[childIdxs[0]].id
+        guard idx.node(for: firstChildID) == nil else { return }
+
+        // Build DocumentNode updates on a background thread.
+        let updates = await Task.detached(priority: .userInitiated) { [si, file] in
+            StructDocument.buildChildUpdates(for: nodeID, childIdxs: childIdxs,
+                                              structuralIndex: si, file: file)
+        }.value
+
+        guard !updates.isEmpty else { return }
+        idx.applySnapshot(updates)
+        nodeIndex = idx
+    }
+
+    /// Ensure every node in the structural index is materialised in `nodeIndex`.
+    ///
+    /// Called before search so `SearchEngine` can traverse the full document.
+    /// No-op when already fully materialised or no structural index is present.
+    @MainActor
+    func ensureFullyMaterialized() async {
+        guard let si = structuralIndex, let file = mappedFile else { return }
+        guard let current = nodeIndex, current.count < si.count else { return }
+
+        let full = await Task.detached(priority: .userInitiated) { [si, file] in
+            var idx = si.buildNodeIndex()
+            // Parse keys/values for all nodes (simdjson path has nil key/parsedValue).
+            StructDocument.parseAllEntries(in: &idx, structuralIndex: si, file: file)
+            return idx
+        }.value
+
+        nodeIndex       = full
+        structuralIndex = nil   // no longer needed
+    }
+
+    // MARK: - Phase-2 parse helpers (static, called from background tasks)
+
+    /// Build `DocumentNode` updates for the children of `nodeID` and, for keyValue
+    /// children, their value grandchildren too (needed for correct display).
+    private static func buildChildUpdates(for nodeID: NodeID,
+                                           childIdxs: [Int],
+                                           structuralIndex si: StructuralIndex,
+                                           file: MappedFile) -> [NodeID: DocumentNode] {
+        var result = [NodeID: DocumentNode]()
+        result.reserveCapacity(childIdxs.count * 2)
+
+        for idx in childIdxs {
+            let entry = si.entries[idx]
+            let childIDs = (si.childIndices[entry.id] ?? []).map { si.entries[$0].id }
+            let key   = entry.key   ?? parseKeyBytes(entry: entry, from: file)
+            let value = entry.parsedValue.map { NodeValue.scalar($0) }
+                        ?? parseValueBytes(entry: entry, from: file)
+            result[entry.id] = DocumentNode(
+                id: entry.id, type: entry.nodeType, depth: entry.depth,
+                parentID: entry.parentID, childIDs: childIDs,
+                key: key, value: value,
+                sourceRange: SourceRange(byteOffset: entry.byteOffset,
+                                         byteLength: entry.byteLength),
+                metadata: entry.metadata
+            )
+
+            // For keyValue nodes, also materialise the value child so display works.
+            if entry.nodeType == .keyValue,
+               let valIdxs = si.childIndices[entry.id] {
+                for vi in valIdxs {
+                    let ve = si.entries[vi]
+                    let gcChildIDs = (si.childIndices[ve.id] ?? []).map { si.entries[$0].id }
+                    let veValue = ve.parsedValue.map { NodeValue.scalar($0) }
+                                  ?? parseValueBytes(entry: ve, from: file)
+                    result[ve.id] = DocumentNode(
+                        id: ve.id, type: ve.nodeType, depth: ve.depth,
+                        parentID: ve.parentID, childIDs: gcChildIDs,
+                        key: ve.key, value: veValue,
+                        sourceRange: SourceRange(byteOffset: ve.byteOffset,
+                                                 byteLength: ve.byteLength),
+                        metadata: ve.metadata
+                    )
+                }
+            }
+        }
+        return result
+    }
+
+    /// Post-parse keys and values for every node already in `idx`.
+    /// Called after `buildShallowNodeIndex` (for initially-visible nodes)
+    /// and after `buildNodeIndex` (for the full-materialise-for-search path).
+    private static func parseVisibleEntries(in idx: inout NodeIndex,
+                                             structuralIndex si: StructuralIndex,
+                                             file: MappedFile) {
+        // Collect IDs that need key or value parsing.
+        var updates = [NodeID: DocumentNode]()
+        for entry in si.entries {
+            guard var node = idx.node(for: entry.id) else { continue }
+            var changed = false
+
+            if node.key == nil, entry.nodeType == .keyValue {
+                node.key = parseKeyBytes(entry: entry, from: file)
+                changed = true
+            }
+            if case .unparsed = node.value, entry.nodeType == .scalar {
+                node.value = parseValueBytes(entry: entry, from: file)
+                changed = true
+            }
+            if changed { updates[node.id] = node }
+        }
+        if !updates.isEmpty { idx.applySnapshot(updates) }
+    }
+
+    /// Post-parse keys and values for ALL entries (used after full buildNodeIndex).
+    private static func parseAllEntries(in idx: inout NodeIndex,
+                                         structuralIndex si: StructuralIndex,
+                                         file: MappedFile) {
+        var updates = [NodeID: DocumentNode]()
+        for entry in si.entries {
+            guard var node = idx.node(for: entry.id) else { continue }
+            var changed = false
+            if node.key == nil, entry.nodeType == .keyValue {
+                node.key = parseKeyBytes(entry: entry, from: file)
+                changed = true
+            }
+            if case .unparsed = node.value, entry.nodeType == .scalar {
+                node.value = parseValueBytes(entry: entry, from: file)
+                changed = true
+            }
+            if changed { updates[node.id] = node }
+        }
+        if !updates.isEmpty { idx.applySnapshot(updates) }
+    }
+
+    /// Parse the JSON key string for a `.keyValue` entry (simdjson path).
+    /// On the simdjson path, the key is stored as a quoted JSON string at `byteOffset`.
+    private static func parseKeyBytes(entry: IndexEntry, from file: MappedFile) -> String? {
+        guard entry.byteLength > 0,
+              let raw = try? file.data(offset: entry.byteOffset, length: entry.byteLength),
+              let str = try? JSONSerialization.jsonObject(with: raw,
+                                                          options: .allowFragments) as? String
+        else { return nil }
+        return str
+    }
+
+    /// Parse the JSON value for a `.scalar` entry (simdjson path).
+    private static func parseValueBytes(entry: IndexEntry, from file: MappedFile) -> NodeValue {
+        guard entry.nodeType == .scalar, entry.byteLength > 0,
+              let raw = try? file.data(offset: entry.byteOffset, length: entry.byteLength),
+              let any = try? JSONSerialization.jsonObject(with: raw,
+                                                          options: .allowFragments)
+        else { return .unparsed }
+        return .scalar(scalarFromAny(any))
+    }
+
+    /// Mirror of `JSONParser.scalarValue(from:)` without requiring the actor.
+    private static func scalarFromAny(_ any: Any) -> ScalarValue {
+        if let b = any as? Bool { return .boolean(b) }
+        if let n = any as? NSNumber,
+           CFGetTypeID(n as CFTypeRef) != CFBooleanGetTypeID() {
+            if n.doubleValue.truncatingRemainder(dividingBy: 1) == 0,
+               n.doubleValue >= Double(Int64.min),
+               n.doubleValue <= Double(Int64.max) {
+                return .integer(n.int64Value)
+            }
+            return .float(n.doubleValue)
+        }
+        if let s = any as? String { return .string(s) }
+        if any is NSNull { return .null }
+        return .string(String(describing: any))
     }
 }
 

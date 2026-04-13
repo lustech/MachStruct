@@ -62,15 +62,31 @@ public struct IndexEntry: Sendable {
 
 /// The output of Phase 1 parsing: a flat array of `IndexEntry`s in document order.
 ///
-/// Convert to a fully navigable `NodeIndex` via `buildNodeIndex()`.
+/// Convert to a fully navigable `NodeIndex` via `buildNodeIndex()` (eager, all nodes)
+/// or `buildShallowNodeIndex()` (lazy — root + first visible level only).
 public struct StructuralIndex: Sendable {
 
     public let entries: [IndexEntry]
     public var count: Int { entries.count }
 
+    /// Maps each NodeID → indices of its immediate children in `entries`.
+    /// Precomputed once in O(n); enables O(childCount) lazy expansion without
+    /// scanning the full entry list.
+    public let childIndices: [NodeID: [Int]]
+
     public init(entries: [IndexEntry]) {
         self.entries = entries
+        var ci = [NodeID: [Int]]()
+        ci.reserveCapacity(entries.count / 4)
+        for (i, entry) in entries.enumerated() {
+            if let pid = entry.parentID {
+                ci[pid, default: []].append(i)
+            }
+        }
+        self.childIndices = ci
     }
+
+    // MARK: - Full (eager) build
 
     /// Build a `NodeIndex` (DocumentNode tree) from this structural index.
     ///
@@ -124,6 +140,113 @@ public struct StructuralIndex: Sendable {
         }
 
         return NodeIndex(rootID: first.id, allNodes: nodes)
+    }
+
+    // MARK: - Shallow (lazy) build
+
+    /// Build a `NodeIndex` containing only the root and its immediate visible children.
+    ///
+    /// For `.keyValue` nodes in the root, their value children are also materialized
+    /// so display properties (`displayValue`, `badgeInfo`) work on the initial render.
+    /// Deeper nodes are added on demand via `StructDocument.materializeChildrenIfNeeded`.
+    ///
+    /// Compared to `buildNodeIndex()`, this is O(visible_nodes) instead of O(all_nodes),
+    /// which reduces memory and startup time dramatically for large files.
+    public func buildShallowNodeIndex() -> NodeIndex {
+        guard let first = entries.first else {
+            let root = DocumentNode(type: .object, value: .container(childCount: 0))
+            return NodeIndex(root: root)
+        }
+
+        // Rough capacity: root + root children + their value/kv children.
+        let rootChildIdxs = childIndices[first.id] ?? []
+        var nodes = [NodeID: DocumentNode]()
+        nodes.reserveCapacity(1 + rootChildIdxs.count * 3)
+
+        // Root node
+        let rootChildIDs = rootChildIdxs.map { entries[$0].id }
+        nodes[first.id] = makeDocumentNode(from: first, childIDs: rootChildIDs)
+
+        // Root's immediate children + one extra level (value children of keyValue nodes)
+        for childIdx in rootChildIdxs {
+            let childEntry = entries[childIdx]
+            let grandChildIdxs = childIndices[childEntry.id] ?? []
+            let grandChildIDs = grandChildIdxs.map { entries[$0].id }
+            nodes[childEntry.id] = makeDocumentNode(from: childEntry, childIDs: grandChildIDs)
+
+            // For keyValue nodes, also materialise the value child so the row can
+            // render its display value and badge without needing a separate parse.
+            if childEntry.nodeType == .keyValue {
+                for gcIdx in grandChildIdxs {
+                    let gcEntry = entries[gcIdx]
+                    let ggChildIDs = (childIndices[gcEntry.id] ?? []).map { entries[$0].id }
+                    nodes[gcEntry.id] = makeDocumentNode(from: gcEntry, childIDs: ggChildIDs)
+                }
+            }
+        }
+
+        return NodeIndex(rootID: first.id, allNodes: nodes)
+    }
+
+    // MARK: - Tabular heuristic
+
+    /// Returns `true` when the structural index looks tabular without requiring full
+    /// materialisation.  Uses child-count heuristics rather than key-name comparison,
+    /// so it works even on the simdjson path where `IndexEntry.key` is nil.
+    public func looksTabular(sampleSize: Int = 10) -> Bool {
+        guard let rootEntry = entries.first, rootEntry.nodeType == .array else { return false }
+        guard let rootChildIdxs = childIndices[rootEntry.id],
+              !rootChildIdxs.isEmpty else { return false }
+
+        let sample = rootChildIdxs.prefix(sampleSize)
+        // All sampled items must be objects.
+        guard sample.allSatisfy({ entries[$0].nodeType == .object }) else { return false }
+
+        // All sampled objects must have the same child count.
+        let firstCount = childIndices[entries[sample[0]].id]?.count ?? 0
+        guard firstCount > 0 else { return false }
+        guard sample.allSatisfy({
+            (childIndices[entries[$0].id]?.count ?? 0) == firstCount
+        }) else { return false }
+
+        // If keys are available (Foundation path), also verify they match.
+        if let firstItemChildIdxs = childIndices[entries[sample[0]].id],
+           firstItemChildIdxs.first.map({ entries[$0].key }) != nil {
+            let firstKeys = firstItemChildIdxs.compactMap { entries[$0].key }
+            guard firstKeys.count == firstCount else { return false }
+            return sample.allSatisfy { itemIdx in
+                let keys = (childIndices[entries[itemIdx].id] ?? []).compactMap { entries[$0].key }
+                return keys == firstKeys
+            }
+        }
+
+        return true
+    }
+
+    // MARK: - Internal helpers
+
+    func makeDocumentNode(from entry: IndexEntry, childIDs: [NodeID]) -> DocumentNode {
+        let value: NodeValue
+        switch entry.nodeType {
+        case .object, .array:
+            value = .container(childCount: Int(entry.childCount))
+        case .scalar:
+            value = entry.parsedValue.map { .scalar($0) } ?? .unparsed
+        case .keyValue:
+            value = .unparsed
+        }
+        return DocumentNode(
+            id: entry.id,
+            type: entry.nodeType,
+            depth: entry.depth,
+            parentID: entry.parentID,
+            childIDs: childIDs,
+            key: entry.key,
+            value: value,
+            sourceRange: SourceRange(byteOffset: entry.byteOffset,
+                                     byteLength: entry.byteLength),
+            metadata: entry.metadata
+        )
     }
 }
 

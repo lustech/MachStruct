@@ -57,6 +57,11 @@ struct ExpandedTreeView: View {
     /// Node to scroll into view when `scrollTrigger` increments.
     let scrollTarget: NodeID?
 
+    /// Called with a node ID just before it is inserted into `expandedIDs`.
+    /// Used by `ContentView` to trigger lazy materialisation of that node's
+    /// children when the document was loaded with a shallow NodeIndex.
+    var onExpand: ((NodeID) async -> Void)? = nil
+
     /// Cached flat-row array.  Recomputed only when `expandedIDs` or
     /// `nodeIndex.generation` changes — not on every SwiftUI body evaluation
     /// (which also fires on selection changes, scroll triggers, etc.).
@@ -211,6 +216,15 @@ struct ExpandedTreeView: View {
     private func toggleExpanded(_ id: NodeID) {
         if expandedIDs.contains(id) {
             expandedIDs.remove(id)
+        } else if let onExpand {
+            // Materialise children on a background thread before revealing them.
+            // The Task runs on the main actor after the await so expandedIDs
+            // is updated in the same synchronous continuation as nodeIndex,
+            // letting SwiftUI coalesce both state changes into one re-render.
+            Task {
+                await onExpand(id)
+                expandedIDs.insert(id)
+            }
         } else {
             expandedIDs.insert(id)
         }

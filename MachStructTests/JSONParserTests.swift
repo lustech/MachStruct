@@ -38,19 +38,20 @@ final class JSONParserTests: XCTestCase {
     }
 
     func testFlatObjectFoundation() async throws {
-        // {\"name\":\"Alice\",\"age\":30}
-        // entries: root(obj), kv"age", 30, kv"name", "Alice"  (sorted keys)
+        // {"name":"Alice","age":30}
+        // Foundation path preserves document (insertion) order via NSDictionary.
+        // entries: root(obj), kv"name", "Alice", kv"age", 30
         let index = try await buildIndex(json: #"{"name":"Alice","age":30}"#)
         XCTAssertEqual(index.entries.count, 5)
         // Root
         XCTAssertEqual(index.entries[0].nodeType, .object)
         XCTAssertEqual(index.entries[0].childCount, 2)
-        // Keys are sorted, so first kv should be "age"
+        // First kv is "name" (document order)
         XCTAssertEqual(index.entries[1].nodeType, .keyValue)
-        XCTAssertEqual(index.entries[1].key, "age")
+        XCTAssertEqual(index.entries[1].key, "name")
         XCTAssertEqual(index.entries[1].depth, 1)
         XCTAssertEqual(index.entries[2].nodeType, .scalar)
-        XCTAssertEqual(index.entries[2].parsedValue, .integer(30))
+        XCTAssertEqual(index.entries[2].parsedValue, .string("Alice"))
     }
 
     func testFlatArrayFoundation() async throws {

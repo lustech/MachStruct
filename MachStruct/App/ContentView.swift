@@ -221,7 +221,10 @@ struct ContentView: View {
                 selection:     $selectedNodeID,
                 expandedIDs:   $expandedIDs,
                 scrollTrigger: scrollTrigger,
-                scrollTarget:  scrollTarget
+                scrollTarget:  scrollTarget,
+                onExpand:      { [weak document] id in
+                    await document?.materializeChildrenIfNeeded(of: id)
+                }
             )
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 StatusBar(
@@ -254,7 +257,7 @@ struct ContentView: View {
     private var toolbarContent: some ToolbarContent {
         // ── Table view toggle (only when the document is tabular) ──────────
         ToolbarItem(placement: .primaryAction) {
-            if let index = document.nodeIndex, index.isTabular() {
+            if document.isTabular {
                 Toggle(isOn: Binding(
                     get:  { viewMode == .table },
                     set:  { viewMode = $0 ? .table : .tree }
@@ -281,7 +284,7 @@ struct ContentView: View {
                     Button("Export as CSV…") {
                         exportDocument(index: index, format: .csv)
                     }
-                    .disabled(!index.isTabular())
+                    .disabled(!document.isTabular)
                 } label: {
                     if isExporting {
                         ProgressView().scaleEffect(0.6)
@@ -516,7 +519,7 @@ struct ContentView: View {
     /// Results are returned in DFS document order so ↑↓ navigation feels
     /// natural.  The task is cheap to cancel because `SearchEngine.search`
     /// is a synchronous, non-blocking scan.
-    private func scheduleSearch(query: String, in index: NodeIndex) {
+    private func scheduleSearch(query: String, in _: NodeIndex) {
         searchTask?.cancel()
         activeMatchIndex = 0
 
@@ -531,6 +534,15 @@ struct ContentView: View {
             // caused by fast keystrokes.
             try? await Task.sleep(nanoseconds: 150_000_000)
             guard !Task.isCancelled else { return }
+
+            // For lazily-loaded files, materialise all nodes before searching
+            // so that every key and value is reachable by SearchEngine.
+            // This is a one-time cost; subsequent searches use the full index.
+            await document.ensureFullyMaterialized()
+            guard !Task.isCancelled else { return }
+
+            // Snapshot the (now-complete) index for the background scan.
+            guard let index = document.nodeIndex else { return }
 
             // Run the O(n) scan on a background thread to keep the UI fluid
             // on very large documents (100 k+ nodes).
