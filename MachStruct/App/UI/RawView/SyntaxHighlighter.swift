@@ -30,20 +30,22 @@ struct SyntaxHighlighter {
     }
 
     /// Characters beyond this limit are returned as plain monospaced text.
-    static let limit = 150_000
+    ///
+    /// `NSTextView` virtualises layout so there is no rendering penalty for large
+    /// strings; the limit only guards the O(n) regex passes themselves.
+    static let limit = 500_000
 
     // MARK: - Public API
 
-    /// Returns an `AttributedString` with syntax colours applied.
+    /// Returns an `NSAttributedString` with syntax colours applied.
     ///
-    /// - Parameters:
-    ///   - text:     The serialised document text.
-    ///   - format:   Source format (determines token colours).
-    ///   - fontSize: Monospaced font size in points (default 13).
+    /// Prefer this over `highlight(_:format:fontSize:)` when the result will be
+    /// displayed in `HighlightedTextView` — it skips the lossy conversion to
+    /// SwiftUI `AttributedString`.
     ///
     /// Safe to call from any thread.
-    static func highlight(_ text: String, format: Format,
-                          fontSize: CGFloat = 13) -> AttributedString {
+    static func highlightNS(_ text: String, format: Format,
+                             fontSize: CGFloat = 13) -> NSAttributedString {
         let mono = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
         let ns   = NSMutableAttributedString(string: text)
         ns.addAttribute(.font, value: mono,
@@ -58,6 +60,16 @@ struct SyntaxHighlighter {
             }
         }
 
+        return ns
+    }
+
+    /// Returns a SwiftUI `AttributedString` with syntax colours applied.
+    ///
+    /// Thin wrapper around `highlightNS` for call sites that still need
+    /// `AttributedString` (e.g. legacy `Text` usage).
+    static func highlight(_ text: String, format: Format,
+                          fontSize: CGFloat = 13) -> AttributedString {
+        let ns = highlightNS(text, format: format, fontSize: fontSize)
         return (try? AttributedString(ns, including: \.appKit)) ?? AttributedString(text)
     }
 

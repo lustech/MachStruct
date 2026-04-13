@@ -50,7 +50,9 @@ struct ContentView: View {
 
     /// Syntax-highlighted version of `rawText` (computed after serialisation).
     /// `nil` while being computed or when text exceeds the highlight limit.
-    @State private var highlightedRawText: AttributedString? = nil
+    /// Stored as `NSAttributedString` to avoid the lossy `AttributedString`
+    /// conversion and feed `HighlightedTextView` directly.
+    @State private var highlightedRawText: NSAttributedString? = nil
 
     /// True while raw text is being serialized in the background.
     @State private var isSerializingRaw: Bool = false
@@ -426,26 +428,18 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Raw view (P2-09, syntax highlighting added as quick win)
+    // MARK: - Raw view (P2-09 / ADR-001 Phase 3)
 
+    /// Raw text rendered via `NSTextView` (virtualised layout — no stall on large files).
+    ///
+    /// `HighlightedTextView` owns its `NSScrollView`, so no wrapping SwiftUI
+    /// `ScrollView` is needed here.
     private var rawView: some View {
-        ScrollView([.horizontal, .vertical]) {
-            Group {
-                if let highlighted = highlightedRawText {
-                    // Highlighted AttributedString — font is baked in by SyntaxHighlighter.
-                    Text(highlighted)
-                        .textSelection(.enabled)
-                } else {
-                    // Plain fallback while highlighting runs, or for oversized files.
-                    Text(rawText)
-                        .font(.system(size: rawFontSize, design: .monospaced))
-                        .textSelection(.enabled)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding()
-        }
-        .background(Color(NSColor.textBackgroundColor))
+        HighlightedTextView(
+            attributedText: highlightedRawText,
+            plainText:      rawText,
+            fontSize:       rawFontSize
+        )
     }
 
     /// Serialize the document asynchronously, then apply syntax highlighting.
@@ -466,11 +460,15 @@ struct ContentView: View {
                 rawText = text
 
                 // Highlight on a utility-priority background thread.
+                // NSAttributedString is immutable after SyntaxHighlighter finishes,
+                // so crossing the actor boundary is safe; the box silences the warning.
                 if let fmt = SyntaxHighlighter.Format(formatName: formatName) {
-                    let attributed = await Task.detached(priority: .utility) {
-                        SyntaxHighlighter.highlight(text, format: fmt, fontSize: fontSize)
+                    struct Box: @unchecked Sendable { let value: NSAttributedString }
+                    let box = await Task.detached(priority: .utility) {
+                        Box(value: SyntaxHighlighter.highlightNS(text, format: fmt,
+                                                                  fontSize: fontSize))
                     }.value
-                    highlightedRawText = attributed
+                    highlightedRawText = box.value
                 }
             } catch {
                 rawText            = "// Serialization error: \(error.localizedDescription)"
