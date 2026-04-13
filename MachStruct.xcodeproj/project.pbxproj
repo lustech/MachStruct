@@ -26,6 +26,7 @@
 		A2335F17FAC94F148FE8ACCC /* BookmarkEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = D817BE60797A41BDB6931DA1 /* BookmarkEnvironment.swift */; };
 		ABBAF63D0B804F1FAABF0656 /* CSVStatsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 695B4DB8E6174B26AE386E0D /* CSVStatsPanel.swift */; };
 		ABD657A1C90E4BD38E0DB6A7 /* SyntaxHighlighter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7817C68AA5584BF5A6478410 /* SyntaxHighlighter.swift */; };
+		BCDE12345678901234567890 /* HighlightedTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABCD12345678901234567890 /* HighlightedTextView.swift */; };
 		BB406DF6750F302763B02B70 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBB9B474EFCC206A7AF61136 /* ContentView.swift */; };
 		C3E931F208144FD3BAE73A9C /* StatusBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B2FF72DBCCACDFFD557BEA1 /* StatusBar.swift */; };
 		D5FCDEBF1E2BA97433571E31 /* NodeRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E2A1954BB8FAB2DB8414E1 /* NodeRow.swift */; };
@@ -77,6 +78,7 @@
 		6A19F7CF620D1FC01343CD19 /* TableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableView.swift; sourceTree = "<group>"; };
 		78176BDF8A0409D74304F7A5 /* MachStructApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MachStructApp.swift; sourceTree = "<group>"; };
 		7817C68AA5584BF5A6478410 /* SyntaxHighlighter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyntaxHighlighter.swift; sourceTree = "<group>"; };
+		ABCD12345678901234567890 /* HighlightedTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HighlightedTextView.swift; sourceTree = "<group>"; };
 		8244AF5100B0479086F6CA72 /* SearchEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchEnvironment.swift; sourceTree = "<group>"; };
 		85C2815FE30A4DC1B1E11F0B /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		8EF7C32E7A864BD18355677F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -201,6 +203,7 @@
 		64E087749F6A48EBB64321E1 /* RawView */ = {
 			isa = PBXGroup;
 			children = (
+				ABCD12345678901234567890 /* HighlightedTextView.swift */,
 				7817C68AA5584BF5A6478410 /* SyntaxHighlighter.swift */,
 			);
 			path = RawView;
@@ -445,6 +448,7 @@
 				7FAE129CF28946DDA8168A29 /* ExpandedTreeView.swift in Sources */,
 				A2335F17FAC94F148FE8ACCC /* BookmarkEnvironment.swift in Sources */,
 				ABD657A1C90E4BD38E0DB6A7 /* SyntaxHighlighter.swift in Sources */,
+				BCDE12345678901234567890 /* HighlightedTextView.swift in Sources */,
 				ABBAF63D0B804F1FAABF0656 /* CSVStatsPanel.swift in Sources */,
 				1CD752A47CA249E1AEF25BDB /* ClipboardWatcher.swift in Sources */,
 				9879C41194474539BA15B9E2 /* SettingsView.swift in Sources */,
