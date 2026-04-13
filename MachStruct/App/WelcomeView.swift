@@ -73,9 +73,7 @@ struct WelcomeView: View {
         VStack(spacing: 16) {
             Spacer()
 
-            Image(systemName: "doc.text.magnifyingglass")
-                .font(.system(size: 48))
-                .foregroundStyle(.secondary)
+            MachStructIcon(size: 72)
 
             Text("MachStruct")
                 .font(.title)

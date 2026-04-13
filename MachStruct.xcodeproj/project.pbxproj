@@ -25,6 +25,7 @@
 		A1B2C3D4E5F601234567890A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F601234567890B /* Assets.xcassets */; };
 		A2335F17FAC94F148FE8ACCC /* BookmarkEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = D817BE60797A41BDB6931DA1 /* BookmarkEnvironment.swift */; };
 		ABBAF63D0B804F1FAABF0656 /* CSVStatsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 695B4DB8E6174B26AE386E0D /* CSVStatsPanel.swift */; };
+		F1A2B3C4D5E6F7A8B9C0D1E2 /* MachStructIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A2B3C4D5E6F7A8B9C0D1E3 /* MachStructIcon.swift */; };
 		ABD657A1C90E4BD38E0DB6A7 /* SyntaxHighlighter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7817C68AA5584BF5A6478410 /* SyntaxHighlighter.swift */; };
 		BCDE12345678901234567890 /* HighlightedTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABCD12345678901234567890 /* HighlightedTextView.swift */; };
 		BB406DF6750F302763B02B70 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBB9B474EFCC206A7AF61136 /* ContentView.swift */; };
@@ -75,6 +76,7 @@
 		5F751214D3F721EF38DF437C /* TreeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TreeView.swift; sourceTree = "<group>"; };
 		60F5C0B49AE94168BEA1412A /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		695B4DB8E6174B26AE386E0D /* CSVStatsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CSVStatsPanel.swift; sourceTree = "<group>"; };
+		F1A2B3C4D5E6F7A8B9C0D1E3 /* MachStructIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MachStructIcon.swift; sourceTree = "<group>"; };
 		6A19F7CF620D1FC01343CD19 /* TableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableView.swift; sourceTree = "<group>"; };
 		78176BDF8A0409D74304F7A5 /* MachStructApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MachStructApp.swift; sourceTree = "<group>"; };
 		7817C68AA5584BF5A6478410 /* SyntaxHighlighter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyntaxHighlighter.swift; sourceTree = "<group>"; };
@@ -231,6 +233,7 @@
 				F3A91C502E8B4D769C150871 /* Bookmarks */,
 				C886E16F4A0E423E9E2FD8A3 /* CSV */,
 				1D94133E764AA1F23D57C5E2 /* Editing */,
+				F1A2B3C4D5E6F7A8B9C0D1E3 /* MachStructIcon.swift */,
 				1F567F378083477FAA7FB068 /* Onboarding */,
 				64E087749F6A48EBB64321E1 /* RawView */,
 				684F1164AE9A4D818D53CB45 /* Search */,
@@ -450,6 +453,7 @@
 				ABD657A1C90E4BD38E0DB6A7 /* SyntaxHighlighter.swift in Sources */,
 				BCDE12345678901234567890 /* HighlightedTextView.swift in Sources */,
 				ABBAF63D0B804F1FAABF0656 /* CSVStatsPanel.swift in Sources */,
+				F1A2B3C4D5E6F7A8B9C0D1E2 /* MachStructIcon.swift in Sources */,
 				1CD752A47CA249E1AEF25BDB /* ClipboardWatcher.swift in Sources */,
 				9879C41194474539BA15B9E2 /* SettingsView.swift in Sources */,
 				8EEBC2AE41634CEC8A2746D1 /* OnboardingView.swift in Sources */,
