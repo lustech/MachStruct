@@ -247,13 +247,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let hosting = NSHostingController(rootView: WelcomeView())
         // Let the hosting controller calculate its preferred size from the SwiftUI layout.
-        let size = hosting.sizeThatFits(in: CGSize(width: 560, height: CGFloat.greatestFiniteMagnitude))
+        let size = hosting.sizeThatFits(in: CGSize(width: 680, height: CGFloat.greatestFiniteMagnitude))
         hosting.view.frame = NSRect(origin: .zero, size: size)
 
         let window = NSWindow(contentViewController: hosting)
         window.title = "Welcome to MachStruct"
-        window.styleMask = [.titled, .closable, .miniaturizable]
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.isReleasedWhenClosed = false
+        window.minSize = CGSize(width: 560, height: 400)
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
