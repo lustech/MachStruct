@@ -74,8 +74,28 @@ public struct StructuralIndex: Sendable {
     /// scanning the full entry list.
     public let childIndices: [NodeID: [Int]]
 
+    /// Base NodeID rawValue for the first entry in `entries`.
+    ///
+    /// NodeIDs are assigned by a global monotonic counter in document order, so
+    /// `entries[i].id.rawValue == entryIDBase + UInt64(i)` for all i.
+    /// This lets `entry(for:)` resolve a NodeID → index in O(1) with a single
+    /// subtraction + bounds-check instead of a hash-table lookup, eliminating the
+    /// ~30 ms overhead of building an N-entry `[NodeID: Int]` dictionary.
+    public let entryIDBase: UInt64
+
+    /// Intern pool for `DocumentNode.key` strings built from the eagerly-parsed
+    /// `IndexEntry.key` values (Foundation path).  Pre-populated at init time so
+    /// that `buildNodeIndex` / `buildShallowNodeIndex` can look up the canonical
+    /// instance for each key without re-hashing.
+    ///
+    /// On the simdjson path all `IndexEntry.key` values are `nil`; the table
+    /// starts empty and is populated lazily during materialisation so that
+    /// sibling nodes sharing key names still benefit from interning.
+    public let keyTable: StringTable
+
     public init(entries: [IndexEntry]) {
         self.entries = entries
+        self.entryIDBase = entries.first?.id.rawValue ?? 0
         var ci = [NodeID: [Int]]()
         ci.reserveCapacity(entries.count / 4)
         for (i, entry) in entries.enumerated() {
@@ -84,6 +104,36 @@ public struct StructuralIndex: Sendable {
             }
         }
         self.childIndices = ci
+        // Start empty — keys are interned on demand as nodes are materialised.
+        // Preloading (iterating all entries at init time) was measured to add
+        // ~95 ms for large files on the simdjson path where every key is nil.
+        self.keyTable = StringTable()
+    }
+
+    /// O(1) lookup of an `IndexEntry` by node ID.
+    ///
+    /// Uses arithmetic on the globally-monotonic NodeID counter rather than a
+    /// hash-table — `entries[id.rawValue - entryIDBase]` with a bounds check.
+    public func entry(for id: NodeID) -> IndexEntry? {
+        guard id.rawValue >= entryIDBase else { return nil }
+        let i = Int(id.rawValue - entryIDBase)
+        guard i < entries.count else { return nil }
+        return entries[i]
+    }
+
+    /// Ancestor path from root down to (and including) `id`, derived purely
+    /// from `IndexEntry.parentID` — no `NodeIndex` required.
+    ///
+    /// Returns `[]` if `id` is not found in `entries`.
+    public func path(to id: NodeID) -> [NodeID] {
+        guard entry(for: id) != nil else { return [] }
+        var result: [NodeID] = []
+        var current: NodeID? = id
+        while let cid = current {
+            result.append(cid)
+            current = entry(for: cid)?.parentID
+        }
+        return result.reversed()
     }
 
     // MARK: - Full (eager) build
@@ -99,8 +149,13 @@ public struct StructuralIndex: Sendable {
             return NodeIndex(root: root)
         }
 
-        var nodes = [NodeID: DocumentNode](minimumCapacity: entries.count)
+        // Build the flat storage and positions index in one pass, then wire
+        // childIDs in a second pass — eliminating the extra dict-to-array
+        // conversion that `NodeIndex(rootID:allNodes:)` would require.
+        var storage   = ContiguousArray<DocumentNode>()
+        var positions = [NodeID: Int](minimumCapacity: entries.count)
         var childIDsByParent = [NodeID: [NodeID]]()
+        storage.reserveCapacity(entries.count)
         childIDsByParent.reserveCapacity(entries.count / 2)
 
         for entry in entries {
@@ -111,35 +166,35 @@ public struct StructuralIndex: Sendable {
             case .scalar:
                 value = entry.parsedValue.map { .scalar($0) } ?? .unparsed
             case .keyValue:
-                value = .unparsed   // the actual value lives in the child node
+                value = .unparsed
             }
 
-            nodes[entry.id] = DocumentNode(
+            positions[entry.id] = storage.count
+            storage.append(DocumentNode(
                 id: entry.id,
                 type: entry.nodeType,
                 depth: entry.depth,
                 parentID: entry.parentID,
                 childIDs: [],
-                key: entry.key,
+                key: keyTable.intern(entry.key),
                 value: value,
                 sourceRange: SourceRange(byteOffset: entry.byteOffset,
                                          byteLength: entry.byteLength),
                 metadata: entry.metadata
-            )
+            ))
 
             if let pid = entry.parentID {
                 childIDsByParent[pid, default: []].append(entry.id)
             }
         }
 
-        // Wire up childIDs (entries are in document order so children appear after parents)
-        for (pid, children) in childIDsByParent {
-            guard var node = nodes[pid] else { continue }
-            node.childIDs = children
-            nodes[pid] = node
+        // Wire up childIDs
+        for (pid, childIDs) in childIDsByParent {
+            guard let idx = positions[pid] else { continue }
+            storage[idx].childIDs = childIDs
         }
 
-        return NodeIndex(rootID: first.id, allNodes: nodes)
+        return NodeIndex(rootID: first.id, storage: storage, positions: positions)
     }
 
     // MARK: - Shallow (lazy) build
@@ -241,7 +296,7 @@ public struct StructuralIndex: Sendable {
             depth: entry.depth,
             parentID: entry.parentID,
             childIDs: childIDs,
-            key: entry.key,
+            key: keyTable.intern(entry.key),   // intern so repeated keys share backing
             value: value,
             sourceRange: SourceRange(byteOffset: entry.byteOffset,
                                      byteLength: entry.byteLength),

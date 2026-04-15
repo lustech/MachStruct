@@ -128,11 +128,9 @@ struct ContentView: View {
 
     var body: some View {
         Group {
-            if document.isLoading {
-                loadingView
-            } else if let error = document.loadError {
-                errorView(error)
-            } else if let index = document.nodeIndex {
+            if let index = document.nodeIndex {
+                // Show the tree as soon as the NodeIndex is ready — even if background
+                // streaming is still running (isLoading may still be true briefly).
                 contentStack(index)
                     .environment(\.commitEdit) { [weak document] tx in
                         document?.commitEdit(tx, undoManager: undoManager)
@@ -166,6 +164,10 @@ struct ContentView: View {
                     .onChange(of: searchQuery) { _, query in
                         scheduleSearch(query: query, in: index)
                     }
+            } else if document.isLoading {
+                loadingView
+            } else if let error = document.loadError {
+                errorView(error)
             } else {
                 placeholderView
             }
@@ -225,7 +227,12 @@ struct ContentView: View {
                 scrollTrigger: scrollTrigger,
                 scrollTarget:  scrollTarget,
                 onExpand:      { [weak document] id in
-                    await document?.materializeChildrenIfNeeded(of: id)
+                    // Pass the post-expand set (current + newly opened node) so
+                    // eviction knows the full hot set without an extra state read.
+                    let postExpand = expandedIDs.union([id])
+                    await document?.materializeChildrenIfNeeded(of: id,
+                                                                 expandedIDs: postExpand,
+                                                                 selectedID: selectedNodeID)
                 }
             )
             .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -528,20 +535,26 @@ struct ContentView: View {
             try? await Task.sleep(nanoseconds: 150_000_000)
             guard !Task.isCancelled else { return }
 
-            // For lazily-loaded files, materialise all nodes before searching
-            // so that every key and value is reachable by SearchEngine.
-            // This is a one-time cost; subsequent searches use the full index.
-            await document.ensureFullyMaterialized()
-            guard !Task.isCancelled else { return }
-
-            // Snapshot the (now-complete) index for the background scan.
-            guard let index = document.nodeIndex else { return }
-
             // Run the O(n) scan on a background thread to keep the UI fluid
             // on very large documents (100 k+ nodes).
-            let results = await Task.detached(priority: .userInitiated) {
-                SearchEngine.search(query: query, in: index)
-            }.value
+            //
+            // For lazily-loaded files (structuralIndex is non-nil) we search
+            // StructuralIndex.entries directly — no full materialisation required.
+            // For small files (structuralIndex is nil) the NodeIndex is already
+            // fully built, so we search that instead.
+            let results: [SearchMatch]
+            if let si = document.structuralIndex, let file = document.mappedFile {
+                let siSnap   = si
+                let fileSnap = file
+                results = await Task.detached(priority: .userInitiated) {
+                    SearchEngine.search(query: query, in: siSnap, file: fileSnap)
+                }.value
+            } else {
+                guard let index = document.nodeIndex else { return }
+                results = await Task.detached(priority: .userInitiated) {
+                    SearchEngine.search(query: query, in: index)
+                }.value
+            }
 
             guard !Task.isCancelled else { return }
 
@@ -549,10 +562,8 @@ struct ContentView: View {
             activeMatchIndex = 0
 
             if let first = results.first {
-                expandPath(to: first.rowNodeID, in: index)
                 selectedNodeID = first.rowNodeID
-                scrollTrigger += 1
-                scrollTarget   = first.rowNodeID
+                await materializeAndExpand(to: first.rowNodeID)
             }
         }
     }
@@ -575,12 +586,53 @@ struct ContentView: View {
     /// expand collapsed ancestors, select the row, and request a scroll.
     private func navigateToCurrentMatch() {
         let match = searchMatches[activeMatchIndex]
-        if let index = document.nodeIndex {
-            expandPath(to: match.rowNodeID, in: index)
-        }
         selectedNodeID = match.rowNodeID
+
+        if document.structuralIndex != nil {
+            // Lazy file: ancestors may not be materialised yet.
+            // Run the async materialise + expand path in a detached task;
+            // the scroll trigger is set inside materializeAndExpand once done.
+            Task { await materializeAndExpand(to: match.rowNodeID) }
+        } else {
+            if let index = document.nodeIndex {
+                expandPath(to: match.rowNodeID, in: index)
+            }
+            scrollTrigger += 1
+            scrollTarget   = match.rowNodeID
+        }
+    }
+
+    /// Materialise the ancestor chain for `nodeID` in the structural index (if
+    /// the document was loaded lazily), then expand those ancestors in the tree
+    /// and scroll the target row into view.
+    ///
+    /// For fully-materialised documents (`structuralIndex == nil`) this is a
+    /// no-op — the caller should use the synchronous `expandPath` path instead.
+    @MainActor
+    private func materializeAndExpand(to nodeID: NodeID) async {
+        // Determine the ancestor path.  Prefer the structural index when present
+        // (covers nodes that haven't been materialised yet); fall back to the
+        // NodeIndex path-walk for small files.
+        let pathIDs: [NodeID]
+        if let si = document.structuralIndex {
+            pathIDs = si.path(to: nodeID)
+            // Materialise each ancestor level so the target node appears in the tree.
+            for ancestorID in pathIDs.dropLast() {
+                await document.materializeChildrenIfNeeded(of: ancestorID,
+                                                            expandedIDs: expandedIDs,
+                                                            selectedID: selectedNodeID)
+            }
+        } else {
+            pathIDs = document.nodeIndex?.path(to: nodeID) ?? []
+        }
+
+        // Now that all ancestors are in the NodeIndex, expand the path normally.
+        if let index = document.nodeIndex {
+            expandPath(to: nodeID, in: index)
+        }
+
         scrollTrigger += 1
-        scrollTarget   = match.rowNodeID
+        scrollTarget   = nodeID
     }
 
     // MARK: - Expansion helpers (P4-02)
@@ -721,6 +773,14 @@ struct ContentView: View {
                 .scaleEffect(1.2)
             Text("Parsing \(document.fileName)…")
                 .foregroundStyle(.secondary)
+            if document.indexedNodeCount > 0 {
+                Text("\(document.indexedNodeCount.formatted()) nodes indexed")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+                    .animation(.easeInOut(duration: 0.1), value: document.indexedNodeCount)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

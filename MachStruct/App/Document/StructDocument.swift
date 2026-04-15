@@ -46,6 +46,11 @@ final class StructDocument: ReferenceFileDocument {
     @Published var isLoading: Bool = false
     @Published var loadError: Error?
 
+    /// Running count of nodes emitted by `parseProgressively` during load.
+    /// Resets to 0 at the start of each load; stays at the final node count
+    /// once loading completes.  Used by the loading UI to show parse progress.
+    @Published var indexedNodeCount: Int = 0
+
     /// Display name used in the window title (derived from the FileWrapper filename).
     @Published var fileName: String = "Untitled"
 
@@ -67,6 +72,9 @@ final class StructDocument: ReferenceFileDocument {
 
     /// Files ≥ this size use lazy NodeIndex materialisation.
     private static let lazyThreshold: UInt64 = 5 * 1024 * 1024  // 5 MB
+
+    /// When materialised node count exceeds this, evict cold nodes.
+    private static let evictionThreshold: Int = 50_000
 
     // MARK: - Tabular heuristic
 
@@ -166,84 +174,97 @@ final class StructDocument: ReferenceFileDocument {
     @MainActor
     private func load(data: Data) async {
         isLoading = true
+        indexedNodeCount = 0
         loadError = nil
+
+        let ext = (fileName as NSString).pathExtension.lowercased()
+
         do {
-            let ext = (fileName as NSString).pathExtension.lowercased()
-
-            // Run all heavy work on a background thread so the main actor stays
-            // responsive during the load.  Three operations were previously blocking
-            // the main actor and causing watchdog kills on large files:
-            //   1. data.write(to:)    — synchronous disk write (up to tens of MB)
-            //   2. parser.buildIndex  — structural parse (simdjson / Foundation)
-            //   3. si.buildNodeIndex  — O(n) DocumentNode tree construction
-            struct LoadResult: Sendable {
+            // Step 1 — write to a temp file so we can mmap it, then detect format.
+            // Runs on a background thread; everything else follows from the stream.
+            struct FileSetup: Sendable {
                 let file: MappedFile
-                let nodeIndex: NodeIndex
-                let structuralIndex: StructuralIndex?  // non-nil for lazy (large) files
-                let formatName: String
+                let detected: FormatDetector.DetectedFormat
             }
-
-            let result: LoadResult = try await Task.detached(priority: .userInitiated) {
-                // 1. Write to a temp file so we can mmap it.
+            let setup: FileSetup = try await Task.detached(priority: .userInitiated) {
                 let tmp = FileManager.default.temporaryDirectory
                     .appendingPathComponent("\(UUID().uuidString).\(ext.isEmpty ? "dat" : ext)")
                 try data.write(to: tmp)
                 let file = try MappedFile(url: tmp)
-                try? FileManager.default.removeItem(at: tmp)    // unlink is safe post-mmap
-
-                // 2. Detect format and parse structural index (Phase 1).
-                //    mmap is opened with MADV_SEQUENTIAL (set by MappedFile.init).
+                try? FileManager.default.removeItem(at: tmp)   // safe to unlink post-mmap
                 let detected = FormatDetector.detect(file: file,
                                                      fileExtension: ext.isEmpty ? nil : ext)
-                let si: StructuralIndex
-                let name: String
-                switch detected {
-                case .json, .unknown:
-                    si = try await JSONParser().buildIndex(from: file); name = "JSON"
-                case .xml:
-                    si = try await XMLParser().buildIndex(from: file);  name = "XML"
-                case .yaml:
-                    si = try await YAMLParser().buildIndex(from: file); name = "YAML"
-                case .csv:
-                    si = try await CSVParser().buildIndex(from: file);  name = "CSV"
-                }
-
-                // Phase 1 complete — switch mmap advice from sequential to random.
-                // Phase 2 value parsing jumps to arbitrary byte offsets, so MADV_RANDOM
-                // tells the OS to stop read-ahead and page only what's actually needed.
-                file.adviseRandom()
-
-                // 3. Build the node index.
-                //
-                //    Large files (≥ lazyThreshold): build a *shallow* NodeIndex containing
-                //    only the root and its immediate visible children.  This is O(visible)
-                //    instead of O(all_nodes), cutting memory by 90–99% and eliminating the
-                //    hundreds-of-MB allocation that caused the rainbow spinner on 30 MB files.
-                //    Deeper nodes are materialised on demand when the user expands them.
-                //
-                //    Small files: keep the existing eager full build.
-                let useLazy = file.fileSize >= StructDocument.lazyThreshold
-                if useLazy {
-                    var idx = si.buildShallowNodeIndex()
-                    // Post-parse keys/values for the initially-visible nodes.
-                    // On the simdjson path, IndexEntry.key and parsedValue are nil; we need
-                    // one Phase-2 parse per visible node to populate them so the tree renders.
-                    StructDocument.parseVisibleEntries(in: &idx, structuralIndex: si, file: file)
-                    return LoadResult(file: file, nodeIndex: idx,
-                                      structuralIndex: si, formatName: name)
-                } else {
-                    return LoadResult(file: file, nodeIndex: si.buildNodeIndex(),
-                                      structuralIndex: nil, formatName: name)
-                }
+                return FileSetup(file: file, detected: detected)
             }.value
 
-            mappedFile      = result.file
-            nodeIndex       = result.nodeIndex
-            structuralIndex = result.structuralIndex
-            formatName      = result.formatName
+            let file = setup.file
+            mappedFile = file
+
+            // Step 2 — pick the right parser and record the format name.
+            let parser: any StructParser
+            switch setup.detected {
+            case .json, .unknown: parser = JSONParser(); formatName = "JSON"
+            case .xml:            parser = XMLParser();  formatName = "XML"
+            case .yaml:           parser = YAMLParser(); formatName = "YAML"
+            case .csv:            parser = CSVParser();  formatName = "CSV"
+            }
+
+            let useLazy = file.fileSize >= StructDocument.lazyThreshold
+
+            if useLazy {
+                // Step 3a — Large file: consume the progressive stream so the loading
+                // UI can show a live node count while the parse runs in the background.
+                //
+                // Each `.nodesIndexed` batch bumps `indexedNodeCount` on the main actor,
+                // giving the user animated feedback ("N nodes indexed") instead of a
+                // static spinner.  On `.complete` we build the shallow NodeIndex so the
+                // tree becomes visible as quickly as possible.
+                for await progress in parser.parseProgressively(file: file) {
+                    switch progress {
+                    case .nodesIndexed(let batch):
+                        indexedNodeCount += batch.count
+
+                    case .complete(let si):
+                        // Phase 1 done — switch mmap advice to random-access for Phase 2.
+                        file.adviseRandom()
+
+                        // Build the shallow NodeIndex on a background thread (fast, O(visible)).
+                        let (idx, retainedSI) = await Task.detached(priority: .userInitiated) {
+                            [si, file] in
+                            var idx = si.buildShallowNodeIndex()
+                            StructDocument.parseVisibleEntries(in: &idx,
+                                                               structuralIndex: si, file: file)
+                            return (idx, si)
+                        }.value
+
+                        nodeIndex       = idx
+                        structuralIndex = retainedSI
+                        indexedNodeCount = si.count   // snap to exact final count
+
+                    case .warning:
+                        break   // non-fatal — logged by parser internally
+
+                    case .error(let err):
+                        throw err
+                    }
+                }
+
+            } else {
+                // Step 3b — Small file: eager full build (same as before, no streaming needed).
+                let si = try await parser.buildIndex(from: file)
+                file.adviseRandom()
+                let idx = await Task.detached(priority: .userInitiated) {
+                    si.buildNodeIndex()
+                }.value
+                nodeIndex        = idx
+                structuralIndex  = nil
+                indexedNodeCount = idx.count
+            }
+
         } catch {
             loadError = error
         }
+
         isLoading = false
     }
 
@@ -254,8 +275,14 @@ final class StructDocument: ReferenceFileDocument {
     /// Runs the heavy work (DocumentNode creation + Phase-2 key/value parsing) on a
     /// background thread so the main actor stays responsive even when expanding nodes
     /// with thousands of children.
+    ///
+    /// After materialising, evicts cold nodes if the index has grown past
+    /// `evictionThreshold`.  Pass the current `expandedIDs` and `selectedID` so
+    /// the eviction knows which nodes to keep.
     @MainActor
-    func materializeChildrenIfNeeded(of nodeID: NodeID) async {
+    func materializeChildrenIfNeeded(of nodeID: NodeID,
+                                      expandedIDs: Set<NodeID> = [],
+                                      selectedID: NodeID? = nil) async {
         guard let si = structuralIndex,
               let file = mappedFile,
               let childIdxs = si.childIndices[nodeID],
@@ -274,6 +301,57 @@ final class StructDocument: ReferenceFileDocument {
 
         guard !updates.isEmpty else { return }
         idx.applySnapshot(updates)
+        nodeIndex = idx
+
+        // Evict cold nodes if we've grown past the threshold.
+        evictIfNeeded(expandedIDs: expandedIDs, selectedID: selectedID)
+    }
+
+    /// Evict materialised nodes that are not part of the currently visible tree.
+    ///
+    /// Only runs when `nodeIndex.count > evictionThreshold` and a `structuralIndex`
+    /// is present (so evicted nodes can be re-materialised on demand).
+    ///
+    /// Hot set (always kept):
+    /// - Root node and its direct children (always rendered)
+    /// - Every node in `expandedIDs` (rendered as rows)
+    /// - Direct children of every expanded node (rendered as sub-rows)
+    /// - `selectedID` if set (keeps details panel from going stale)
+    ///
+    /// Everything else is removed from `nodeIndex`; it will be rebuilt lazily
+    /// the next time the user expands that branch.
+    @MainActor
+    func evictIfNeeded(expandedIDs: Set<NodeID>, selectedID: NodeID?) {
+        guard var idx = nodeIndex,
+              idx.count > StructDocument.evictionThreshold,
+              structuralIndex != nil else { return }
+
+        var hot = Set<NodeID>()
+        hot.reserveCapacity(expandedIDs.count * 20)
+
+        // Root is always hot.
+        hot.insert(idx.rootID)
+
+        // Root's direct children are always visible.
+        if let root = idx.node(for: idx.rootID) {
+            hot.formUnion(root.childIDs)
+        }
+
+        // Expanded nodes and their immediate children.
+        for id in expandedIDs {
+            hot.insert(id)
+            if let node = idx.node(for: id) {
+                hot.formUnion(node.childIDs)
+            }
+        }
+
+        // Keep the selected node (details panel / editing needs it).
+        if let sel = selectedID { hot.insert(sel) }
+
+        let toEvict = Set(idx.allNodeIDs).subtracting(hot)
+        guard !toEvict.isEmpty else { return }
+
+        idx.evictNodes(toEvict)
         nodeIndex = idx
     }
 
@@ -311,7 +389,9 @@ final class StructDocument: ReferenceFileDocument {
         for idx in childIdxs {
             let entry = si.entries[idx]
             let childIDs = (si.childIndices[entry.id] ?? []).map { si.entries[$0].id }
-            let key   = entry.key   ?? parseKeyBytes(entry: entry, from: file)
+            // Intern the key through the shared table so that repeated keys across
+            // sibling objects share the same String backing storage.
+            let key   = si.keyTable.intern(entry.key ?? parseKeyBytes(entry: entry, from: file))
             let value = entry.parsedValue.map { NodeValue.scalar($0) }
                         ?? parseValueBytes(entry: entry, from: file)
             result[entry.id] = DocumentNode(
@@ -351,14 +431,13 @@ final class StructDocument: ReferenceFileDocument {
     private static func parseVisibleEntries(in idx: inout NodeIndex,
                                              structuralIndex si: StructuralIndex,
                                              file: MappedFile) {
-        // Collect IDs that need key or value parsing.
         var updates = [NodeID: DocumentNode]()
         for entry in si.entries {
             guard var node = idx.node(for: entry.id) else { continue }
             var changed = false
 
             if node.key == nil, entry.nodeType == .keyValue {
-                node.key = parseKeyBytes(entry: entry, from: file)
+                node.key = si.keyTable.intern(parseKeyBytes(entry: entry, from: file))
                 changed = true
             }
             if case .unparsed = node.value, entry.nodeType == .scalar {
@@ -379,7 +458,7 @@ final class StructDocument: ReferenceFileDocument {
             guard var node = idx.node(for: entry.id) else { continue }
             var changed = false
             if node.key == nil, entry.nodeType == .keyValue {
-                node.key = parseKeyBytes(entry: entry, from: file)
+                node.key = si.keyTable.intern(parseKeyBytes(entry: entry, from: file))
                 changed = true
             }
             if case .unparsed = node.value, entry.nodeType == .scalar {

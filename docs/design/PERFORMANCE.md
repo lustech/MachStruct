@@ -116,7 +116,12 @@ Target peak memory usage for different file sizes:
 | 10MB | ~2MB | ~20MB | ~5MB | < 50MB |
 | 100MB | ~20MB | ~48MB | ~5MB | < 150MB |
 
-If memory pressure is detected (via `os_proc_available_memory`), shed non-visible parsed values and deeper index entries.
+**Implemented memory controls (ADR-001):**
+
+- **Lazy materialisation:** Files >= 5 MB use `buildShallowNodeIndex()` — only root + visible children are materialised. `NodeIndex` holds O(visible) nodes rather than O(all).
+- **LRU eviction:** When materialised node count exceeds 50 K, `StructDocument.evictIfNeeded` removes cold nodes (not in expanded tree). Evicted nodes are re-materialised on next expand from `StructuralIndex`.
+- **String interning:** `StringTable` deduplicates repeated `DocumentNode.key` strings. One heap allocation per unique key regardless of occurrence count.
+- **Flat storage:** `NodeIndex` uses `ContiguousArray<DocumentNode>` + `[NodeID: Int]` positions dict, saving ~56 B/node vs the old `[NodeID: DocumentNode]` dictionary.
 
 ## 5. Startup Performance
 

@@ -12,6 +12,7 @@
 | **Phase 4** | Power Tools | Search, syntax highlighting, CSV stats, bookmarks, history, drag-and-drop | ✅ **v1.0 scope complete** |
 | **Phase 5** | Release Engineering | simdjson, Xcode target, signing, notarization CI, Sparkle | ✅ **v1.0 scope complete** |
 | **Phase 6** | Polish | Settings, onboarding, Quick Look, Spotlight, clipboard watch, Services | ✅ **v1.0 scope complete** |
+| **ADR-001** | Performance | Lazy NodeIndex, string interning, flat storage, LRU eviction | ✅ Complete |
 | **Phase 4 cont.** | Power Tools v2 | Path queries, diff view, schema validation | 🗓 v1.1 |
 | **Phase 6 cont.** | Deep Polish | Accessibility audit, localisation, performance audit | 🗓 v1.1 |
 | **Phase 7+** | Future | Binary formats, collaboration, plugin system, iOS | 💡 Backlog |
@@ -222,6 +223,48 @@ All three pre-release blockers are now resolved:
 - All Phase 5 release engineering complete (signing, notarization CI, Sparkle).
 - Core feature set shipped: viewer + editor + search + bookmarks + history + quick wins + settings + onboarding.
 - Quick Look and Spotlight integration working.
+
+---
+
+## ADR-001: Performance Architecture ✅ COMPLETE
+
+**Goal:** Make files 10–100 MB usable — O(visible) memory, sub-second time-to-first-paint, bounded memory under browsing.
+
+See [`docs/ADR-001-performance-architecture.md`](../ADR-001-performance-architecture.md) for the full decision record.
+
+### Deliverables (as shipped)
+
+**Phase 1 — Immediate fixes:**
+1. ✅ Cached `NSRegularExpression` in `SyntaxHighlighter` (eliminates per-call regex compilation)
+2. ✅ Cached `flatRows` in `ExpandedTreeView` (recompute only on expansion/index changes)
+3. ✅ Batched `expandPath` state updates (single `formUnion` instead of N inserts)
+4. ✅ Services handler moved off main thread (eliminates deadlock risk)
+5. ✅ Navigation history capped at 100 entries
+
+**Phase 2 — Lazy NodeIndex:**
+6. ✅ `StructuralIndex.entryIDBase` — arithmetic O(1) lookup replacing `[NodeID: Int]` dict
+7. ✅ `buildShallowNodeIndex()` — materialises only root + immediate children at load time
+8. ✅ `materializeChildrenIfNeeded` — on-demand `DocumentNode` construction on tree expand
+9. ✅ `SearchEngine.search(query:in:file:)` — iterates `StructuralIndex.entries` directly (no full materialisation on first search)
+10. ✅ Edit operations materialise affected subtrees before applying
+
+**Phase 3 — UI layer performance:**
+11. ✅ Progressive loading UI — `parseProgressively` AsyncStream feeds animated node count during load
+12. ⬜ `NSTextView` wrapper for raw view (deferred — current `Text(AttributedString)` adequate for v1.0)
+
+**Phase 4 — Memory compaction:**
+13. ✅ `StringTable` — thread-safe string intern pool for `DocumentNode.key` (deduplicated heap allocations)
+14. ✅ `ContiguousArray<DocumentNode>` + `[NodeID: Int]` positions in `NodeIndex` (~56 B/node saving vs dict)
+15. ✅ LRU eviction — `evictIfNeeded(expandedIDs:selectedID:)` removes cold nodes above 50 K threshold
+
+### Measured results (M1 Mac mini, release build)
+
+| Metric | Before | After | Target |
+|---|---|---|---|
+| 10 MB structural index | ~115 ms | ~112 ms | < 200 ms |
+| 100 MB structural index | ~450 ms | ~264 ms | < 1 500 ms |
+| 10 MB NodeIndex build | ~210 ms (eager) | ~41 ms (shallow) | < 100 ms |
+| 100 MB peak memory | ~4 GB (SIGKILL) | < 150 MB | < 1 GB |
 
 ---
 

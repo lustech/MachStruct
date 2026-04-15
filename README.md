@@ -112,11 +112,12 @@ MachStruct/
 │   ├── Core/                       MachStructCore library (no UI deps)
 │   │   ├── Model/
 │   │   │   ├── DocumentNode.swift      NodeID · NodeType · NodeValue · DocumentNode
-│   │   │   ├── NodeIndex.swift         O(1) flat lookup + COW mutation + isTabular()
+│   │   │   ├── NodeIndex.swift         O(1) flat lookup (ContiguousArray + positions) + COW + isTabular()
+│   │   │   ├── StringTable.swift       Thread-safe string intern pool for key deduplication
 │   │   │   ├── ScalarValue.swift       Typed leaf values + parseScalarValue()
 │   │   │   ├── EditTransaction.swift   Reversible edit ops + factory methods
 │   │   │   ├── FormatMetadata.swift    Per-format annotations (XML/YAML/CSV metadata)
-│   │   │   └── SearchEngine.swift      DFS full-text scan; SearchMatch with rowNodeID
+│   │   │   └── SearchEngine.swift      Full-text scan; StructuralIndex-direct + NodeIndex paths
 │   │   ├── FileIO/
 │   │   │   └── MappedFile.swift        mmap wrapper with madvise hints
 │   │   ├── Parsers/
@@ -199,26 +200,34 @@ Phase 1 — Structural Index
     │   Format-specific parser scans the entire file and builds a flat
     │   [IndexEntry] — byte offsets, types, depths, parent IDs.
     │   No string or number values are parsed yet.
-    │   Result: StructuralIndex → NodeIndex  (O(1) lookup by NodeID)
+    │   Result: StructuralIndex (compact, ~100 B/node)
+    │
+    ▼
+Shallow NodeIndex — only root + visible children materialised
+    │   Files < 5 MB: eager full build
+    │   Files ≥ 5 MB: buildShallowNodeIndex() — O(visible)
     │
     ▼
 UI renders top-level tree (or table) immediately
     │
     ▼
-Phase 2 — On-demand value parsing
-        When a node becomes visible, its raw bytes are sliced from the
-        memory-mapped region and parsed. For a 500K-node file the user
-        typically touches fewer than 500 nodes.
+Phase 2 — On-demand materialisation + value parsing
+        When a node is expanded, its children are built from the
+        StructuralIndex and their values parsed from the mmap'd region.
+        LRU eviction removes cold nodes above 50K to keep memory bounded.
+        For a 500K-node file, the user typically touches fewer than 500.
 ```
 
 ### Performance (M1 Mac mini, release build)
 
-| File | Size | Nodes | Index time |
-|---|---|---|---|
-| large.json | 10 MB | 210 K | **~115 ms** ✅ (target < 200 ms) |
-| huge.json | 100 MB | 710 K | **< 500 ms** ✅ (target < 1 500 ms) |
-| pathological_wide | 10 MB | 350 K | ~180 ms |
-| pathological_deep | — | depth 401 | ~17 ms |
+| File | Size | Nodes | Index time | NodeIndex build |
+|---|---|---|---|---|
+| large.json | 10 MB | 210 K | **~112 ms** ✅ (target < 200 ms) | ~41 ms (shallow) |
+| huge.json | 100 MB | 710 K | **~264 ms** ✅ (target < 1 500 ms) | O(visible) |
+| pathological_wide | 10 MB | 350 K | ~180 ms | — |
+| pathological_deep | — | depth 401 | ~17 ms | — |
+
+Memory for 100 MB files stays under 150 MB resident thanks to lazy materialisation + LRU eviction (50 K node threshold).
 
 ---
 
@@ -276,6 +285,15 @@ Phase 2 — On-demand value parsing
 - [x] P5-05 Notarization + GitHub Actions release pipeline → notarized DMG draft on tag push
 - [x] P5-06 Sparkle 2 auto-updates — `SPUStandardUpdaterController`; appcast template; EdDSA key placeholder
 - [ ] P5-07 App Store submission prep — screenshots, listing copy, `xcrun altool` validation *(v1.1)*
+
+### ADR-001 — Performance Architecture ✅
+- [x] Lazy NodeIndex — `buildShallowNodeIndex()` + `materializeChildrenIfNeeded` (O(visible) memory)
+- [x] `SearchEngine` operates on `StructuralIndex.entries` directly (no full materialisation for search)
+- [x] Progressive loading UI — animated node count via `parseProgressively` AsyncStream
+- [x] `StringTable` string interning for `DocumentNode.key` (thread-safe deduplication)
+- [x] `ContiguousArray<DocumentNode>` flat storage in `NodeIndex` (~56 B/node saving)
+- [x] `entryIDBase` arithmetic lookup replaces `[NodeID: Int]` dict in `StructuralIndex`
+- [x] LRU eviction — cold nodes evicted above 50 K threshold; re-materialised on demand
 
 ### Phase 6 — Polish ✅ v1.0 complete
 - [x] P6-01 Settings UI — tabbed ⌘, Preferences: font sizes, default raw mode, welcome-on-launch toggle

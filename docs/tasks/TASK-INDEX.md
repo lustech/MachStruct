@@ -543,6 +543,43 @@ The following features were implemented as quick-win or medium-effort polish ite
 
 ---
 
+## ADR-001: Performance Architecture ✅ COMPLETE
+
+Full decision record: [`docs/ADR-001-performance-architecture.md`](../ADR-001-performance-architecture.md)
+
+### Phase 1 — Immediate Fixes ✅
+- **ADR-1.1** — Cached `NSRegularExpression` in `SyntaxHighlighter`
+- **ADR-1.2** — Cached `flatRows` in `ExpandedTreeView` (recompute only on expansion/index changes)
+- **ADR-1.3** — Batched `expandPath` state updates (single `formUnion`)
+- **ADR-1.4** — Services handler off main thread
+- **ADR-1.5** — Navigation history capped at 100
+
+### Phase 2 — Lazy NodeIndex ✅
+- **ADR-2.1** — `StructuralIndex.entryIDBase: UInt64` arithmetic O(1) lookup (replaces `[NodeID: Int]` dict — zero build cost)
+- **ADR-2.2** — `buildShallowNodeIndex()` materialises root + visible children only; `materializeChildrenIfNeeded` builds nodes on expand
+- **ADR-2.3** — `ExpandedTreeView.onExpand` triggers `materializeChildrenIfNeeded`; ContentView passes `expandedIDs` for eviction
+- **ADR-2.4** — `SearchEngine.search(query:in:file:)` iterates `StructuralIndex.entries` directly — no full materialisation for search
+- **ADR-2.5** — Edit operations work on materialised subtrees; `materializeAndExpand` handles navigation to unmaterialised nodes
+
+### Phase 3 — UI Layer Performance (partial)
+- **ADR-3.1** — `NSTextView` wrapper for raw view *(deferred — current approach adequate for v1.0)*
+- **ADR-3.2** ✅ — Progressive loading UI: `parseProgressively` AsyncStream feeds animated node count during load
+
+### Phase 4 — Memory Compaction ✅
+- **ADR-4.1** — `StringTable` (`MachStruct/Core/Model/StringTable.swift`): thread-safe `NSLock`-protected `[String: String]` intern pool. All `DocumentNode.key` values are interned so repeated keys share backing storage.
+- **ADR-4.2** — `NodeIndex` rewritten: `ContiguousArray<DocumentNode>` + `[NodeID: Int]` positions dict. ~56 B/node saving vs old `[NodeID: DocumentNode]` dictionary. O(1) swap-remove for eviction.
+- **ADR-4.3** — LRU eviction: `StructDocument.evictIfNeeded(expandedIDs:selectedID:)` removes cold nodes when `nodeIndex.count > 50_000`. Hot set: root + root children + expanded + their children + selected. `NodeIndex.evictNodes(_:)` removes from storage without touching parent `childIDs` so re-expand works.
+
+### Key files changed
+- `MachStruct/Core/Model/NodeIndex.swift` — `ContiguousArray` storage, `evictNodes`, `allNodeIDs`
+- `MachStruct/Core/Model/StringTable.swift` — new file
+- `MachStruct/Core/Model/SearchEngine.swift` — `search(query:in:file:)` overload
+- `MachStruct/Core/Parsers/StructParser.swift` — `entryIDBase`, `keyTable`, `entry(for:)`, `path(to:)`, `buildShallowNodeIndex`
+- `MachStruct/App/Document/StructDocument.swift` — `materializeChildrenIfNeeded`, `evictIfNeeded`, progressive loading
+- `MachStruct/App/ContentView.swift` — SI-based search, `materializeAndExpand`, eviction parameters
+
+---
+
 ## Task Dependency Graph (Phase 5)
 
 ```
