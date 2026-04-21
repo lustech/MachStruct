@@ -1,5 +1,7 @@
 import SwiftUI
+#if !APP_STORE_BUILD
 import Sparkle
+#endif
 import MachStructCore
 
 // MARK: - MachStructDocumentController
@@ -72,6 +74,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // startingUpdater is false in DEBUG: Sparkle refuses to start (and shows an
     // error dialog) when the app runs unsigned from DerivedData. This flag keeps
     // dev builds quiet; release builds get the real updater.
+    //
+    // Excluded from App Store builds (APP_STORE_BUILD): the App Store handles
+    // updates and prohibits third-party auto-update mechanisms.
+    #if !APP_STORE_BUILD
     let updaterController: SPUStandardUpdaterController = {
         #if DEBUG
         return SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil)
@@ -79,6 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
         #endif
     }()
+    #endif
 
     // MARK: Launch
 
@@ -333,16 +340,16 @@ struct MachStructApp: App {
                     AppDelegate.showOnboardingWindow()
                 }
             }
-            // "Check for Updates…" in the application menu (P5-06).
-            // CommandGroup(replacing: .appInfo) puts it right after "About MachStruct".
+            // "Check for Updates…" is omitted from App Store builds — the App Store
+            // handles updates and prohibits third-party update mechanisms (P5-07).
+            #if !APP_STORE_BUILD
             CommandGroup(after: .appInfo) {
                 Button("Check for Updates…") {
                     appDelegate.updaterController.checkForUpdates(nil)
                 }
-                // Disabled while the updater is still initialising or an update
-                // check is already in flight.
                 .disabled(!appDelegate.updaterController.updater.canCheckForUpdates)
             }
+            #endif
 
             CommandGroup(after: .windowList) {
                 Divider()

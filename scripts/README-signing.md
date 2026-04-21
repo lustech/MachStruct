@@ -83,6 +83,71 @@ spctl --assess --type exec build/MachStruct-Direct/MachStruct.app
 
 ---
 
+## Building for the Mac App Store
+
+### Prerequisites
+- Apple Distribution certificate in your login keychain (Xcode → Settings → Accounts → Manage Certificates → Apple Distribution)
+- Mac App Store provisioning profiles installed (download from developer.apple.com → Profiles; double-click to install)
+- `ExportOptions-AppStore.plist` updated with your Team ID (replace `XXXXXXXXXX`)
+
+### Archive (App Store — Sparkle excluded via APP_STORE_BUILD flag)
+
+```bash
+xcodebuild archive \
+    -project MachStruct.xcodeproj \
+    -scheme MachStruct \
+    -archivePath build/MachStruct-AppStore.xcarchive \
+    -configuration Release \
+    OTHER_SWIFT_FLAGS="$(inherited) -DAPP_STORE_BUILD" \
+    CODE_SIGN_STYLE=Manual \
+    CODE_SIGN_IDENTITY="Apple Distribution" \
+    DEVELOPMENT_TEAM="XXXXXXXXXX" \
+    PROVISIONING_PROFILE_SPECIFIER="MachStruct AppStore"
+```
+
+The `APP_STORE_BUILD` flag activates `#if !APP_STORE_BUILD` guards in `MachStructApp.swift`, excluding Sparkle from the binary. The App Store prohibits third-party auto-update mechanisms.
+
+### Export
+
+```bash
+xcodebuild -exportArchive \
+    -archivePath build/MachStruct-AppStore.xcarchive \
+    -exportPath build/MachStruct-AppStore \
+    -exportOptionsPlist ExportOptions-AppStore.plist
+```
+
+This produces `build/MachStruct-AppStore/MachStruct.pkg`.
+
+### Upload and validate via Xcode Organizer (Xcode 15+)
+
+`xcrun altool` was deprecated in Xcode 13 and removed in Xcode 15. Use Xcode Organizer instead:
+
+1. Window → Organizer (⌥⌘O)
+2. Select the `MachStruct-AppStore` archive in the left panel
+3. Click **Distribute App** → **App Store Connect** → **Upload** → Next
+4. Review options → **Upload**
+
+Xcode validates and uploads in one step. The build appears in App Store Connect → TestFlight within ~15 minutes.
+
+### Upload via Transporter CLI (CI / scripted)
+
+Transporter.app (free, install from Mac App Store) provides a CLI for automated pipelines:
+
+```bash
+# Generate an App Store Connect API key at appstoreconnect.apple.com → Users and Access → Keys
+# Download the .p8 key file and note the Key ID and Issuer ID.
+
+/Applications/Transporter.app/Contents/MacOS/Transporter \
+    -m upload \
+    -f "build/MachStruct-AppStore/MachStruct.pkg" \
+    -apiKey "YOUR_KEY_ID" \
+    -apiIssuer "YOUR_ISSUER_ID"
+```
+
+Transporter validates then uploads. Exit code 0 = success.
+
+---
+
 ## What NOT to commit
 
 - `.p12` certificate exports
