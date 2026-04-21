@@ -1,24 +1,40 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Export options for App Store Connect upload.
+  Export options for Mac App Store upload.
   Used by: xcodebuild -exportArchive -exportOptionsPlist ExportOptions-AppStore.plist
-  Requires: Apple Distribution certificate + Mac App Store provisioning profile.
+  Requires: Apple Distribution certificate + Mac App Store provisioning profiles.
+  See scripts/README-signing.md for the full archive + upload workflow.
 -->
 <plist version="1.0">
 <dict>
-	<key>method</key>
-	<string>app-store</string>
+    <key>method</key>
+    <string>app-store</string>
 
-	<!-- Replace with your Apple Developer Team ID. -->
-	<key>teamID</key>
-	<string>XXXXXXXXXX</string>
+    <!-- Replace with your 10-character Apple Developer Team ID.
+         Find it at: developer.apple.com → Account → Membership -->
+    <key>teamID</key>
+    <string>XXXXXXXXXX</string>
 
-	<key>stripSwiftSymbols</key>
-	<true/>
+    <!-- Manual signing: use the Apple Distribution certificate + Mac App Store profiles. -->
+    <key>signingStyle</key>
+    <string>manual</string>
 
-	<!-- Set to true to upload directly to App Store Connect after export. -->
-	<key>uploadBitcode</key>
-	<false/>
+    <key>signingCertificate</key>
+    <string>Apple Distribution</string>
+
+    <key>provisioningProfiles</key>
+    <dict>
+        <!-- Key = bundle ID, Value = provisioning profile name (as shown in Xcode/portal). -->
+        <key>com.machstruct.app</key>
+        <string>MachStruct AppStore</string>
+        <key>com.machstruct.app.QuickLook</key>
+        <string>MachStruct QuickLook AppStore</string>
+        <key>com.machstruct.app.Spotlight</key>
+        <string>MachStruct Spotlight AppStore</string>
+    </dict>
+
+    <key>stripSwiftSymbols</key>
+    <true/>
 </dict>
 </plist>
