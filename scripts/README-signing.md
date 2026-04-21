@@ -83,6 +83,67 @@ spctl --assess --type exec build/MachStruct-Direct/MachStruct.app
 
 ---
 
+## Building for the Mac App Store
+
+### Prerequisites
+- Apple Distribution certificate in your login keychain (Xcode → Settings → Accounts → Manage Certificates → Apple Distribution)
+- Mac App Store provisioning profiles installed (download from developer.apple.com → Profiles; double-click to install)
+- `ExportOptions-AppStore.plist` updated with your Team ID (replace `XXXXXXXXXX`)
+
+### Archive (App Store — Sparkle excluded via APP_STORE_BUILD flag)
+
+```bash
+xcodebuild archive \
+    -project MachStruct.xcodeproj \
+    -scheme MachStruct \
+    -archivePath build/MachStruct-AppStore.xcarchive \
+    -configuration Release \
+    OTHER_SWIFT_FLAGS="-DAPP_STORE_BUILD" \
+    CODE_SIGN_STYLE=Manual \
+    CODE_SIGN_IDENTITY="Apple Distribution" \
+    DEVELOPMENT_TEAM="YOUR_TEAM_ID" \
+    PROVISIONING_PROFILE_SPECIFIER="MachStruct AppStore"
+```
+
+The `APP_STORE_BUILD` flag activates `#if !APP_STORE_BUILD` guards in `MachStructApp.swift`, excluding Sparkle from the binary. The App Store prohibits third-party auto-update mechanisms.
+
+### Export
+
+```bash
+xcodebuild -exportArchive \
+    -archivePath build/MachStruct-AppStore.xcarchive \
+    -exportPath build/MachStruct-AppStore \
+    -exportOptionsPlist ExportOptions-AppStore.plist
+```
+
+This produces `build/MachStruct-AppStore/MachStruct.pkg`.
+
+### Validate before upload
+
+```bash
+xcrun altool --validate-app \
+    -f "build/MachStruct-AppStore/MachStruct.pkg" \
+    --type macos \
+    -u "YOUR_APPLE_ID" \
+    -p "@keychain:MachStruct-appstore"
+```
+
+Expected: `No errors validating archive at 'build/MachStruct-AppStore/MachStruct.pkg'.`
+
+### Upload to App Store Connect
+
+```bash
+xcrun altool --upload-app \
+    -f "build/MachStruct-AppStore/MachStruct.pkg" \
+    --type macos \
+    -u "YOUR_APPLE_ID" \
+    -p "@keychain:MachStruct-appstore"
+```
+
+Alternatively, use Xcode Organizer: Window → Organizer → select the archive → Distribute App → App Store Connect → Upload.
+
+---
+
 ## What NOT to commit
 
 - `.p12` certificate exports
