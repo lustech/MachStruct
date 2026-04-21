@@ -9,7 +9,7 @@
 <plist version="1.0">
 <dict>
     <key>method</key>
-    <string>app-store</string>
+    <string>app-store-connect</string>
 
     <!-- Replace with your 10-character Apple Developer Team ID.
          Find it at: developer.apple.com → Account → Membership -->

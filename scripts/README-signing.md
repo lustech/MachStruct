@@ -98,7 +98,7 @@ xcodebuild archive \
     -scheme MachStruct \
     -archivePath build/MachStruct-AppStore.xcarchive \
     -configuration Release \
-    OTHER_SWIFT_FLAGS="-DAPP_STORE_BUILD" \
+    OTHER_SWIFT_FLAGS="$(inherited) -DAPP_STORE_BUILD" \
     CODE_SIGN_STYLE=Manual \
     CODE_SIGN_IDENTITY="Apple Distribution" \
     DEVELOPMENT_TEAM="XXXXXXXXXX" \
