@@ -198,6 +198,7 @@
 				9F481E1643CAA448B1EFC2EB /* Info.plist */,
 				A1B2C3D4E5F601234567890B /* Assets.xcassets */,
 				A1B2C3D4E5F601234567890C /* MachStruct.entitlements */,
+				13214B072F9790A1000F5AEE /* PrivacyInfo.xcprivacy */,
 				8C1BBF69249150EAE30F5255 /* Document */,
 				89DE75843AEE840DCD872D45 /* UI */,
 			);
@@ -278,7 +279,6 @@
 		DFC7840EB6FC0CCF76C5601D = {
 			isa = PBXGroup;
 			children = (
-				13214B072F9790A1000F5AEE /* PrivacyInfo.xcprivacy */,
 				5C929680C2FCD90B6747114D /* MachStruct/App */,
 				1E3DACDFE7A4470EA529C9A5 /* MachStructQuickLook */,
 				57389D9417344BB491BFBD36 /* MachStructSpotlight */,
