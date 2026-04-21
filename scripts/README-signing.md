@@ -101,7 +101,7 @@ xcodebuild archive \
     OTHER_SWIFT_FLAGS="-DAPP_STORE_BUILD" \
     CODE_SIGN_STYLE=Manual \
     CODE_SIGN_IDENTITY="Apple Distribution" \
-    DEVELOPMENT_TEAM="YOUR_TEAM_ID" \
+    DEVELOPMENT_TEAM="XXXXXXXXXX" \
     PROVISIONING_PROFILE_SPECIFIER="MachStruct AppStore"
 ```
 
@@ -118,29 +118,33 @@ xcodebuild -exportArchive \
 
 This produces `build/MachStruct-AppStore/MachStruct.pkg`.
 
-### Validate before upload
+### Upload and validate via Xcode Organizer (Xcode 15+)
+
+`xcrun altool` was deprecated in Xcode 13 and removed in Xcode 15. Use Xcode Organizer instead:
+
+1. Window → Organizer (⌥⌘O)
+2. Select the `MachStruct-AppStore` archive in the left panel
+3. Click **Distribute App** → **App Store Connect** → **Upload** → Next
+4. Review options → **Upload**
+
+Xcode validates and uploads in one step. The build appears in App Store Connect → TestFlight within ~15 minutes.
+
+### Upload via Transporter CLI (CI / scripted)
+
+Transporter.app (free, install from Mac App Store) provides a CLI for automated pipelines:
 
 ```bash
-xcrun altool --validate-app \
+# Generate an App Store Connect API key at appstoreconnect.apple.com → Users and Access → Keys
+# Download the .p8 key file and note the Key ID and Issuer ID.
+
+/Applications/Transporter.app/Contents/MacOS/Transporter \
+    -m upload \
     -f "build/MachStruct-AppStore/MachStruct.pkg" \
-    --type macos \
-    -u "YOUR_APPLE_ID" \
-    -p "@keychain:MachStruct-appstore"
+    -apiKey "YOUR_KEY_ID" \
+    -apiIssuer "YOUR_ISSUER_ID"
 ```
 
-Expected: `No errors validating archive at 'build/MachStruct-AppStore/MachStruct.pkg'.`
-
-### Upload to App Store Connect
-
-```bash
-xcrun altool --upload-app \
-    -f "build/MachStruct-AppStore/MachStruct.pkg" \
-    --type macos \
-    -u "YOUR_APPLE_ID" \
-    -p "@keychain:MachStruct-appstore"
-```
-
-Alternatively, use Xcode Organizer: Window → Organizer → select the archive → Distribute App → App Store Connect → Upload.
+Transporter validates then uploads. Exit code 0 = success.
 
 ---
 
