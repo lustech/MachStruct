@@ -24,7 +24,7 @@ on:
 jobs:
   release:
     name: Build, Notarize, and Publish
-    runs-on: macos-14   # Apple Silicon; Xcode 15+ pre-installed
+    runs-on: macos-15   # Apple Silicon; Xcode 16+ pre-installed
 
     env:
       SCHEME:       MachStruct
@@ -32,7 +32,6 @@ jobs:
       ARCHIVE_PATH: ${{ github.workspace }}/build/MachStruct.xcarchive
       EXPORT_PATH:  ${{ github.workspace }}/build/export
       APP_PATH:     ${{ github.workspace }}/build/export/MachStruct.app
-      ARCHIVE_APP:  ${{ github.workspace }}/build/MachStruct.xcarchive/Products/Applications/MachStruct.app
       DMG_PATH:     ${{ github.workspace }}/build/MachStruct-${{ github.ref_name }}.dmg
 
     steps:
@@ -41,17 +40,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      # ── 2. Log Xcode version and accept license ────────────────────────────
-      - name: Log Xcode version
-        run: xcodebuild -version
+      # ── 2. Select Xcode and accept license ─────────────────────────────────
+      - name: Select Xcode
+        run: |
+          # Use the default Xcode on the runner (16.x on macos-15).
+          # Uncomment and adjust below to pin a specific version:
+          # sudo xcode-select -s /Applications/Xcode_16.2.app
+          xcodebuild -version
+          swift --version
 
       - name: Accept Xcode license
         run: sudo xcodebuild -license accept
 
       # ── 3. Import signing certificate ──────────────────────────────────────
-      # Creates a temporary keychain scoped to this runner, imports the
-      # Developer ID Application certificate, and makes it available to
-      # xcodebuild for the duration of the job.
       - name: Import certificate into keychain
         env:
           CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE }}
@@ -78,8 +79,6 @@ jobs:
             -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
       # ── 4. Inject Team ID into ExportOptions ───────────────────────────────
-      # Replace the XXXXXXXXXX placeholder so xcodebuild can resolve the
-      # certificate without a manual edit to the committed plist.
       - name: Patch ExportOptions-Direct.plist
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -101,23 +100,31 @@ jobs:
             -archivePath "$ARCHIVE_PATH" \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Developer ID Application" \
-            DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}"
+            DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
+            OTHER_CODE_SIGN_FLAGS="--timestamp"
 
-      # ── 6. Extract .app from archive ────────────────────────────────────────
-      # Xcode 15.4 segfaults on `xcodebuild -exportArchive` with developer-id
-      # method when the archive contains app extensions. The archive step
-      # already signs everything with Developer ID Application, so we extract
-      # the .app directly from the xcarchive bundle.
-      - name: Extract app from archive
+      # ── 6. Export (Developer ID) ───────────────────────────────────────────
+      - name: Export archive
         run: |
-          mkdir -p "$EXPORT_PATH"
-          cp -R "$ARCHIVE_APP" "$APP_PATH"
-          echo "Extracted app:"
-          ls -la "$APP_PATH"
+          xcodebuild -exportArchive \
+            -archivePath "$ARCHIVE_PATH" \
+            -exportPath "$EXPORT_PATH" \
+            -exportOptionsPlist ExportOptions-Direct.plist
+
+      # ── 6b. Verify export and signing ──────────────────────────────────────
+      - name: Verify export
+        run: |
+          echo "=== Export directory ==="
+          ls -la "$EXPORT_PATH"
           test -d "$APP_PATH" || { echo "ERROR: $APP_PATH not found"; exit 1; }
 
+          echo "=== Code signature ==="
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+
+          echo "=== Entitlements ==="
+          codesign -d --entitlements - "$APP_PATH" || true
+
       # ── 7. Notarize ────────────────────────────────────────────────────────
-      # Apple requires submitting a zip; the .app itself is stapled after.
       - name: Notarize
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -135,15 +142,30 @@ jobs:
             --output-format json \
             | tee $RUNNER_TEMP/notarytool-output.json
 
-          # Fail loudly if notarization was rejected (status != "Accepted")
+          # Extract submission ID and status
+          SUBMISSION_ID=$(python3 -c "
+          import json
+          d = json.load(open('$RUNNER_TEMP/notarytool-output.json'))
+          print(d.get('id',''))
+          ")
           STATUS=$(python3 -c "
-          import json, sys
+          import json
           d = json.load(open('$RUNNER_TEMP/notarytool-output.json'))
           print(d.get('status','unknown'))
           ")
+
           echo "Notarization status: $STATUS"
+
+          # On failure, fetch the detailed log before exiting
           if [ "$STATUS" != "Accepted" ]; then
             echo "::error::Notarization failed with status: $STATUS"
+            echo "=== Fetching notarization log ==="
+            xcrun notarytool log "$SUBMISSION_ID" \
+              --apple-id "$APPLE_ID" \
+              --password "$NOTARIZATION_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" \
+              $RUNNER_TEMP/notarization-log.json || true
+            cat $RUNNER_TEMP/notarization-log.json || true
             exit 1
           fi
 
@@ -174,7 +196,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Derive a clean release name from the tag (v1.0.0 → "MachStruct 1.0.0")
           TAG="${{ github.ref_name }}"
           RELEASE_NAME="MachStruct ${TAG#v}"
 
