@@ -10,18 +10,21 @@
 	<key>method</key>
 	<string>developer-id</string>
 
-	<!-- Hardened Runtime is mandatory for notarization (P5-05). -->
-	<key>hardened-runtime</key>
-	<true/>
+	<key>signingStyle</key>
+	<string>manual</string>
+
+	<key>signingCertificate</key>
+	<string>Developer ID Application</string>
 
 	<!-- Team ID placeholder — safe to commit.
-	     • Local builds: replace XXXXXXXXXX with your 10-character Team ID
-	       (find it at https://developer.apple.com/account → Membership).
-	     • CI (P5-05): the release workflow patches this field at runtime via
-	       PlistBuddy using the APPLE_TEAM_ID Actions secret — no manual
-	       edit needed before pushing a release tag. -->
+	     CI patches this field at runtime via PlistBuddy using the
+	     APPLE_TEAM_ID Actions secret. -->
 	<key>teamID</key>
 	<string>XXXXXXXXXX</string>
+
+	<!-- Hardened Runtime is mandatory for notarization. -->
+	<key>hardened-runtime</key>
+	<true/>
 
 	<!-- Strip Swift standard libraries already present in the OS. -->
 	<key>stripSwiftSymbols</key>
