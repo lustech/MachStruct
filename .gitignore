@@ -53,3 +53,8 @@ ehthumbs.db
 
 # Git worktrees
 .worktrees/
+
+# Internal docs and scripts (not for public consumption)
+CLAUDE.md
+docs/
+scripts/
