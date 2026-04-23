@@ -96,6 +96,7 @@ jobs:
             -scheme "$SCHEME" \
             -configuration "$CONFIGURATION" \
             -destination "generic/platform=macOS" \
+            -skipPackagePluginValidation \
             -archivePath "$ARCHIVE_PATH" \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Developer ID Application" \
