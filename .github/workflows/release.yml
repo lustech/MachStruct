@@ -87,6 +87,7 @@ jobs:
       # ── 5. Archive ─────────────────────────────────────────────────────────
       - name: Archive
         run: |
+          set -o pipefail
           mkdir -p build
           xcodebuild archive \
             -project MachStruct.xcodeproj \
@@ -96,16 +97,24 @@ jobs:
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Developer ID Application" \
             DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
-            | xcpretty || cat /tmp/xcodebuild.log
+            | xcpretty
 
       # ── 6. Export (Developer ID) ───────────────────────────────────────────
       - name: Export archive
         run: |
+          set -o pipefail
           xcodebuild -exportArchive \
             -archivePath "$ARCHIVE_PATH" \
             -exportPath "$EXPORT_PATH" \
             -exportOptionsPlist ExportOptions-Direct.plist \
             | xcpretty
+
+      # ── 6b. Verify export ──────────────────────────────────────────────────
+      - name: Verify export
+        run: |
+          echo "Export directory contents:"
+          ls -la "$EXPORT_PATH" || echo "(export directory missing)"
+          test -d "$APP_PATH" || { echo "ERROR: $APP_PATH not found"; exit 1; }
 
       # ── 7. Notarize ────────────────────────────────────────────────────────
       # Apple requires submitting a zip; the .app itself is stapled after.
