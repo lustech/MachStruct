@@ -40,9 +40,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      # ── 2. Log Xcode version ───────────────────────────────────────────────
+      # ── 2. Log Xcode version and accept license ────────────────────────────
       - name: Log Xcode version
         run: xcodebuild -version
+
+      - name: Accept Xcode license
+        run: sudo xcodebuild -license accept
 
       # ── 3. Import signing certificate ──────────────────────────────────────
       # Creates a temporary keychain scoped to this runner, imports the
@@ -87,7 +90,6 @@ jobs:
       # ── 5. Archive ─────────────────────────────────────────────────────────
       - name: Archive
         run: |
-          set -o pipefail
           mkdir -p build
           xcodebuild archive \
             -project MachStruct.xcodeproj \
@@ -97,8 +99,7 @@ jobs:
             -archivePath "$ARCHIVE_PATH" \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Developer ID Application" \
-            DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
-            | xcpretty
+            DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}"
 
       # ── 6. Export (Developer ID) ───────────────────────────────────────────
       - name: Export archive
