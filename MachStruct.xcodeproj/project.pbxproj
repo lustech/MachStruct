@@ -492,6 +492,7 @@
 		1223BC576AB14686B330F31F /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MachStructQuickLook/Info.plist;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
@@ -565,6 +566,7 @@
 		249179CDE7F6401D94D39B48 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MachStructSpotlight/Info.plist;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
@@ -639,6 +641,7 @@
 		B59059B2578A43F0BD652C29 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MachStructSpotlight/Info.plist;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
@@ -652,6 +655,7 @@
 		EA2ACC9E2AF749FCAB5B1351 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MachStructQuickLook/Info.plist;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
