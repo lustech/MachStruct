@@ -40,9 +40,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      # ── 2. Select Xcode ────────────────────────────────────────────────────
-      - name: Select Xcode 15
-        run: sudo xcode-select -s /Applications/Xcode_15.4.app
+      # ── 2. Log Xcode version ───────────────────────────────────────────────
+      - name: Log Xcode version
+        run: xcodebuild -version
 
       # ── 3. Import signing certificate ──────────────────────────────────────
       # Creates a temporary keychain scoped to this runner, imports the
@@ -93,6 +93,7 @@ jobs:
             -project MachStruct.xcodeproj \
             -scheme "$SCHEME" \
             -configuration "$CONFIGURATION" \
+            -destination "generic/platform=macOS" \
             -archivePath "$ARCHIVE_PATH" \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Developer ID Application" \
