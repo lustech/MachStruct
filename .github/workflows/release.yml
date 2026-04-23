@@ -32,6 +32,7 @@ jobs:
       ARCHIVE_PATH: ${{ github.workspace }}/build/MachStruct.xcarchive
       EXPORT_PATH:  ${{ github.workspace }}/build/export
       APP_PATH:     ${{ github.workspace }}/build/export/MachStruct.app
+      ARCHIVE_APP:  ${{ github.workspace }}/build/MachStruct.xcarchive/Products/Applications/MachStruct.app
       DMG_PATH:     ${{ github.workspace }}/build/MachStruct-${{ github.ref_name }}.dmg
 
     steps:
@@ -102,21 +103,17 @@ jobs:
             CODE_SIGN_IDENTITY="Developer ID Application" \
             DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}"
 
-      # ── 6. Export (Developer ID) ───────────────────────────────────────────
-      - name: Export archive
+      # ── 6. Extract .app from archive ────────────────────────────────────────
+      # Xcode 15.4 segfaults on `xcodebuild -exportArchive` with developer-id
+      # method when the archive contains app extensions. The archive step
+      # already signs everything with Developer ID Application, so we extract
+      # the .app directly from the xcarchive bundle.
+      - name: Extract app from archive
         run: |
-          set -o pipefail
-          xcodebuild -exportArchive \
-            -archivePath "$ARCHIVE_PATH" \
-            -exportPath "$EXPORT_PATH" \
-            -exportOptionsPlist ExportOptions-Direct.plist \
-            | xcpretty
-
-      # ── 6b. Verify export ──────────────────────────────────────────────────
-      - name: Verify export
-        run: |
-          echo "Export directory contents:"
-          ls -la "$EXPORT_PATH" || echo "(export directory missing)"
+          mkdir -p "$EXPORT_PATH"
+          cp -R "$ARCHIVE_APP" "$APP_PATH"
+          echo "Extracted app:"
+          ls -la "$APP_PATH"
           test -d "$APP_PATH" || { echo "ERROR: $APP_PATH not found"; exit 1; }
 
       # ── 7. Notarize ────────────────────────────────────────────────────────
