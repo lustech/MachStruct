@@ -38,7 +38,7 @@ jobs:
 
       # ── 1. Checkout ────────────────────────────────────────────────────────
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # ── 2. Select Xcode ────────────────────────────────────────────────────
       - name: Select Xcode 15
