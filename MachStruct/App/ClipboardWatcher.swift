@@ -63,8 +63,9 @@ final class ClipboardWatcher: ObservableObject {
         let snapshot = text
         Task.detached(priority: .utility) { [weak self] in
             let format = Self.sniff(snapshot)
+            let watcher = self
             await MainActor.run {
-                self?.detected = format.map { DetectedClipboard(text: snapshot, format: $0) }
+                watcher?.detected = format.map { DetectedClipboard(text: snapshot, format: $0) }
             }
         }
     }

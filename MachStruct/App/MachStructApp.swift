@@ -296,13 +296,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 private extension DispatchSemaphore {
     static func wait<T: Sendable>(for task: Task<T, Never>) -> T {
         let sem = DispatchSemaphore(value: 0)
-        var result: T!
+        let ptr = UnsafeMutablePointer<T?>.allocate(capacity: 1)
+        ptr.initialize(to: nil)
         Task.detached {
-            result = await task.value
+            ptr.pointee = await task.value
             sem.signal()
         }
         sem.wait()
-        return result
+        let value = ptr.pointee!
+        ptr.deinitialize(count: 1)
+        ptr.deallocate()
+        return value
     }
 }
 

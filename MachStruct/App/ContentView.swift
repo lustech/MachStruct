@@ -127,51 +127,7 @@ struct ContentView: View {
     @Environment(\.undoManager) private var undoManager
 
     var body: some View {
-        Group {
-            if let index = document.nodeIndex {
-                // Show the tree as soon as the NodeIndex is ready — even if background
-                // streaming is still running (isLoading may still be true briefly).
-                contentStack(index)
-                    .environment(\.commitEdit) { [weak document] tx in
-                        document?.commitEdit(tx, undoManager: undoManager)
-                    }
-                    .environment(\.serializeNode) { [weak document] nodeID, pretty in
-                        document?.serializeNode(nodeID, pretty: pretty)
-                    }
-                    .environment(\.searchMatchIDs,
-                                  Set(searchMatches.map(\.rowNodeID)))
-                    .environment(\.activeSearchMatchID,
-                                  searchMatches.isEmpty ? nil
-                                    : searchMatches[activeMatchIndex].rowNodeID)
-                    .environment(\.bookmarkedNodeIDs, Set(bookmarks))
-                    .environment(\.toggleBookmark, makeToggleBookmark($bookmarks))
-                    .onChange(of: viewMode) { _, mode in
-                        if mode == .raw {
-                            // Honour the user's preferred default mode each
-                            // time they open raw view (can still be overridden
-                            // per-session by the pretty/minify picker).
-                            rawPretty = defaultRawPretty
-                            refreshRawText()
-                        }
-                    }
-                    .onChange(of: selectedNodeID) { _, newID in
-                        guard !isNavigatingHistory, let id = newID else { return }
-                        pushHistory(id)
-                    }
-                    .onChange(of: index.count) { _, _ in
-                        if viewMode == .raw { refreshRawText() }
-                    }
-                    .onChange(of: searchQuery) { _, query in
-                        scheduleSearch(query: query, in: index)
-                    }
-            } else if document.isLoading {
-                loadingView
-            } else if let error = document.loadError {
-                errorView(error)
-            } else {
-                placeholderView
-            }
-        }
+        mainContent
         .frame(minWidth: 400, minHeight: 300)
         .toolbar { toolbarContent }
         .sheet(isPresented: $showCSVStats) {
@@ -211,6 +167,52 @@ struct ContentView: View {
             Button("OK", role: .cancel) { exportError = nil }
         } message: {
             Text(exportError ?? "")
+        }
+    }
+
+    // MARK: - Main content (extracted to help the type-checker)
+
+    @ViewBuilder
+    private var mainContent: some View {
+        Group {
+            if let index = document.nodeIndex {
+                contentStack(index)
+                    .environment(\.commitEdit) { [weak document] tx in
+                        document?.commitEdit(tx, undoManager: undoManager)
+                    }
+                    .environment(\.serializeNode) { [weak document] nodeID, pretty in
+                        document?.serializeNode(nodeID, pretty: pretty)
+                    }
+                    .environment(\.searchMatchIDs,
+                                  Set(searchMatches.map(\.rowNodeID)))
+                    .environment(\.activeSearchMatchID,
+                                  searchMatches.isEmpty ? nil
+                                    : searchMatches[activeMatchIndex].rowNodeID)
+                    .environment(\.bookmarkedNodeIDs, Set(bookmarks))
+                    .environment(\.toggleBookmark, makeToggleBookmark($bookmarks))
+                    .onChange(of: viewMode) { _, mode in
+                        if mode == .raw {
+                            rawPretty = defaultRawPretty
+                            refreshRawText()
+                        }
+                    }
+                    .onChange(of: selectedNodeID) { _, newID in
+                        guard !isNavigatingHistory, let id = newID else { return }
+                        pushHistory(id)
+                    }
+                    .onChange(of: index.count) { _, _ in
+                        if viewMode == .raw { refreshRawText() }
+                    }
+                    .onChange(of: searchQuery) { _, query in
+                        scheduleSearch(query: query, in: index)
+                    }
+            } else if document.isLoading {
+                loadingView
+            } else if let error = document.loadError {
+                errorView(error)
+            } else {
+                placeholderView
+            }
         }
     }
 
