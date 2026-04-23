@@ -209,8 +209,8 @@ private extension JSONParser {
     func buildIndexSimdjson(file: MappedFile) throws -> StructuralIndex {
         // Start with a generous buffer; retry if the bridge signals MS_ERROR_BUFFER_SMALL.
         var capacity = min(max(1_024, Int(file.fileSize / 64)), 2_000_000)
-        var msEntries: [MSIndexEntry]
-        var count: Int64
+        var msEntries = [MSIndexEntry](repeating: MSIndexEntry(), count: capacity)
+        var count: Int64 = 0
 
         while true {
             msEntries = [MSIndexEntry](repeating: MSIndexEntry(), count: capacity)
