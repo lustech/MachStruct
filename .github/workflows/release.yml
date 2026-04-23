@@ -111,21 +111,57 @@ jobs:
             -exportPath "$EXPORT_PATH" \
             -exportOptionsPlist ExportOptions-Direct.plist
 
-      # ── 6b. Verify export and signing ──────────────────────────────────────
+      # ── 6b. Re-sign extensions with hardened runtime ────────────────────────
+      # exportArchive re-signs all binaries but may not preserve --options
+      # runtime on embedded extensions.  Force it here (innermost → outermost).
+      - name: Re-sign extensions with hardened runtime
+        run: |
+          test -d "$APP_PATH" || { echo "ERROR: $APP_PATH not found"; exit 1; }
+
+          for EXT in \
+            "$APP_PATH/Contents/PlugIns/MachStructQuickLook.appex" \
+            "$APP_PATH/Contents/PlugIns/MachStructSpotlight.appex"; do
+            if [ -d "$EXT" ]; then
+              echo "Re-signing $EXT with hardened runtime..."
+              codesign --force --options runtime --timestamp \
+                --sign "Developer ID Application" "$EXT"
+            fi
+          done
+
+          echo "Re-signing main app..."
+          codesign --force --options runtime --timestamp \
+            --sign "Developer ID Application" "$APP_PATH"
+
+      # ── 6c. Verify export and signing ──────────────────────────────────────
       - name: Verify export
         run: |
           echo "=== Export directory ==="
           ls -la "$EXPORT_PATH"
-          test -d "$APP_PATH" || { echo "ERROR: $APP_PATH not found"; exit 1; }
 
           echo "=== Code signature ==="
           codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+
+          echo "=== Hardened runtime check ==="
+          for BIN in \
+            "$APP_PATH/Contents/MacOS/MachStruct" \
+            "$APP_PATH/Contents/PlugIns/MachStructQuickLook.appex/Contents/MacOS/MachStructQuickLook" \
+            "$APP_PATH/Contents/PlugIns/MachStructSpotlight.appex/Contents/MacOS/MachStructSpotlight"; do
+            if [ -f "$BIN" ]; then
+              FLAGS=$(codesign -d --verbose "$BIN" 2>&1 | grep flags || true)
+              echo "$BIN: $FLAGS"
+              if ! echo "$FLAGS" | grep -q "runtime"; then
+                echo "::error::Hardened runtime NOT set on $BIN"
+                exit 1
+              fi
+            fi
+          done
 
           echo "=== Entitlements ==="
           codesign -d --entitlements - "$APP_PATH" || true
 
       # ── 7. Notarize ────────────────────────────────────────────────────────
       - name: Notarize
+        timeout-minutes: 30
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           NOTARIZATION_PASSWORD: ${{ secrets.NOTARIZATION_PASSWORD }}
