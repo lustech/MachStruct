@@ -242,7 +242,7 @@ jobs:
             --title "$RELEASE_NAME" \
             --generate-notes \
             --draft \
-            "$DMG_PATH#MachStruct-${TAG}.dmg"
+            "$DMG_PATH#MachStruct.dmg"
 
           echo "::notice::Draft release created. Review and publish at:"
           echo "::notice::https://github.com/${{ github.repository }}/releases/tag/$TAG"
