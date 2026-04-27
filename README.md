@@ -8,6 +8,10 @@
 
 MachStruct opens, navigates, edits, and converts large JSON, XML, YAML, and CSV files in under a second. A 100 MB JSON file is structurally indexed in **under 500 ms** and displayed as a live, expandable, editable tree — no loading spinners, no frozen UI.
 
+<p align="center">
+  <img src="Screenshots/MS-json.png" alt="MachStruct — JSON tree view" width="720">
+</p>
+
 ---
 
 ## Features
@@ -46,6 +50,12 @@ MachStruct opens, navigates, edits, and converts large JSON, XML, YAML, and CSV 
 - **macOS Services** — "Format with MachStruct" and "Minify with MachStruct" in the Services menu
 - **Clipboard watch** — detects structured data on the clipboard and offers one-click open
 - **Auto-updates** — background update checks via Sparkle
+
+### Screenshots
+
+| Welcome | Search | XML | YAML | CSV |
+|---|---|---|---|---|
+| ![Welcome](Screenshots/MS-welcome-screen.png) | ![Search](Screenshots/MS-json-search.png) | ![XML](Screenshots/MS-xml.png) | ![YAML](Screenshots/MS-yaml.png) | ![CSV](Screenshots/MS-csv-table-view.png) |
 
 ---
 
