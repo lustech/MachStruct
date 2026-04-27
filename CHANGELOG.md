@@ -5,7 +5,9 @@ All notable changes to MachStruct are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — v1.1
+## [Unreleased]
+
+## [1.0.3] — 2026-04-27
 
 ### Added
 - **Command palette (⇧⌘P)** — VS Code-style fuzzy launcher over every menu/toolbar
@@ -50,6 +52,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   250 ms after corpus correction (see Fixed). Measured 231 ms on M4 Mac mini.
 
 ### Fixed
+- **Welcome window crash on first launch** — `NSHostingController.sizeThatFits`
+  was passed `CGFloat.greatestFiniteMagnitude` for the height bound; because
+  `WelcomeView` greedily fills available height, the call returned an
+  unbounded size that violated `NSWindow`'s `CGRectContainsRect` assertion.
+  Replaced with an explicit first-run content size; autosaved frames still
+  win on subsequent launches.
+- **Paste & Parse: each snippet now opens its own document** — pasted
+  content was written to a fixed `Pasted Content.<ext>` temp path, so
+  `NSDocumentController` deduped subsequent pastes against the
+  already-open document. Each paste now lands in a unique per-paste
+  subdirectory of the temp directory, with a sortable timestamp in the
+  filename to differentiate windows in the title bar and recents menu.
 - **Test corpus undersized** — `TestCorpusGenerator.generateLarge` was
   producing ~1.6 MB files instead of the documented 10 MB; `generateMedium`
   was 190 KB instead of 1 MB. Every `large.json` benchmark since the
@@ -96,7 +110,8 @@ Initial public release. Full feature set:
 - **Drag-and-drop reordering** of array elements in the tree.
 - **GitHub Actions release pipeline** — notarise, DMG, GitHub Release.
 
-[Unreleased]: https://github.com/lustech/MachStruct/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/lustech/MachStruct/compare/v1.0.3...HEAD
+[1.0.3]: https://github.com/lustech/MachStruct/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/lustech/MachStruct/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/lustech/MachStruct/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/lustech/MachStruct/releases/tag/v1.0.0
