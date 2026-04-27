@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.4] — 2026-04-27
+
+### Fixed
+- **App launched in German for non-English/non-German system locales** —
+  v1.0.3 added a `de` localisation, but the explicit `Info.plist`
+  (`GENERATE_INFOPLIST_FILE = NO`) was missing `CFBundleDevelopmentRegion`,
+  so macOS could not identify the inline source strings as English. Users
+  whose preferred-language list did not list English ahead of German
+  (e.g. Swedish system locale) saw the app fall through to `de.lproj`.
+  Added `CFBundleDevelopmentRegion = en` to restore English as the
+  fallback.
+
 ## [1.0.3] — 2026-04-27
 
 ### Added
@@ -110,7 +122,8 @@ Initial public release. Full feature set:
 - **Drag-and-drop reordering** of array elements in the tree.
 - **GitHub Actions release pipeline** — notarise, DMG, GitHub Release.
 
-[Unreleased]: https://github.com/lustech/MachStruct/compare/v1.0.3...HEAD
+[Unreleased]: https://github.com/lustech/MachStruct/compare/v1.0.4...HEAD
+[1.0.4]: https://github.com/lustech/MachStruct/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/lustech/MachStruct/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/lustech/MachStruct/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/lustech/MachStruct/compare/v1.0.0...v1.0.1
