@@ -26,6 +26,15 @@ struct WelcomeView: View {
 
     private static let supportedExtensions: Set<String> = ["json", "xml", "yaml", "yml", "csv"]
 
+    /// Sortable, filesystem-safe timestamp for pasted-content filenames.
+    /// `:` would render as `/` in Finder; we use `-` for time separators instead.
+    private static let pastedTimestampFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd HH-mm-ss"
+        return f
+    }()
+
     private var visibleClipboard: DetectedClipboard? {
         guard let d = clipboardWatcher.detected else { return nil }
         return d == clipboardDismissed ? nil : d
@@ -313,10 +322,17 @@ struct WelcomeView: View {
         case .unknown: ext = "json"  // fall through — parser will produce a usable error
         }
 
-        // 2. Write to temp file (overwrites any prior paste; the name is intentionally generic).
-        let tempURL = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("Pasted Content.\(ext)")
+        // 2. Write to a per-paste temp directory so each snippet gets a unique URL.
+        //    NSDocumentController dedupes by URL — a fixed path would just re-surface
+        //    the previously opened paste instead of opening a new document. The
+        //    timestamp in the filename makes multiple pastes easy to tell apart in
+        //    window titles and the recents menu.
+        let stamp = Self.pastedTimestampFormatter.string(from: Date())
+        let tempDir = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("MachStruct-Pasted-\(UUID().uuidString)", isDirectory: true)
+        let tempURL = tempDir.appendingPathComponent("Pasted Content \(stamp).\(ext)")
         do {
+            try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
             try data.write(to: tempURL, options: .atomic)
         } catch {
             showDropError(String(localized: "Could not write temp file: \(error.localizedDescription)"))

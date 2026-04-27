@@ -333,17 +333,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let hosting = NSHostingController(rootView: WelcomeView())
-        // Let the hosting controller calculate its preferred size from the SwiftUI layout.
-        let size = hosting.sizeThatFits(in: CGSize(width: 680, height: CGFloat.greatestFiniteMagnitude))
-        hosting.view.frame = NSRect(origin: .zero, size: size)
-
         let window = NSWindow(contentViewController: hosting)
         window.title = "Welcome to MachStruct"
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.isReleasedWhenClosed = false
         window.minSize = CGSize(width: 640, height: 520)
+        // WelcomeView greedily fills available height (.frame(maxHeight: .infinity)),
+        // so we set an explicit first-run content size rather than asking the
+        // hosting controller to compute one — sizeThatFits returns the bound it's
+        // given, which would push the window frame past AppKit's geometry limits.
+        window.setContentSize(CGSize(width: 720, height: 580))
         window.center()
-        // Restore last known size/position; first run keeps the centered default.
+        // Autosaved frame, when present, overrides the default size set above.
         _ = window.setFrameAutosaveName("MachStruct.welcome")
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
