@@ -1,0 +1,105 @@
+{
+  "api": "OpenWeather",
+  "version": "3.1",
+  "request": {
+    "endpoint": "/forecast/daily",
+    "coordinates": { "lat": 59.3293, "lon": 18.0686 },
+    "units": "metric",
+    "days": 7
+  },
+  "location": {
+    "city": "Stockholm",
+    "country": "SE",
+    "timezone": "Europe/Stockholm",
+    "elevation_m": 28
+  },
+  "forecast": [
+    {
+      "date": "2026-04-23",
+      "summary": "Partly cloudy",
+      "temperature": { "high": 14.2, "low": 6.8, "feels_like": 12.1 },
+      "wind": { "speed_ms": 4.3, "direction": "SW", "gusts_ms": 8.7 },
+      "precipitation": { "probability": 0.15, "amount_mm": 0.0 },
+      "humidity": 62,
+      "uv_index": 4,
+      "sunrise": "05:32",
+      "sunset": "20:18"
+    },
+    {
+      "date": "2026-04-24",
+      "summary": "Light rain",
+      "temperature": { "high": 11.5, "low": 5.2, "feels_like": 8.9 },
+      "wind": { "speed_ms": 6.1, "direction": "W", "gusts_ms": 12.4 },
+      "precipitation": { "probability": 0.82, "amount_mm": 3.4 },
+      "humidity": 78,
+      "uv_index": 2,
+      "sunrise": "05:29",
+      "sunset": "20:20"
+    },
+    {
+      "date": "2026-04-25",
+      "summary": "Overcast",
+      "temperature": { "high": 10.8, "low": 4.9, "feels_like": 7.6 },
+      "wind": { "speed_ms": 5.5, "direction": "NW", "gusts_ms": 10.2 },
+      "precipitation": { "probability": 0.45, "amount_mm": 1.1 },
+      "humidity": 71,
+      "uv_index": 2,
+      "sunrise": "05:27",
+      "sunset": "20:23"
+    },
+    {
+      "date": "2026-04-26",
+      "summary": "Sunny",
+      "temperature": { "high": 16.3, "low": 7.1, "feels_like": 15.0 },
+      "wind": { "speed_ms": 3.1, "direction": "S", "gusts_ms": 5.8 },
+      "precipitation": { "probability": 0.05, "amount_mm": 0.0 },
+      "humidity": 55,
+      "uv_index": 5,
+      "sunrise": "05:24",
+      "sunset": "20:25"
+    },
+    {
+      "date": "2026-04-27",
+      "summary": "Clear skies",
+      "temperature": { "high": 18.1, "low": 8.4, "feels_like": 17.5 },
+      "wind": { "speed_ms": 2.8, "direction": "SE", "gusts_ms": 4.9 },
+      "precipitation": { "probability": 0.02, "amount_mm": 0.0 },
+      "humidity": 48,
+      "uv_index": 6,
+      "sunrise": "05:22",
+      "sunset": "20:28"
+    },
+    {
+      "date": "2026-04-28",
+      "summary": "Scattered clouds",
+      "temperature": { "high": 15.7, "low": 7.9, "feels_like": 14.2 },
+      "wind": { "speed_ms": 3.9, "direction": "E", "gusts_ms": 7.1 },
+      "precipitation": { "probability": 0.20, "amount_mm": 0.0 },
+      "humidity": 58,
+      "uv_index": 4,
+      "sunrise": "05:19",
+      "sunset": "20:30"
+    },
+    {
+      "date": "2026-04-29",
+      "summary": "Thunderstorms",
+      "temperature": { "high": 13.4, "low": 6.5, "feels_like": 10.8 },
+      "wind": { "speed_ms": 7.2, "direction": "W", "gusts_ms": 15.6 },
+      "precipitation": { "probability": 0.91, "amount_mm": 12.8 },
+      "humidity": 85,
+      "uv_index": 1,
+      "sunrise": "05:17",
+      "sunset": "20:33"
+    }
+  ],
+  "alerts": [
+    {
+      "type": "wind",
+      "severity": "yellow",
+      "title": "Strong wind warning",
+      "description": "Gusts up to 15 m/s expected on April 29",
+      "effective": "2026-04-29T06:00:00+02:00",
+      "expires": "2026-04-29T22:00:00+02:00"
+    }
+  ]
+}

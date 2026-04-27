@@ -1,0 +1,21 @@
+Order ID,Date,Customer,Region,Product,Category,Quantity,Unit Price,Discount,Total
+ORD-10001,2026-01-05,Andersson AB,Stockholm,Ergonomic Desk Chair,Furniture,2,4995.00,0.10,8991.00
+ORD-10002,2026-01-07,TechStart Oy,Helsinki,27" 4K Monitor,Electronics,5,6490.00,0.15,27582.50
+ORD-10003,2026-01-07,Nordvik AS,Oslo,Standing Desk Frame,Furniture,3,3295.00,0.00,9885.00
+ORD-10004,2026-01-12,DataFlow ApS,Copenhagen,Mechanical Keyboard,Electronics,10,1895.00,0.20,15160.00
+ORD-10005,2026-01-15,Andersson AB,Stockholm,Cable Management Kit,Accessories,2,495.00,0.00,990.00
+ORD-10006,2026-01-18,Berglund & Co,Gothenburg,Noise-Cancelling Headphones,Electronics,4,3990.00,0.05,15162.00
+ORD-10007,2026-01-22,TechStart Oy,Helsinki,Webcam Pro 4K,Electronics,5,1295.00,0.10,5827.50
+ORD-10008,2026-01-25,CloudNine AB,Malmo,Ergonomic Desk Chair,Furniture,6,4995.00,0.15,25474.50
+ORD-10009,2026-02-01,Nordvik AS,Oslo,Desk Lamp LED,Accessories,8,795.00,0.00,6360.00
+ORD-10010,2026-02-03,Svensson IT,Stockholm,27" 4K Monitor,Electronics,2,6490.00,0.05,12331.00
+ORD-10011,2026-02-08,DataFlow ApS,Copenhagen,Standing Desk Frame,Furniture,1,3295.00,0.00,3295.00
+ORD-10012,2026-02-10,Berglund & Co,Gothenburg,USB-C Docking Station,Electronics,3,2495.00,0.10,6736.50
+ORD-10013,2026-02-14,Fjord Systems,Bergen,Ergonomic Mouse,Accessories,15,895.00,0.20,10740.00
+ORD-10014,2026-02-18,Andersson AB,Stockholm,Monitor Arm Dual,Accessories,2,1695.00,0.00,3390.00
+ORD-10015,2026-02-22,TechStart Oy,Helsinki,Standing Desk Frame,Furniture,4,3295.00,0.10,11862.00
+ORD-10016,2026-03-01,CloudNine AB,Malmo,Mechanical Keyboard,Electronics,8,1895.00,0.05,14398.00
+ORD-10017,2026-03-05,Svensson IT,Stockholm,Noise-Cancelling Headphones,Electronics,2,3990.00,0.00,7980.00
+ORD-10018,2026-03-09,Nordvik AS,Oslo,Webcam Pro 4K,Electronics,3,1295.00,0.00,3885.00
+ORD-10019,2026-03-12,Fjord Systems,Bergen,Ergonomic Desk Chair,Furniture,4,4995.00,0.10,17982.00
+ORD-10020,2026-03-15,DataFlow ApS,Copenhagen,Cable Management Kit,Accessories,6,495.00,0.00,2970.00

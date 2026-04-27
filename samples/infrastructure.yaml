@@ -1,0 +1,148 @@
+cluster:
+  name: prod-eu-north-1
+  provider: aws
+  region: eu-north-1
+  kubernetes_version: "1.29"
+  node_pools:
+    - name: general
+      instance_type: m7g.xlarge
+      min_size: 3
+      max_size: 12
+      labels:
+        workload: general
+        tier: standard
+    - name: compute
+      instance_type: c7g.2xlarge
+      min_size: 2
+      max_size: 8
+      labels:
+        workload: compute
+        tier: high-performance
+      taints:
+        - key: dedicated
+          value: compute
+          effect: NoSchedule
+    - name: monitoring
+      instance_type: r7g.large
+      min_size: 1
+      max_size: 3
+      labels:
+        workload: monitoring
+        tier: standard
+
+services:
+  - name: api-gateway
+    replicas: 3
+    image: registry.internal/api-gateway:2.14.0
+    ports:
+      - name: http
+        container: 8080
+        service: 443
+        protocol: TCP
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+    health_check:
+      path: /healthz
+      interval_seconds: 10
+      timeout_seconds: 3
+    env:
+      - name: LOG_LEVEL
+        value: info
+      - name: RATE_LIMIT_RPS
+        value: "1000"
+      - name: CORS_ORIGINS
+        value: "https://app.example.com,https://admin.example.com"
+
+  - name: user-service
+    replicas: 2
+    image: registry.internal/user-service:1.8.3
+    ports:
+      - name: grpc
+        container: 9090
+        service: 9090
+        protocol: TCP
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: "2"
+        memory: 2Gi
+    dependencies:
+      - postgres-primary
+      - redis-sessions
+
+  - name: search-engine
+    replicas: 2
+    image: registry.internal/search-engine:3.1.0
+    node_selector:
+      workload: compute
+    resources:
+      requests:
+        cpu: "2"
+        memory: 4Gi
+      limits:
+        cpu: "4"
+        memory: 8Gi
+    volumes:
+      - name: index-data
+        size: 100Gi
+        storage_class: gp3
+        mount_path: /data/indices
+
+databases:
+  postgres-primary:
+    engine: postgresql
+    version: "16.2"
+    instance_class: db.r7g.xlarge
+    storage_gb: 500
+    multi_az: true
+    backup:
+      retention_days: 30
+      window: "02:00-03:00"
+    read_replicas:
+      - region: eu-north-1
+        instance_class: db.r7g.large
+
+  redis-sessions:
+    engine: redis
+    version: "7.2"
+    node_type: cache.r7g.large
+    num_nodes: 3
+    cluster_mode: true
+
+monitoring:
+  prometheus:
+    retention_days: 90
+    scrape_interval: 15s
+    storage_gb: 200
+  grafana:
+    dashboards:
+      - api-latency
+      - error-rates
+      - resource-utilization
+      - database-performance
+    alerting:
+      channels:
+        - type: slack
+          webhook: https://hooks.slack.com/services/T00/B00/xxx
+        - type: pagerduty
+          service_key: pd-service-key
+      rules:
+        - name: high-error-rate
+          condition: "error_rate_5m > 0.05"
+          severity: critical
+          for: 5m
+        - name: high-latency
+          condition: "p99_latency_ms > 500"
+          severity: warning
+          for: 10m
+        - name: disk-pressure
+          condition: "disk_usage_pct > 85"
+          severity: warning
+          for: 15m

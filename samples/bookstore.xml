@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bookstore name="Nordic Pages" established="1987" currency="SEK">
+
+  <categories>
+    <category id="fiction" label="Fiction">
+      <book isbn="978-0-06-112008-4" in-stock="true">
+        <title>To Kill a Mockingbird</title>
+        <author>
+          <first-name>Harper</first-name>
+          <last-name>Lee</last-name>
+          <nationality>American</nationality>
+        </author>
+        <year>1960</year>
+        <price>149.00</price>
+        <ratings>
+          <average>4.7</average>
+          <count>2841</count>
+        </ratings>
+        <tags>
+          <tag>classic</tag>
+          <tag>literary fiction</tag>
+          <tag>Pulitzer Prize</tag>
+        </tags>
+      </book>
+
+      <book isbn="978-0-7432-7356-5" in-stock="true">
+        <title>1984</title>
+        <author>
+          <first-name>George</first-name>
+          <last-name>Orwell</last-name>
+          <nationality>British</nationality>
+        </author>
+        <year>1949</year>
+        <price>129.00</price>
+        <ratings>
+          <average>4.6</average>
+          <count>3502</count>
+        </ratings>
+        <tags>
+          <tag>dystopian</tag>
+          <tag>classic</tag>
+          <tag>political fiction</tag>
+        </tags>
+      </book>
+
+      <book isbn="978-91-0-012854-5" in-stock="false">
+        <title>The Girl with the Dragon Tattoo</title>
+        <author>
+          <first-name>Stieg</first-name>
+          <last-name>Larsson</last-name>
+          <nationality>Swedish</nationality>
+        </author>
+        <year>2005</year>
+        <price>179.00</price>
+        <ratings>
+          <average>4.1</average>
+          <count>1876</count>
+        </ratings>
+        <tags>
+          <tag>thriller</tag>
+          <tag>mystery</tag>
+          <tag>Nordic noir</tag>
+        </tags>
+      </book>
+    </category>
+
+    <category id="science" label="Science &amp; Technology">
+      <book isbn="978-0-393-60985-1" in-stock="true">
+        <title>Astrophysics for People in a Hurry</title>
+        <author>
+          <first-name>Neil</first-name>
+          <last-name>deGrasse Tyson</last-name>
+          <nationality>American</nationality>
+        </author>
+        <year>2017</year>
+        <price>199.00</price>
+        <ratings>
+          <average>4.3</average>
+          <count>982</count>
+        </ratings>
+        <tags>
+          <tag>astronomy</tag>
+          <tag>popular science</tag>
+        </tags>
+      </book>
+
+      <book isbn="978-0-14-028329-7" in-stock="true">
+        <title>A Brief History of Time</title>
+        <author>
+          <first-name>Stephen</first-name>
+          <last-name>Hawking</last-name>
+          <nationality>British</nationality>
+        </author>
+        <year>1988</year>
+        <price>159.00</price>
+        <ratings>
+          <average>4.5</average>
+          <count>2103</count>
+        </ratings>
+        <tags>
+          <tag>physics</tag>
+          <tag>cosmology</tag>
+          <tag>classic</tag>
+        </tags>
+      </book>
+    </category>
+
+    <category id="cooking" label="Food &amp; Cooking">
+      <book isbn="978-91-7424-547-2" in-stock="true">
+        <title>The Nordic Cookbook</title>
+        <author>
+          <first-name>Magnus</first-name>
+          <last-name>Nilsson</last-name>
+          <nationality>Swedish</nationality>
+        </author>
+        <year>2015</year>
+        <price>349.00</price>
+        <ratings>
+          <average>4.8</average>
+          <count>445</count>
+        </ratings>
+        <tags>
+          <tag>Scandinavian</tag>
+          <tag>regional cuisine</tag>
+          <tag>traditional</tag>
+        </tags>
+      </book>
+    </category>
+  </categories>
+
+  <store-info>
+    <address>
+      <street>Drottninggatan 45</street>
+      <city>Stockholm</city>
+      <postal-code>111 21</postal-code>
+      <country>Sweden</country>
+    </address>
+    <hours>
+      <weekday open="10:00" close="19:00"/>
+      <saturday open="10:00" close="17:00"/>
+      <sunday open="12:00" close="16:00"/>
+    </hours>
+    <contact>
+      <phone>+46 8 123 45 67</phone>
+      <email>info@nordicpages.se</email>
+      <website>https://www.nordicpages.se</website>
+    </contact>
+  </store-info>
+
+</bookstore>
