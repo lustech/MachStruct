@@ -1,161 +1,36 @@
 {
   "sourceLanguage" : "en",
-  "version" : "1.0",
   "strings" : {
-    "MachStruct" : {
-      "comment" : "App name; usually not translated",
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "MachStruct" }
-        }
-      }
+    ":" : {
+
     },
-    "Drop a file here" : {
-      "comment" : "Welcome window — drop zone label",
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Datei hier ablegen" }
-        }
-      }
-    },
-    "or paste text" : {
-      "comment" : "Welcome window — separator between drop zone and paste box",
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "oder Text einfügen" }
-        }
-      }
-    },
-    "Paste JSON, XML, YAML, or CSV…" : {
-      "comment" : "Welcome window — paste area placeholder",
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "JSON, XML, YAML oder CSV einfügen…" }
-        }
-      }
-    },
-    "Parse" : {
-      "comment" : "Welcome window — paste box action",
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Parsen" }
-        }
-      }
-    },
-    "Parsing…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Wird geparst…" }
-        }
-      }
-    },
-    "Open File…" : {
-      "comment" : "Welcome window — file picker button",
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Datei öffnen…" }
-        }
-      }
-    },
-    "Recent Files" : {
-      "comment" : "Welcome window — recents header",
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Zuletzt geöffnet" }
-        }
-      }
-    },
-    "No recent files" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Keine zuletzt geöffneten Dateien" }
-        }
-      }
-    },
-    "File drop zone" : {
-      "comment" : "Accessibility label for the drop zone",
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Datei-Ablage" }
-        }
-      }
-    },
-    "Drag a JSON, XML, YAML, or CSV file here. Use the Open File button instead if you can't drag." : {
-      "comment" : "Accessibility hint for the drop zone",
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Ziehen Sie eine JSON-, XML-, YAML- oder CSV-Datei hierher. Verwenden Sie alternativ die Schaltfläche „Datei öffnen“." }
-        }
-      }
-    },
-    "Paste content" : {
-      "comment" : "Accessibility label for the paste area",
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Inhalt einfügen" }
-        }
-      }
-    },
-    "Paste JSON, XML, YAML, or CSV text. The format is auto-detected." : {
-      "comment" : "Accessibility hint for the paste area",
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "JSON-, XML-, YAML- oder CSV-Text einfügen. Das Format wird automatisch erkannt." }
-        }
-      }
-    },
-    "Opens this recent file" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Öffnet diese zuletzt verwendete Datei" }
-        }
-      }
-    },
-    "Could not read the dropped file." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Die abgelegte Datei konnte nicht gelesen werden." }
-        }
-      }
-    },
-    "Unsupported file type: .%@" : {
-      "comment" : "Format string; %@ is the file extension or '(none)'",
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Nicht unterstützter Dateityp: .%@" }
-        }
-      }
+    "\"%@\"" : {
+
     },
     "(none)" : {
       "comment" : "Used inside the unsupported-file-type message when no extension is present",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "(keine)" }
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(keine)"
+          }
         }
       }
     },
-    "Could not write temp file: %@" : {
+    "[%@]" : {
+
+    },
+    "%@ characters" : {
+      "comment" : "Clipboard banner subtitle; %@ is a formatted character count",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Temporäre Datei konnte nicht geschrieben werden: %@" }
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ Zeichen"
+          }
         }
       }
     },
@@ -164,25 +39,192 @@
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "%@ in der Zwischenablage erkannt" }
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ in der Zwischenablage erkannt"
+          }
         }
       }
     },
-    "%@ characters" : {
-      "comment" : "Clipboard banner subtitle; %@ is a formatted character count",
-      "extractionState" : "manual",
+    "%@ nodes indexed" : {
+
+    },
+    "%@, %@" : {
       "localizations" : {
-        "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "%@ Zeichen" }
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@, %2$@"
+          }
         }
       }
     },
-    "Open" : {
-      "comment" : "Clipboard banner — open button",
+    "%lld of %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld of %2$lld"
+          }
+        }
+      }
+    },
+    "%lld pt" : {
+
+    },
+    "<%@>" : {
+
+    },
+    "A fast, native viewer and editor for structured data." : {
+
+    },
+    "About" : {
+      "comment" : "Settings — section header",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Öffnen" }
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Über"
+          }
+        }
+      }
+    },
+    "Add Bookmark" : {
+
+    },
+    "Add Item" : {
+
+    },
+    "Add Key-Value" : {
+
+    },
+    "Analysing columns…" : {
+
+    },
+    "Anchor: &%@" : {
+
+    },
+    "Appearance" : {
+      "comment" : "Settings tab",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Darstellung"
+          }
+        }
+      }
+    },
+    "Applies when first switching to Raw View for a document." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wirkt beim ersten Wechsel in die Rohansicht eines Dokuments."
+          }
+        }
+      }
+    },
+    "Bookmarks" : {
+
+    },
+    "Bookmarks (⌘D to toggle)" : {
+
+    },
+    "Build" : {
+      "comment" : "Build number label",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Build"
+          }
+        }
+      }
+    },
+    "Check for Updates…" : {
+
+    },
+    "Clear All Bookmarks" : {
+
+    },
+    "Collapse All" : {
+
+    },
+    "Column Statistics" : {
+
+    },
+    "Column Stats" : {
+
+    },
+    "Command Palette" : {
+
+    },
+    "Controls the font size of node keys and values in the outline." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bestimmt die Schriftgröße von Schlüsseln und Werten in der Gliederung."
+          }
+        }
+      }
+    },
+    "Copy as JSON" : {
+
+    },
+    "Could not read the dropped file." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die abgelegte Datei konnte nicht gelesen werden."
+          }
+        }
+      }
+    },
+    "Could not write temp file: %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Temporäre Datei konnte nicht geschrieben werden: %@"
+          }
+        }
+      }
+    },
+    "Default mode" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Standardmodus"
+          }
+        }
+      }
+    },
+    "Delete" : {
+
+    },
+    "Dismiss" : {
+
+    },
+    "Dismiss auto-fix banner" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto-Korrektur-Banner schließen"
+          }
         }
       }
     },
@@ -190,118 +232,79 @@
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Zwischenablage-Banner schließen" }
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zwischenablage-Banner schließen"
+          }
         }
       }
     },
-    "General" : {
-      "comment" : "Settings tab",
+    "Done" : {
+
+    },
+    "Drag a JSON, XML, YAML, or CSV file here. Use the Open File button instead if you can't drag." : {
+      "comment" : "Accessibility hint for the drop zone",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Allgemein" }
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ziehen Sie eine JSON-, XML-, YAML- oder CSV-Datei hierher. Verwenden Sie alternativ die Schaltfläche „Datei öffnen“."
+          }
         }
       }
     },
-    "Appearance" : {
-      "comment" : "Settings tab",
+    "Drop a file here" : {
+      "comment" : "Welcome window — drop zone label",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Darstellung" }
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datei hier ablegen"
+          }
         }
       }
     },
-    "Raw View" : {
-      "comment" : "Settings tab and view-mode label",
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Rohansicht" }
-        }
-      }
+    "Expand / Collapse" : {
+
     },
-    "Startup" : {
-      "comment" : "Settings — section header",
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Start" }
-        }
-      }
+    "Expand All" : {
+
     },
-    "Show welcome window at launch" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Willkommensfenster beim Start anzeigen" }
-        }
-      }
+    "Expand or collapse all nodes" : {
+
     },
-    "Tree View" : {
-      "comment" : "Settings — section header and view-mode label",
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Baumansicht" }
-        }
-      }
+    "Export" : {
+
     },
-    "Single-click to expand tree rows" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Baumzeilen mit einem Klick aufklappen" }
-        }
-      }
+    "Export as CSV…" : {
+
     },
-    "When on, clicking anywhere on an expandable row toggles it. The disclosure chevron always works regardless." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Wenn aktiviert, klappt ein Klick auf eine aufklappbare Zeile diese um. Das Aufklapp-Symbol funktioniert in jedem Fall." }
-        }
-      }
+    "Export as JSON…" : {
+
     },
-    "About" : {
-      "comment" : "Settings — section header",
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Über" }
-        }
-      }
+    "Export as YAML…" : {
+
     },
-    "Version" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Version" }
-        }
-      }
+    "Export document as a different format" : {
+
     },
-    "Build" : {
-      "comment" : "Build number label",
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Build" }
-        }
-      }
+    "Export Failed" : {
+
     },
-    "Tree view font size" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Schriftgröße in der Baumansicht" }
-        }
-      }
+    "Failed to Open File" : {
+
     },
-    "Controls the font size of node keys and values in the outline." : {
+    "File drop zone" : {
+      "comment" : "Accessibility label for the drop zone",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Bestimmt die Schriftgröße von Schlüsseln und Werten in der Gliederung." }
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datei-Ablage"
+          }
         }
       }
     },
@@ -310,7 +313,10 @@
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Schrift" }
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schrift"
+          }
         }
       }
     },
@@ -318,32 +324,68 @@
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Schriftgröße" }
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schriftgröße"
+          }
         }
       }
     },
-    "Default mode" : {
+    "Format" : {
+
+    },
+    "General" : {
+      "comment" : "Settings tab",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Standardmodus" }
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allgemein"
+          }
         }
       }
     },
-    "Pretty-printed" : {
+    "Get Started" : {
+
+    },
+    "Go Back" : {
+
+    },
+    "Go Forward" : {
+
+    },
+    "Inspect detected formats" : {
+
+    },
+    "Inspect value" : {
+
+    },
+    "Key" : {
+
+    },
+    "MachStruct" : {
+      "comment" : "App name; usually not translated",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Formatiert" }
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MachStruct"
+          }
         }
       }
     },
-    "Pretty-print" : {
-      "comment" : "Toolbar — pretty-print mode label",
-      "extractionState" : "manual",
+    "MachStruct Help" : {
+
+    },
+    "Match %lld of %lld" : {
       "localizations" : {
-        "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Formatieren" }
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Match %1$lld of %2$lld"
+          }
         }
       }
     },
@@ -351,7 +393,10 @@
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Minifiziert" }
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Minifiziert"
+          }
         }
       }
     },
@@ -360,24 +405,53 @@
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Minifizieren" }
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Minifizieren"
+          }
         }
       }
     },
-    "Output" : {
-      "comment" : "Settings — Raw View output section",
+    "Move Down" : {
+
+    },
+    "Move Up" : {
+
+    },
+    "Next match (↩)" : {
+
+    },
+    "Next search match" : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Ausgabe" }
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nächster Suchtreffer"
+          }
         }
       }
     },
-    "Applies when first switching to Raw View for a document." : {
+    "No bookmarks" : {
+
+    },
+    "No Columns" : {
+
+    },
+    "No content to display." : {
+
+    },
+    "No matching commands" : {
+
+    },
+    "No recent files" : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Wirkt beim ersten Wechsel in die Rohansicht eines Dokuments." }
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine zuletzt geöffneten Dateien"
+          }
         }
       }
     },
@@ -386,7 +460,10 @@
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Keine Auswahl" }
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Auswahl"
+          }
         }
       }
     },
@@ -395,7 +472,10 @@
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Knoten" }
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Knoten"
+          }
         }
       }
     },
@@ -404,33 +484,365 @@
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Knoten" }
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Knoten"
+          }
         }
       }
+    },
+    "OK" : {
+
+    },
+    "Open" : {
+      "comment" : "Clipboard banner — open button",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffnen"
+          }
+        }
+      }
+    },
+    "Open File…" : {
+      "comment" : "Welcome window — file picker button",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datei öffnen…"
+          }
+        }
+      }
+    },
+    "Opens this recent file" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffnet diese zuletzt verwendete Datei"
+          }
+        }
+      }
+    },
+    "or paste text" : {
+      "comment" : "Welcome window — separator between drop zone and paste box",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "oder Text einfügen"
+          }
+        }
+      }
+    },
+    "Output" : {
+      "comment" : "Settings — Raw View output section",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ausgabe"
+          }
+        }
+      }
+    },
+    "Parse" : {
+      "comment" : "Welcome window — paste box action",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parsen"
+          }
+        }
+      }
+    },
+    "Parsing %@…" : {
+
+    },
+    "Parsing…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wird geparst…"
+          }
+        }
+      }
+    },
+    "Paste content" : {
+      "comment" : "Accessibility label for the paste area",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inhalt einfügen"
+          }
+        }
+      }
+    },
+    "Paste from Clipboard" : {
+
+    },
+    "Paste JSON, XML, YAML, or CSV text. The format is auto-detected." : {
+      "comment" : "Accessibility hint for the paste area",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "JSON-, XML-, YAML- oder CSV-Text einfügen. Das Format wird automatisch erkannt."
+          }
+        }
+      }
+    },
+    "Paste JSON, XML, YAML, or CSV…" : {
+      "comment" : "Welcome window — paste area placeholder",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "JSON, XML, YAML oder CSV einfügen…"
+          }
+        }
+      }
+    },
+    "Pretty-print" : {
+      "comment" : "Toolbar — pretty-print mode label",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Formatieren"
+          }
+        }
+      }
+    },
+    "Pretty-printed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Formatiert"
+          }
+        }
+      }
+    },
+    "Previous match (⇧↩)" : {
+
     },
     "Previous search match" : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Vorheriger Suchtreffer" }
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vorheriger Suchtreffer"
+          }
         }
       }
     },
-    "Next search match" : {
+    "Raw Text" : {
+
+    },
+    "Raw View" : {
+      "comment" : "Settings tab and view-mode label",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Nächster Suchtreffer" }
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rohansicht"
+          }
         }
       }
     },
-    "Dismiss auto-fix banner" : {
+    "Recent Files" : {
+      "comment" : "Welcome window — recents header",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
-          "stringUnit" : { "state" : "translated", "value" : "Auto-Korrektur-Banner schließen" }
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zuletzt geöffnet"
+          }
         }
       }
+    },
+    "Recovered with auto-fix" : {
+
+    },
+    "Remove Bookmark" : {
+
+    },
+    "Search keys and values" : {
+
+    },
+    "Show CSV column statistics" : {
+
+    },
+    "Show Welcome Guide…" : {
+
+    },
+    "Show Welcome Window" : {
+
+    },
+    "Show welcome window at launch" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Willkommensfenster beim Start anzeigen"
+          }
+        }
+      }
+    },
+    "Shows detected timestamp, UUID, colour, or base64 details" : {
+
+    },
+    "Single-click to expand tree rows" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Baumzeilen mit einem Klick aufklappen"
+          }
+        }
+      }
+    },
+    "Startup" : {
+      "comment" : "Settings — section header",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start"
+          }
+        }
+      }
+    },
+    "Status. Path: %@. %@. Size: %@. Format: %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Status. Path: %1$@. %2$@. Size: %3$@. Format: %4$@."
+          }
+        }
+      }
+    },
+    "Switch to minified output" : {
+
+    },
+    "Switch to pretty-printed output" : {
+
+    },
+    "Switch to table view" : {
+
+    },
+    "Switch to tree view" : {
+
+    },
+    "Table View" : {
+
+    },
+    "This document has no tabular data." : {
+
+    },
+    "Toggle Bookmark" : {
+
+    },
+    "Tree View" : {
+      "comment" : "Settings — section header and view-mode label",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Baumansicht"
+          }
+        }
+      }
+    },
+    "Tree view font size" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schriftgröße in der Baumansicht"
+          }
+        }
+      }
+    },
+    "Type a command…" : {
+
+    },
+    "Unsupported file type: .%@" : {
+      "comment" : "Format string; %@ is the file extension or '(none)'",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht unterstützter Dateityp: .%@"
+          }
+        }
+      }
+    },
+    "Use File › Save As… to keep the cleaned version." : {
+
+    },
+    "Value" : {
+
+    },
+    "Version" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version"
+          }
+        }
+      }
+    },
+    "View raw JSON source" : {
+
+    },
+    "Welcome to MachStruct" : {
+
+    },
+    "When on, clicking anywhere on an expandable row toggles it. The disclosure chevron always works regardless." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wenn aktiviert, klappt ein Klick auf eine aufklappbare Zeile diese um. Das Aufklapp-Symbol funktioniert in jedem Fall."
+          }
+        }
+      }
+    },
+    "You can revisit this any time from the Help menu." : {
+
     }
-  }
+  },
+  "version" : "1.0"
 }
