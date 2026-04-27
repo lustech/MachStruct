@@ -479,6 +479,10 @@
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MachStruct/App/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = MachStruct;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
 				LE_APPLICATION_IDENTIFIER = com.machstruct.app;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
@@ -678,6 +682,10 @@
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MachStruct/App/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = MachStruct;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
 				LE_APPLICATION_IDENTIFIER = com.machstruct.app;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
