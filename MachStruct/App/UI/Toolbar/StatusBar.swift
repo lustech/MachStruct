@@ -18,12 +18,15 @@ struct StatusBar: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            // Path — takes all available space; truncates in the middle
+            // Path — takes all available space; truncates in the middle.
+            // Hover tooltip shows the full path so users can read long paths
+            // without resizing the window.
             Text(pathText)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, 12)
+                .help(pathText)
 
             separator
 
@@ -53,6 +56,10 @@ struct StatusBar: View {
         .overlay(alignment: .top) {
             Divider()
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "Status. Path: \(pathText). \(nodeCountText). Size: \(fileSizeText). Format: \(formatName)."
+        )
     }
 
     // MARK: - Separator
@@ -66,13 +73,14 @@ struct StatusBar: View {
     // MARK: - Computed text
 
     private var pathText: String {
-        guard let id = selectedID else { return "No selection" }
+        guard let id = selectedID else { return String(localized: "No selection") }
         return nodeIndex.pathString(to: id)
     }
 
     private var nodeCountText: String {
         let n = nodeIndex.count
-        return "\(n.formatted()) \(n == 1 ? "node" : "nodes")"
+        let suffix = n == 1 ? String(localized: "node") : String(localized: "nodes")
+        return "\(n.formatted()) \(suffix)"
     }
 
     private var fileSizeText: String {

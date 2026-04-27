@@ -127,14 +127,14 @@ private extension TestCorpusGenerator {
     // -------------------------------------------------------------------------
 
     func generateMedium(to url: URL) throws {
-        // ~400 user records × ~2.5 KB each ≈ 1 MB
+        // ~2 000 user records × ~520 B each ≈ 1 MB
         var out = Data()
         out.reserveCapacity(1_100_000)
 
         func w(_ s: String) { out.append(contentsOf: s.utf8) }
 
         w("[\n")
-        let count = 400
+        let count = 2_000
         for i in 0..<count {
             let active  = i % 3 != 0
             let score   = Double(i) * 2.718
@@ -180,9 +180,8 @@ private extension TestCorpusGenerator {
     // -------------------------------------------------------------------------
 
     func generateLarge(to url: URL) throws {
-        // ~5 000 records × ~2 KB each ≈ 10 MB
-        // Nodes per record ≈ 1(obj)+10(kv)+10(scalar)+1(arr)+3(scalars) ≈ 25
-        // Total ≈ 125 000 nodes
+        // ~30 000 records × ~330 B each ≈ 10 MB.
+        // Node count ≈ 30 000 × 42 ≈ 1.26 M.
         FileManager.default.createFile(atPath: url.path, contents: nil)
         let fh = try FileHandle(forWritingTo: url)
         defer { try? fh.close() }
@@ -190,7 +189,7 @@ private extension TestCorpusGenerator {
         func w(_ s: String) throws { try fh.write(contentsOf: Data(s.utf8)) }
 
         try w("[\n")
-        let count = 5_000
+        let count = 30_000
         for i in 0..<count {
             let score  = Double(i) * 3.14159
             let day    = String(format: "%02d", (i % 28) + 1)

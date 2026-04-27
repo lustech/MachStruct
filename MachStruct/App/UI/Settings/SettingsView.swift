@@ -14,12 +14,14 @@ enum AppSettings {
         static let defaultRawPretty     = "defaultRawPretty"
         static let showWelcomeOnLaunch  = "showWelcomeOnLaunch"
         static let hasSeenOnboarding    = "hasSeenOnboarding"
+        static let singleClickExpand    = "singleClickExpand"
     }
     enum Defaults {
         static let rawFontSize: Double  = 13
         static let treeFontSize: Double = 12
         static let defaultRawPretty     = true
         static let showWelcomeOnLaunch  = true
+        static let singleClickExpand    = true
     }
 }
 
@@ -54,12 +56,24 @@ private struct GeneralTab: View {
     @AppStorage(AppSettings.Keys.showWelcomeOnLaunch)
     private var showWelcomeOnLaunch = AppSettings.Defaults.showWelcomeOnLaunch
 
+    @AppStorage(AppSettings.Keys.singleClickExpand)
+    private var singleClickExpand = AppSettings.Defaults.singleClickExpand
+
     var body: some View {
         Form {
             Section {
                 Toggle("Show welcome window at launch", isOn: $showWelcomeOnLaunch)
             } header: {
                 Text("Startup")
+            }
+
+            Section {
+                Toggle("Single-click to expand tree rows", isOn: $singleClickExpand)
+            } header: {
+                Text("Tree View")
+            } footer: {
+                Text("When on, clicking anywhere on an expandable row toggles it. The disclosure chevron always works regardless.")
+                    .foregroundStyle(.secondary)
             }
 
             Section {

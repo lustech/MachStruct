@@ -51,7 +51,7 @@ struct WelcomeView: View {
                 rightPanel
             }
         }
-        .frame(width: 560, height: 460)
+        .frame(minWidth: 640, minHeight: 520)
         .onAppear {
             recentURLs = NSDocumentController.shared.recentDocumentURLs
             clipboardWatcher.start()
@@ -135,6 +135,9 @@ struct WelcomeView: View {
         .frame(width: 220, height: 88)
         .animation(.easeInOut(duration: 0.15), value: isDraggingOver)
         .onDrop(of: [UTType.fileURL], isTargeted: $isDraggingOver, perform: handleDrop)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("File drop zone")
+        .accessibilityHint("Drag a JSON, XML, YAML, or CSV file here. Use the Open File button instead if you can't drag.")
     }
 
     // MARK: - "or paste text" divider
@@ -175,9 +178,12 @@ struct WelcomeView: View {
                         .padding(.horizontal, 5)
                         .padding(.top, 6)
                         .allowsHitTesting(false)
+                        .accessibilityHidden(true)
                 }
             }
             .frame(width: 220, height: 90)
+            .accessibilityLabel("Paste content")
+            .accessibilityHint("Paste JSON, XML, YAML, or CSV text. The format is auto-detected.")
 
             Button(action: parsePastedText) {
                 if isParsing {
@@ -256,7 +262,7 @@ struct WelcomeView: View {
                                     relativeTo: nil,
                                     isAbsolute: true)
                 else {
-                    showDropError("Could not read the dropped file.")
+                    showDropError(String(localized: "Could not read the dropped file."))
                     return
                 }
                 let ext = url.pathExtension.lowercased()
@@ -270,7 +276,8 @@ struct WelcomeView: View {
                         }
                     }
                 } else {
-                    showDropError("Unsupported file type: .\(ext.isEmpty ? "(none)" : ext)")
+                    let displayExt = ext.isEmpty ? String(localized: "(none)") : ext
+                    showDropError(String(localized: "Unsupported file type: .\(displayExt)"))
                 }
             }
         }
@@ -312,7 +319,7 @@ struct WelcomeView: View {
         do {
             try data.write(to: tempURL, options: .atomic)
         } catch {
-            showDropError("Could not write temp file: \(error.localizedDescription)")
+            showDropError(String(localized: "Could not write temp file: \(error.localizedDescription)"))
             isParsing = false
             return
         }
@@ -355,6 +362,7 @@ private struct RecentFileRow: View {
                 Image(systemName: fileIcon(for: url))
                     .foregroundStyle(.secondary)
                     .frame(width: 18)
+                    .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(url.lastPathComponent)
@@ -377,6 +385,8 @@ private struct RecentFileRow: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
+        .accessibilityLabel("\(url.lastPathComponent), \(url.deletingLastPathComponent().abbreviatingWithTildeInPath)")
+        .accessibilityHint("Opens this recent file")
     }
 
     private func open() {

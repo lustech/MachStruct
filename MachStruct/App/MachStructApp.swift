@@ -1,8 +1,88 @@
 import SwiftUI
+import AppKit
 #if !APP_STORE_BUILD
 import Sparkle
 #endif
 import MachStructCore
+
+// MARK: - Window frame autosave (A1)
+//
+// Wires NSWindow.setFrameAutosaveName for SwiftUI-hosted document windows.
+// Each file gets a stable per-URL key so its size and position survive
+// reopens. Untitled and pasted documents share a single key.
+//
+// Welcome and onboarding windows have their own autosave names set
+// directly in showWelcomeWindow / showOnboardingWindow.
+
+/// Returns a stable autosave key for a document URL.
+///
+/// The path is used directly (Cocoa accepts any unique string), with
+/// path separators replaced so the key reads cleanly in the defaults
+/// inspector.  Untitled documents (no URL) all share one key.
+func autosaveKey(for url: URL?) -> String {
+    guard let url else { return "MachStruct.doc.untitled" }
+    let safe = url.path
+        .replacingOccurrences(of: "/", with: "_")
+        .replacingOccurrences(of: ":", with: "_")
+    return "MachStruct.doc.\(safe)"
+}
+
+/// SwiftUI bridge that runs a one-shot configuration block against the
+/// host `NSWindow` once the view is in the window hierarchy.
+private struct WindowAccessor: NSViewRepresentable {
+    let autosaveKey: String
+    let preferredInitialSize: CGSize?
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async { [weak view] in
+            guard let window = view?.window else { return }
+            // Apply the format-aware default size (A2) only the first time this
+            // file is opened, before wiring autosave — the autosaved frame
+            // takes precedence on subsequent opens.
+            if window.frameAutosaveName != autosaveKey {
+                let savedFrame = UserDefaults.standard
+                    .string(forKey: "NSWindow Frame \(autosaveKey)")
+                if savedFrame == nil, let size = preferredInitialSize {
+                    var frame = window.frame
+                    frame.size = size
+                    window.setFrame(frame, display: true)
+                    window.center()
+                }
+                _ = window.setFrameAutosaveName(autosaveKey)
+            }
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+extension View {
+    /// Wires `NSWindow.setFrameAutosaveName` for the host window. If
+    /// `preferredInitialSize` is provided and no saved frame exists yet, the
+    /// window opens at that size — gives CSV / tabular files more room out of
+    /// the box.
+    func windowFrameAutosave(_ key: String,
+                             preferredInitialSize: CGSize? = nil) -> some View {
+        background(WindowAccessor(autosaveKey: key,
+                                  preferredInitialSize: preferredInitialSize))
+    }
+}
+
+/// Preferred initial window size based on the file extension. CSV and TSV
+/// open wider because the tabular view needs horizontal room for columns.
+func preferredDefaultWindowSize(for url: URL?) -> CGSize {
+    guard let ext = url?.pathExtension.lowercased() else {
+        return CGSize(width: 900, height: 600)
+    }
+    switch ext {
+    case "csv", "tsv":
+        return CGSize(width: 1200, height: 750)
+    default:
+        return CGSize(width: 900, height: 600)
+    }
+}
 
 // MARK: - MachStructDocumentController
 
@@ -261,8 +341,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.title = "Welcome to MachStruct"
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.isReleasedWhenClosed = false
-        window.minSize = CGSize(width: 560, height: 400)
+        window.minSize = CGSize(width: 640, height: 520)
         window.center()
+        // Restore last known size/position; first run keeps the centered default.
+        _ = window.setFrameAutosaveName("MachStruct.welcome")
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         _welcomeWindow = window
@@ -282,6 +364,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.styleMask        = [.titled, .closable]
         window.isReleasedWhenClosed = false
         window.center()
+        _ = window.setFrameAutosaveName("MachStruct.onboarding")
         window.makeKeyAndOrderFront(nil)
         _onboardingWindow = window
     }
@@ -324,8 +407,10 @@ struct MachStructApp: App {
         //   • Drag-and-drop onto the Dock icon or an open document window
         //   • One window per open document
         DocumentGroup(viewing: StructDocument.self) { file in
-            ContentView(document: file.document)
+            ContentView(document: file.document, fileURL: file.fileURL)
                 .frame(minWidth: 600, minHeight: 400)
+                .windowFrameAutosave(autosaveKey(for: file.fileURL),
+                                     preferredInitialSize: preferredDefaultWindowSize(for: file.fileURL))
         }
 
         // ── Settings window (⌘,) ─────────────────────────────────────────

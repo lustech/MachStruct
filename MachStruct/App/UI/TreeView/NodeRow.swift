@@ -33,6 +33,10 @@ struct NodeRow: View {
     @State private var editText: String = ""
     @FocusState private var isFocused: Bool
 
+    // MARK: - Inspector state (B4)
+
+    @State private var showInspector: Bool = false
+
     // MARK: - Format-specific helpers
 
     /// Non-nil when this row represents an XML element.
@@ -60,30 +64,76 @@ struct NodeRow: View {
             if let ns = xmlElementMeta?.namespace {
                 TypeBadge(style: .ns)
                     .help(ns)   // full URI on hover
+                    .accessibilityHidden(true)
             }
             // YAML anchor badge — shown when the node declares a named anchor (&name).
             if node.hasYAMLAnchor, let anchor = node.yamlValueMeta?.anchor {
                 TypeBadge(style: .yamlAnchor)
                     .help("Anchor: &\(anchor)")
+                    .accessibilityHidden(true)
             }
             // YAML scalar-style badge — shown for non-plain scalar styles (|, >, ', ").
             if let styleBadge = node.yamlStyleBadge {
                 TypeBadge(style: styleBadge)
                     .help(yamlStyleHelp(styleBadge))
+                    .accessibilityHidden(true)
             }
             // Bookmark indicator (P4-03) — shown when this node is pinned.
             if bookmarkedNodeIDs.contains(node.id) {
                 Image(systemName: "bookmark.fill")
                     .font(.system(size: 9, weight: .regular))
                     .foregroundStyle(.orange)
+                    .accessibilityHidden(true)
             }
             TypeBadge(style: node.badgeInfo.style)
+                .accessibilityHidden(true)
         }
         .font(.system(.body, design: .monospaced))
         .background { searchHighlight }
         .contextMenu { contextMenuItems }
         .onChange(of: editingField) { _, newValue in
             isFocused = (newValue != nil)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(rowAccessibilityLabel)
+    }
+
+    // MARK: - Accessibility label (C3)
+
+    /// A single human-readable description of the row, synthesised from the
+    /// key, value, type, and bookmark state so VoiceOver announces it as one
+    /// coherent unit instead of reading each `Text` fragment in turn.
+    private var rowAccessibilityLabel: String {
+        var parts: [String] = []
+        if let key = node.displayKey {
+            parts.append(key)
+        }
+        let vn = node.valueNode
+        switch vn.value {
+        case .scalar(let sv):
+            parts.append(sv.displayText)
+            parts.append(scalarTypeName(sv))
+        case .container(let count):
+            let kind = vn.type == .array ? "array" : "object"
+            parts.append("\(kind), \(count) \(count == 1 ? "item" : "items")")
+        case .unparsed:
+            parts.append(vn.type == .array ? "array" : "object")
+        case .error(let msg):
+            parts.append("error: \(msg)")
+        }
+        if bookmarkedNodeIDs.contains(node.id) {
+            parts.append("bookmarked")
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    private func scalarTypeName(_ sv: ScalarValue) -> String {
+        switch sv {
+        case .string:  return "string"
+        case .integer: return "integer"
+        case .float:   return "number"
+        case .boolean: return "boolean"
+        case .null:    return "null"
         }
     }
 
@@ -159,7 +209,11 @@ struct NodeRow: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .foregroundStyle(scalarColor(sv))
+                    .help(sv.displayText)
                     .onTapGesture { startValueEdit(sv) }
+                if let insights = sv.inspect() {
+                    inspectorChip(for: sv, insights: insights)
+                }
 
             case .container, .unparsed:
                 Text(node.displayValue)
@@ -354,6 +408,150 @@ struct NodeRow: View {
         guard let tx = EditTransaction.insertFromClipboard(
             json, into: containerID, in: node.nodeIndex) else { return }
         commitEdit?(tx)
+    }
+
+    // MARK: - Inspector chip & popover (B4)
+
+    @ViewBuilder
+    private func inspectorChip(for sv: ScalarValue,
+                               insights: ScalarInsights) -> some View {
+        Button {
+            showInspector.toggle()
+        } label: {
+            Image(systemName: chipSymbol(for: insights))
+                .font(.system(size: 10, weight: .regular))
+                .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        .help("Inspect detected formats")
+        .accessibilityLabel("Inspect value")
+        .accessibilityHint("Shows detected timestamp, UUID, colour, or base64 details")
+        .popover(isPresented: $showInspector, arrowEdge: .bottom) {
+            ScalarInspectorPopover(insights: insights)
+        }
+    }
+
+    /// Pick the most distinctive symbol when more than one inspector matched.
+    private func chipSymbol(for ins: ScalarInsights) -> String {
+        if ins.hexColor      != nil { return "paintpalette" }
+        if ins.unixTimestamp != nil || ins.iso8601Date != nil { return "clock" }
+        if ins.uuid          != nil { return "number" }
+        if ins.base64Preview != nil { return "doc.text.magnifyingglass" }
+        return "info.circle"
+    }
+}
+
+// MARK: - Scalar inspector popover (B4)
+
+private struct ScalarInspectorPopover: View {
+
+    let insights: ScalarInsights
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let date = insights.unixTimestamp {
+                section(title: "Unix Timestamp",
+                        icon:  "clock") {
+                    Text(formatted(date))
+                        .font(.system(.body, design: .monospaced))
+                    Text(relative(date))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let date = insights.iso8601Date {
+                section(title: "ISO 8601 Date",
+                        icon:  "calendar") {
+                    Text(formatted(date))
+                        .font(.system(.body, design: .monospaced))
+                    Text(relative(date))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let uuid = insights.uuid {
+                section(title: "UUID",
+                        icon:  "number") {
+                    Text(uuid.uuidString)
+                        .font(.system(.body, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+            }
+
+            if let hex = insights.hexColor {
+                section(title: "Hex Colour",
+                        icon:  "paintpalette") {
+                    HStack(spacing: 8) {
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color(red: hex.red, green: hex.green, blue: hex.blue))
+                            .frame(width: 28, height: 28)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(.secondary.opacity(0.3))
+                            )
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(hex.hex)
+                                .font(.system(.body, design: .monospaced))
+                            Text(String(format: "rgb(%d, %d, %d)",
+                                        Int(hex.red   * 255),
+                                        Int(hex.green * 255),
+                                        Int(hex.blue  * 255)))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
+            if let b64 = insights.base64Preview {
+                section(title: "Base64 (\(b64.totalBytes) bytes)",
+                        icon:  "doc.text.magnifyingglass") {
+                    if let utf8 = b64.firstBytesUTF8, !utf8.isEmpty {
+                        Text(utf8)
+                            .font(.system(.body, design: .monospaced))
+                            .lineLimit(4)
+                            .truncationMode(.tail)
+                            .textSelection(.enabled)
+                    }
+                    Text(b64.firstBytesHex)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                        .truncationMode(.tail)
+                        .textSelection(.enabled)
+                }
+            }
+        }
+        .padding(12)
+        .frame(minWidth: 260, maxWidth: 400, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func section<Content: View>(
+        title: String,
+        icon:  String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label(title, systemImage: icon)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            content()
+        }
+    }
+
+    private func formatted(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss zzz"
+        return f.string(from: date)
+    }
+
+    private func relative(_ date: Date) -> String {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .full
+        return f.localizedString(for: date, relativeTo: Date())
     }
 }
 

@@ -115,6 +115,48 @@ public struct NodeIndex: Sendable {
         return result.reversed()
     }
 
+    /// Resolve a path string produced by `pathString(to:)` back to a `NodeID`.
+    ///
+    /// Returns `nil` if the path doesn't match any materialised node.  In a
+    /// lazy NodeIndex (large file, partial materialisation), paths into
+    /// unexpanded subtrees won't resolve until the user opens the relevant
+    /// container.  Used by persistent bookmarks (B2) to recover IDs across
+    /// document opens.
+    public func resolvePath(_ path: String) -> NodeID? {
+        guard path.hasPrefix("root") else { return nil }
+        let rest = path.dropFirst("root".count)
+        guard !rest.isEmpty else { return rootID }
+
+        var current: NodeID = rootID
+        var i = rest.startIndex
+        while i < rest.endIndex {
+            let segment: String
+            switch rest[i] {
+            case ".":
+                let segStart = rest.index(after: i)
+                var segEnd = segStart
+                while segEnd < rest.endIndex,
+                      rest[segEnd] != ".", rest[segEnd] != "[" {
+                    segEnd = rest.index(after: segEnd)
+                }
+                segment = String(rest[segStart..<segEnd])
+                i = segEnd
+            case "[":
+                let segStart = rest.index(after: i)
+                guard let close = rest[segStart...].firstIndex(of: "]") else { return nil }
+                segment = String(rest[segStart..<close])
+                i = rest.index(after: close)
+            default:
+                return nil
+            }
+            guard let parent = node(for: current),
+                  let childID = parent.childIDs.first(where: { node(for: $0)?.key == segment })
+            else { return nil }
+            current = childID
+        }
+        return current
+    }
+
     /// Human-readable path string, e.g. `"root.items[42].name"`.
     public func pathString(to id: NodeID) -> String {
         let ids = path(to: id)

@@ -25,6 +25,10 @@ struct ContentView: View {
 
     @ObservedObject var document: StructDocument
 
+    /// File URL of the document (nil for new/untitled).  Used by bookmark
+    /// persistence (B2) and other per-file features.
+    var fileURL: URL? = nil
+
     // MARK: - Persisted settings (P6-01)
 
     @AppStorage(AppSettings.Keys.rawFontSize)
@@ -102,10 +106,15 @@ struct ContentView: View {
 
     /// Ordered list of bookmarked node IDs (insertion order preserved for display).
     ///
-    /// In-session only: NodeIDs are counter-based and change on each document
-    /// open, so bookmarks do not persist across sessions.  Path-based persistence
-    /// is planned as a future improvement.
+    /// Path-based persistence (B2): on document open the saved paths for
+    /// `fileURL` are resolved against the current `NodeIndex`; resolved IDs are
+    /// loaded here.  When this changes we serialise the current paths back to
+    /// `BookmarkStore`.
     @State private var bookmarks: [NodeID] = []
+
+    /// True once we've attempted to restore persisted bookmarks for this
+    /// document — gates the load to a single shot per session.
+    @State private var bookmarksLoaded: Bool = false
 
     // MARK: - Tree expansion state (P4-02)
 
@@ -124,16 +133,30 @@ struct ContentView: View {
     /// The node to scroll to when `scrollTrigger` increments.
     @State private var scrollTarget: NodeID? = nil
 
+    // MARK: - Command palette state (B1)
+
+    /// Toggles the ⇧⌘P command palette sheet.
+    @State private var showCommandPalette: Bool = false
+
     @Environment(\.undoManager) private var undoManager
 
     var body: some View {
         mainContent
         .frame(minWidth: 400, minHeight: 300)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if let fixes = document.autoFixApplied, !fixes.isEmpty {
+                autoFixBanner(fixes)
+            }
+        }
         .toolbar { toolbarContent }
         .sheet(isPresented: $showCSVStats) {
             if let index = document.nodeIndex {
                 CSVStatsPanel(nodeIndex: index)
             }
+        }
+        .sheet(isPresented: $showCommandPalette) {
+            CommandPaletteView(commands: paletteCommands(),
+                               onDismiss: { showCommandPalette = false })
         }
         // Cmd+D: toggle bookmark on the currently selected node (P4-03).
         // A hidden Button is the idiomatic SwiftUI way to bind a keyboard
@@ -145,6 +168,11 @@ struct ContentView: View {
             }
             .keyboardShortcut("d", modifiers: .command)
             .hidden()
+
+            // ⇧⌘P — command palette (B1)
+            Button("Command Palette") { showCommandPalette = true }
+                .keyboardShortcut("p", modifiers: [.command, .shift])
+                .hidden()
 
             // Cmd+[ / Cmd+] — back / forward history
             if let index = document.nodeIndex {
@@ -206,6 +234,13 @@ struct ContentView: View {
                     .onChange(of: searchQuery) { _, query in
                         scheduleSearch(query: query, in: index)
                     }
+                    .onAppear { restorePersistedBookmarks(in: index) }
+                    .onChange(of: index.count) { _, _ in
+                        // Lazy-loaded files materialise children as the user
+                        // expands containers — retry resolution as the index grows.
+                        restorePersistedBookmarks(in: index)
+                    }
+                    .onChange(of: bookmarks) { _, _ in persistBookmarks(in: index) }
             } else if document.isLoading {
                 loadingView
             } else if let error = document.loadError {
@@ -350,8 +385,10 @@ struct ContentView: View {
                 Picker("Format", selection: $rawPretty) {
                     Image(systemName: "text.alignleft").tag(true)
                         .help("Pretty-print")
+                        .accessibilityLabel("Pretty-print")
                     Image(systemName: "arrow.left.and.right.text.vertical").tag(false)
                         .help("Minify")
+                        .accessibilityLabel("Minify")
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 64)
@@ -411,6 +448,7 @@ struct ContentView: View {
                         Image(systemName: "chevron.up")
                     }
                     .help("Previous match (⇧↩)")
+                    .accessibilityLabel("Previous search match")
                     .buttonStyle(.borderless)
 
                     Text("\(activeMatchIndex + 1) of \(searchMatches.count)")
@@ -418,11 +456,13 @@ struct ContentView: View {
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
                         .frame(minWidth: 56)
+                        .accessibilityLabel("Match \(activeMatchIndex + 1) of \(searchMatches.count)")
 
                     Button(action: advanceMatch) {
                         Image(systemName: "chevron.down")
                     }
                     .help("Next match (↩)")
+                    .accessibilityLabel("Next search match")
                     .buttonStyle(.borderless)
                 }
                 .padding(.horizontal, 4)
@@ -679,6 +719,47 @@ struct ContentView: View {
 
     // MARK: - Bookmarks (P4-03)
 
+    // MARK: - Persisted bookmarks (B2)
+
+    /// Paths from disk we've already resolved into `bookmarks` this session.
+    /// Tracking them lets `persistBookmarks` distinguish removed bookmarks
+    /// (drop) from never-resolved bookmarks (keep around for later).
+    @State private var resolvedBookmarkPaths: Set<String> = []
+
+    /// Latest set of paths persisted to disk (in load order).  Acts as the
+    /// source of truth for "unresolved" entries that should survive a save.
+    @State private var persistedBookmarkPaths: [String] = []
+
+    /// On first index ready (or after lazy expansion grows the index), try to
+    /// resolve every persisted path that isn't already in `bookmarks`.
+    private func restorePersistedBookmarks(in index: NodeIndex) {
+        guard let url = fileURL else { return }
+        if !bookmarksLoaded {
+            persistedBookmarkPaths = BookmarkStore.load(for: url)
+            bookmarksLoaded = true
+        }
+        for path in persistedBookmarkPaths where !resolvedBookmarkPaths.contains(path) {
+            if let id = index.resolvePath(path), !bookmarks.contains(id) {
+                bookmarks.append(id)
+                resolvedBookmarkPaths.insert(path)
+            }
+        }
+    }
+
+    /// Serialise the current bookmark IDs (and any still-unresolved persisted
+    /// paths) back to disk.
+    private func persistBookmarks(in index: NodeIndex) {
+        guard bookmarksLoaded, let url = fileURL else { return }
+        let currentPaths = bookmarks.map { index.pathString(to: $0) }
+        let unresolved = persistedBookmarkPaths.filter {
+            !resolvedBookmarkPaths.contains($0)
+        }
+        let merged = currentPaths + unresolved.filter { !currentPaths.contains($0) }
+        persistedBookmarkPaths = merged
+        resolvedBookmarkPaths.formUnion(currentPaths)
+        BookmarkStore.save(merged, for: url)
+    }
+
     /// Add or remove `id` from the bookmark list, preserving insertion order.
     private func toggleBookmark(_ id: NodeID) {
         if let idx = bookmarks.firstIndex(of: id) {
@@ -765,6 +846,162 @@ struct ContentView: View {
         scrollTrigger += 1
         scrollTarget   = id
         isNavigatingHistory = false
+    }
+
+    // MARK: - Command palette (B1)
+
+    /// Builds the list of commands shown in the ⇧⌘P palette, scoped to the
+    /// current document context. Re-evaluated each time the palette opens.
+    private func paletteCommands() -> [PaletteCommand] {
+        var cmds: [PaletteCommand] = []
+        let hasIndex = document.nodeIndex != nil
+
+        if hasIndex {
+            cmds.append(PaletteCommand("Switch to Tree View",
+                                       symbol: "list.bullet.indent") { viewMode = .tree })
+            if document.isTabular {
+                cmds.append(PaletteCommand("Switch to Table View",
+                                           subtitle: "Spreadsheet grid",
+                                           symbol: "tablecells") { viewMode = .table })
+            }
+            cmds.append(PaletteCommand("Switch to Raw View",
+                                       subtitle: "Serialized text",
+                                       symbol: "doc.plaintext") { viewMode = .raw })
+
+            if viewMode == .raw {
+                cmds.append(PaletteCommand(rawPretty ? "Minify Output" : "Pretty-Print Output",
+                                           symbol: "text.alignleft") {
+                    rawPretty.toggle()
+                    refreshRawText()
+                })
+            }
+
+            if viewMode == .tree {
+                cmds.append(PaletteCommand("Expand All",
+                                           symbol: "chevron.down.circle") { expandAll() })
+                cmds.append(PaletteCommand("Collapse All",
+                                           symbol: "chevron.up.circle") { collapseAll() })
+            }
+
+            if let id = selectedNodeID {
+                let isBookmarked = bookmarks.contains(id)
+                cmds.append(PaletteCommand(isBookmarked ? "Remove Bookmark" : "Add Bookmark",
+                                           subtitle: "⌘D",
+                                           symbol: isBookmarked ? "bookmark.slash" : "bookmark") {
+                    toggleBookmark(id)
+                })
+            }
+
+            if let index = document.nodeIndex, !bookmarks.isEmpty {
+                for id in bookmarks {
+                    let path = index.pathString(to: id)
+                    cmds.append(PaletteCommand("Go to Bookmark",
+                                               subtitle: path,
+                                               symbol: "bookmark.fill") {
+                        navigateToBookmark(id, in: index)
+                    })
+                }
+                cmds.append(PaletteCommand("Clear All Bookmarks",
+                                           symbol: "trash") { bookmarks = [] })
+            }
+
+            if let index = document.nodeIndex {
+                cmds.append(PaletteCommand("Export as JSON…",
+                                           symbol: "square.and.arrow.up") {
+                    exportDocument(index: index, format: .json)
+                })
+                cmds.append(PaletteCommand("Export as YAML…",
+                                           symbol: "square.and.arrow.up") {
+                    exportDocument(index: index, format: .yaml)
+                })
+                if document.isTabular {
+                    cmds.append(PaletteCommand("Export as CSV…",
+                                               symbol: "square.and.arrow.up") {
+                        exportDocument(index: index, format: .csv)
+                    })
+                }
+            }
+
+            if document.formatName == "CSV" {
+                cmds.append(PaletteCommand("Show CSV Column Stats",
+                                           symbol: "chart.bar.xaxis") {
+                    showCSVStats = true
+                })
+            }
+
+            if navHistoryIndex > 0 {
+                cmds.append(PaletteCommand("Go Back",
+                                           subtitle: "⌘[",
+                                           symbol: "chevron.backward") {
+                    if let index = document.nodeIndex { goBack(in: index) }
+                })
+            }
+            if navHistoryIndex < navHistory.count - 1 {
+                cmds.append(PaletteCommand("Go Forward",
+                                           subtitle: "⌘]",
+                                           symbol: "chevron.forward") {
+                    if let index = document.nodeIndex { goForward(in: index) }
+                })
+            }
+        }
+
+        cmds.append(PaletteCommand("Open File…",
+                                   subtitle: "⌘O",
+                                   symbol: "folder") {
+            NSDocumentController.shared.openDocument(nil)
+        })
+        cmds.append(PaletteCommand("Show Welcome Window",
+                                   subtitle: "⇧⌘0",
+                                   symbol: "house") {
+            AppDelegate.showWelcomeWindow()
+        })
+        cmds.append(PaletteCommand("Settings…",
+                                   subtitle: "⌘,",
+                                   symbol: "gearshape") {
+            // Standard SwiftUI Settings scene action — sent to the responder chain.
+            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        })
+
+        return cmds
+    }
+
+    // MARK: - Auto-fix banner (B3)
+
+    /// Yellow info bar shown above the content when the JSON auto-fixer was
+    /// used to recover this document. Lists the categories of fixes applied
+    /// and gives the user a way to dismiss the banner.  The user can Save As
+    /// to keep the cleaned version.
+    @ViewBuilder
+    private func autoFixBanner(_ fixes: Set<JSONAutoFixer.Fix>) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "wand.and.stars")
+                .foregroundStyle(.orange)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Recovered with auto-fix")
+                    .font(.subheadline.weight(.semibold))
+                Text(fixes.map(\.summary).sorted().joined(separator: " · "))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("Use File › Save As… to keep the cleaned version.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            Spacer()
+            Button {
+                document.autoFixApplied = nil
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Dismiss")
+            .accessibilityLabel("Dismiss auto-fix banner")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.orange.opacity(0.15))
+        .overlay(alignment: .bottom) { Divider() }
     }
 
     // MARK: - State views

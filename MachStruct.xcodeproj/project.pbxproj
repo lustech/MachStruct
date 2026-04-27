@@ -10,9 +10,11 @@
 		0DD3E3851B844021B714B1EE /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4070DC5008EE4B8A99811DB5 /* WelcomeView.swift */; };
 		1271FEB154E84AA689509F4B /* schema.strings in Resources */ = {isa = PBXBuildFile; fileRef = 17A1C11ACF924BC58D9D4897 /* schema.strings */; };
 		13214B082F9790A1000F5AEE /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13214B072F9790A1000F5AEE /* PrivacyInfo.xcprivacy */; };
+		B57E14B5C1240001AABB0001 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = B57E14B5C1240002AABB0002 /* Localizable.xcstrings */; };
 		1CD752A47CA249E1AEF25BDB /* ClipboardWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08B0D3A62C114CDE92E1598E /* ClipboardWatcher.swift */; };
 		28B0839D1581A4ED1207CB4F /* MachStructApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78176BDF8A0409D74304F7A5 /* MachStructApp.swift */; };
 		3AA47E46E2EB9C60F011A5D4 /* TypeBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97DCCC1F62C267236BB1F89A /* TypeBadge.swift */; };
+		A11B2C3D4E5F6789ABCDEF11 /* CommandPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11B2C3D4E5F6789ABCDEF22 /* CommandPalette.swift */; };
 		5260B3B31AF06EA038B1220B /* TreeNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD818990A0282E6278E5884C /* TreeNode.swift */; };
 		53F06A2A8D9247B898B0E840 /* SearchEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8244AF5100B0479086F6CA72 /* SearchEnvironment.swift */; };
 		5B683CF7AA4D92E9350EB2C5 /* TableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A19F7CF620D1FC01343CD19 /* TableView.swift */; };
@@ -68,6 +70,7 @@
 		030D7CBD99FD4D1A9BD1D818 /* MachStructQuickLook.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MachStructQuickLook.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		08B0D3A62C114CDE92E1598E /* ClipboardWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardWatcher.swift; sourceTree = "<group>"; };
 		13214B072F9790A1000F5AEE /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		B57E14B5C1240002AABB0002 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		17A1C11ACF924BC58D9D4897 /* schema.strings */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; path = schema.strings; sourceTree = "<group>"; };
 		2869AF341CDBC3FA73E9E4E8 /* MachStruct.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MachStruct.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		348283C44F1319245138E09C /* CommitEditEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommitEditEnvironment.swift; sourceTree = "<group>"; };
@@ -85,6 +88,7 @@
 		85C2815FE30A4DC1B1E11F0B /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		8EF7C32E7A864BD18355677F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		97DCCC1F62C267236BB1F89A /* TypeBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TypeBadge.swift; sourceTree = "<group>"; };
+		A11B2C3D4E5F6789ABCDEF22 /* CommandPalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPalette.swift; sourceTree = "<group>"; };
 		9950AFB50854445F8A96416D /* MachStructSpotlight.bundle */ = {isa = PBXFileReference; explicitFileType = "wrapper.spotlight-importer"; includeInIndex = 0; path = MachStructSpotlight.bundle; sourceTree = BUILT_PRODUCTS_DIR; };
 		9B2FF72DBCCACDFFD557BEA1 /* StatusBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBar.swift; sourceTree = "<group>"; };
 		9F481E1643CAA448B1EFC2EB /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -170,6 +174,14 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		B57E14B5C1240003AABB0003 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				B57E14B5C1240002AABB0002 /* Localizable.xcstrings */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
 		47BB7154A417D0880DED309C /* TableView */ = {
 			isa = PBXGroup;
 			children = (
@@ -199,6 +211,7 @@
 				A1B2C3D4E5F601234567890B /* Assets.xcassets */,
 				A1B2C3D4E5F601234567890C /* MachStruct.entitlements */,
 				13214B072F9790A1000F5AEE /* PrivacyInfo.xcprivacy */,
+				B57E14B5C1240003AABB0003 /* Resources */,
 				8C1BBF69249150EAE30F5255 /* Document */,
 				89DE75843AEE840DCD872D45 /* UI */,
 			);
@@ -234,6 +247,7 @@
 			isa = PBXGroup;
 			children = (
 				F3A91C502E8B4D769C150871 /* Bookmarks */,
+				A11B2C3D4E5F6789ABCDEF33 /* CommandPalette */,
 				C886E16F4A0E423E9E2FD8A3 /* CSV */,
 				1D94133E764AA1F23D57C5E2 /* Editing */,
 				F1A2B3C4D5E6F7A8B9C0D1E3 /* MachStructIcon.swift */,
@@ -246,6 +260,14 @@
 				8A1E13039B6F5E701F4F45A0 /* TreeView */,
 			);
 			path = UI;
+			sourceTree = "<group>";
+		};
+		A11B2C3D4E5F6789ABCDEF33 /* CommandPalette */ = {
+			isa = PBXGroup;
+			children = (
+				A11B2C3D4E5F6789ABCDEF22 /* CommandPalette.swift */,
+			);
+			path = CommandPalette;
 			sourceTree = "<group>";
 		};
 		8A1E13039B6F5E701F4F45A0 /* TreeView */ = {
@@ -375,6 +397,7 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
+				de,
 				Base,
 			);
 			mainGroup = DFC7840EB6FC0CCF76C5601D;
@@ -407,6 +430,7 @@
 			files = (
 				13214B082F9790A1000F5AEE /* PrivacyInfo.xcprivacy in Resources */,
 				A1B2C3D4E5F601234567890A /* Assets.xcassets in Resources */,
+				B57E14B5C1240001AABB0001 /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -461,6 +485,7 @@
 				1CD752A47CA249E1AEF25BDB /* ClipboardWatcher.swift in Sources */,
 				9879C41194474539BA15B9E2 /* SettingsView.swift in Sources */,
 				8EEBC2AE41634CEC8A2746D1 /* OnboardingView.swift in Sources */,
+				A11B2C3D4E5F6789ABCDEF11 /* CommandPalette.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

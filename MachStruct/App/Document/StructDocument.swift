@@ -60,6 +60,11 @@ final class StructDocument: ReferenceFileDocument {
     /// Human-readable format identifier shown in the status bar.
     var formatName: String = "JSON"
 
+    /// Set when the JSON auto-fixer was used to recover this document (B3).
+    /// Nil for normal parses; populated with the fixes that were applied so
+    /// the UI can show a banner explaining what changed.
+    @Published var autoFixApplied: Set<JSONAutoFixer.Fix>? = nil
+
     // MARK: - Internal state
 
     /// Kept alive so unparsed scalar nodes can be re-read for save / raw view.
@@ -173,6 +178,14 @@ final class StructDocument: ReferenceFileDocument {
 
     @MainActor
     private func load(data: Data) async {
+        await load(data: data, attemptAutoFix: true)
+    }
+
+    /// Internal load with control over whether to retry via `JSONAutoFixer`
+    /// on parse failure.  The retry recurses with `attemptAutoFix: false` so
+    /// a fixer-induced error never loops forever.
+    @MainActor
+    private func load(data: Data, attemptAutoFix: Bool) async {
         isLoading = true
         indexedNodeCount = 0
         loadError = nil
@@ -262,6 +275,20 @@ final class StructDocument: ReferenceFileDocument {
             }
 
         } catch {
+            // B3 — JSON auto-fixer recovery: on JSON parse failure, run the
+            // fixer once and retry.  Other formats fall straight through to
+            // the error path.
+            if attemptAutoFix, formatName == "JSON" {
+                let result = JSONAutoFixer.fix(data)
+                if result.didChange {
+                    isLoading = false
+                    await load(data: result.fixed, attemptAutoFix: false)
+                    if loadError == nil {
+                        autoFixApplied = result.fixesApplied
+                    }
+                    return
+                }
+            }
             loadError = error
         }
 

@@ -140,6 +140,7 @@ struct ClipboardBanner: View {
             Image(systemName: icon)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(Color.accentColor)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text("\(detected.format) detected on clipboard")
@@ -161,6 +162,7 @@ struct ClipboardBanner: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss clipboard banner")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 9)

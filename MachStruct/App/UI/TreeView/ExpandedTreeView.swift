@@ -62,6 +62,12 @@ struct ExpandedTreeView: View {
     /// children when the document was loaded with a shallow NodeIndex.
     var onExpand: ((NodeID) async -> Void)? = nil
 
+    /// User preference (A4): when true, a primary click anywhere on an
+    /// expandable row toggles its expansion. The chevron button always works
+    /// regardless of this setting.
+    @AppStorage(AppSettings.Keys.singleClickExpand)
+    private var singleClickExpand = AppSettings.Defaults.singleClickExpand
+
     /// Cached flat-row array.  Recomputed only when `expandedIDs` or
     /// `nodeIndex.generation` changes — not on every SwiftUI body evaluation
     /// (which also fires on selection changes, scroll triggers, etc.).
@@ -209,11 +215,18 @@ struct ExpandedTreeView: View {
                 Spacer().frame(width: 14)
             }
 
+            // Body of the row.  `simultaneousGesture` lets the inner editing
+            // gestures (key double-click rename, scalar tap-to-edit) keep
+            // firing while still letting a primary click anywhere else on an
+            // expandable row toggle expansion (A4).
             NodeRow(node: row.treeNode)
                 .contentShape(Rectangle())
-                .onTapGesture {
-                    if row.isExpandable { toggleExpanded(row.id) }
-                }
+                .simultaneousGesture(
+                    TapGesture(count: 1).onEnded { _ in
+                        guard row.isExpandable, singleClickExpand else { return }
+                        toggleExpanded(row.id)
+                    }
+                )
         }
     }
 
