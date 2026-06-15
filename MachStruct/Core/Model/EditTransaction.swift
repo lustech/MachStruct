@@ -334,6 +334,92 @@ public extension EditTransaction {
         )
     }
 
+    // MARK: Batch operations (Data Workbench — v2.0)
+
+    /// Sets the same scalar value on many scalar nodes in a single transaction.
+    ///
+    /// Non-scalar IDs are skipped.  Returns `nil` if no scalar nodes matched.
+    /// Used by "apply to document → set value" for path-only query results.
+    static func batchSetValue(ofScalars ids: [NodeID],
+                              to value: ScalarValue,
+                              description: String,
+                              in index: NodeIndex) -> EditTransaction? {
+        var before: [NodeID: DocumentNode] = [:]
+        var after:  [NodeID: DocumentNode] = [:]
+        for id in ids {
+            guard var node = index.node(for: id), node.type == .scalar else { continue }
+            before[id] = node
+            node.value = .scalar(value)
+            after[id] = node
+        }
+        guard !before.isEmpty else { return nil }
+        return EditTransaction(description: description,
+                               affectedNodeIDs: Set(before.keys),
+                               beforeSnapshot: before,
+                               afterSnapshot: after)
+    }
+
+    /// Overwrites a set of nodes with provided replacements in a single
+    /// transaction (the general primitive behind find-&-replace).
+    ///
+    /// The caller supplies the *after* state of each node (e.g. a renamed key or
+    /// a rewritten scalar value); the *before* state is captured from `index`.
+    static func batchUpdate(_ updated: [NodeID: DocumentNode],
+                            description: String,
+                            in index: NodeIndex) -> EditTransaction? {
+        var before: [NodeID: DocumentNode] = [:]
+        for id in updated.keys {
+            if let node = index.node(for: id) { before[id] = node }
+        }
+        guard !before.isEmpty else { return nil }
+        return EditTransaction(description: description,
+                               affectedNodeIDs: Set(updated.keys),
+                               beforeSnapshot: before,
+                               afterSnapshot: updated)
+    }
+
+    /// Removes several nodes (and their subtrees) in a single transaction,
+    /// updating each affected parent's `childIDs`.  One undo step reverses the
+    /// whole batch.
+    static func batchRemove(_ ids: [NodeID],
+                            in index: NodeIndex) -> EditTransaction? {
+        guard !ids.isEmpty else { return nil }
+
+        // Full subtree of every removed node.
+        var subtree: [NodeID: DocumentNode] = [:]
+        for id in ids { collectSubtree(id, in: index, into: &subtree) }
+        let deleted = Set(subtree.keys)
+
+        // Parents: capture before, then strip removed children.
+        var parentsBefore: [NodeID: DocumentNode] = [:]
+        var parentsAfter:  [NodeID: DocumentNode] = [:]
+        for id in ids {
+            guard let node = index.node(for: id), let pid = node.parentID else { continue }
+            if parentsAfter[pid] == nil, let parent = index.node(for: pid) {
+                parentsBefore[pid] = parent
+                parentsAfter[pid] = parent
+            }
+            parentsAfter[pid]?.childIDs.removeAll { $0 == id }
+        }
+
+        var before = subtree
+        for (pid, parent) in parentsBefore where before[pid] == nil {
+            before[pid] = parent
+        }
+        // Don't bother updating a parent that is itself being deleted.
+        var after: [NodeID: DocumentNode] = [:]
+        for (pid, parent) in parentsAfter where !deleted.contains(pid) {
+            after[pid] = parent
+        }
+
+        guard !deleted.isEmpty else { return nil }
+        return EditTransaction(description: "Delete \(deleted.count) node\(deleted.count == 1 ? "" : "s")",
+                               affectedNodeIDs: Set(before.keys).union(after.keys),
+                               beforeSnapshot: before,
+                               afterSnapshot: after,
+                               deletedIDs: deleted)
+    }
+
     // MARK: - Private subtree builder
 
     /// Recursively builds `DocumentNode`s from a Foundation-parsed JSON value.

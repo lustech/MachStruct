@@ -138,11 +138,40 @@ struct ContentView: View {
     /// Toggles the ⇧⌘P command palette sheet.
     @State private var showCommandPalette: Bool = false
 
+    // MARK: - Data Workbench state (v2.0)
+
+    /// Toggles the jq query bar (⌥⌘F).
+    @State private var showQueryBar: Bool = false
+    /// The current jq query text.
+    @State private var queryText: String = ""
+    /// Parse/runtime error for the current query, or `nil`.
+    @State private var queryError: String? = nil
+    /// True while a query is running on the `QueryEngine` actor.
+    @State private var isQuerying: Bool = false
+    /// Outputs of the last successful query (drives the results pane).
+    @State private var queryResults: [JQValue]? = nil
+    /// Source node IDs for a path-only query, aligned with `queryResults`.
+    @State private var querySourceIDs: [NodeID]? = nil
+    /// In-flight query task, cancelled when a new query runs.
+    @State private var queryTask: Task<Void, Never>? = nil
+
+    /// Toggles the find-&-replace bar (⌃⌘F).
+    @State private var showFindReplace: Bool = false
+    @State private var findText: String = ""
+    @State private var replaceText: String = ""
+    @State private var findUseRegex: Bool = false
+    @State private var findCaseSensitive: Bool = false
+    @State private var findScope: SearchEngine.FindOptions.Scope = .both
+    @State private var findMatchCount: Int = 0
+
     @Environment(\.undoManager) private var undoManager
 
     var body: some View {
         mainContent
         .frame(minWidth: 400, minHeight: 300)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            workbenchPanel
+        }
         .safeAreaInset(edge: .top, spacing: 0) {
             if let fixes = document.autoFixApplied, !fixes.isEmpty {
                 autoFixBanner(fixes)
@@ -173,6 +202,18 @@ struct ContentView: View {
             Button("Command Palette") { showCommandPalette = true }
                 .keyboardShortcut("p", modifiers: [.command, .shift])
                 .hidden()
+
+            // ⌥⌘F — toggle the jq query bar (Data Workbench, v2.0)
+            if document.nodeIndex != nil {
+                Button("Query") { toggleQueryBar() }
+                    .keyboardShortcut("f", modifiers: [.command, .option])
+                    .hidden()
+
+                // ⌃⌘F — toggle find & replace
+                Button("Find & Replace") { toggleFindReplace() }
+                    .keyboardShortcut("f", modifiers: [.command, .control])
+                    .hidden()
+            }
 
             // Cmd+[ / Cmd+] — back / forward history
             if let index = document.nodeIndex {
@@ -297,10 +338,183 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - Data Workbench panel (v2.0)
+
+    @ViewBuilder
+    private var workbenchPanel: some View {
+        if document.nodeIndex != nil,
+           showFindReplace || showQueryBar || queryResults != nil {
+            VStack(spacing: 0) {
+                Divider()
+
+                if showFindReplace {
+                    FindReplaceBar(
+                        find: $findText,
+                        replace: $replaceText,
+                        useRegex: $findUseRegex,
+                        caseSensitive: $findCaseSensitive,
+                        scope: $findScope,
+                        matchCount: findMatchCount,
+                        onReplaceAll: replaceAllAction,
+                        onClose: { showFindReplace = false }
+                    )
+                    .onAppear { updateFindCount() }
+                    .onChange(of: findText) { _, _ in updateFindCount() }
+                    .onChange(of: findUseRegex) { _, _ in updateFindCount() }
+                    .onChange(of: findCaseSensitive) { _, _ in updateFindCount() }
+                    .onChange(of: findScope) { _, _ in updateFindCount() }
+                    Divider()
+                }
+
+                if showQueryBar {
+                    QueryBar(
+                        query: $queryText,
+                        errorMessage: queryError,
+                        isRunning: isQuerying,
+                        canApply: querySourceIDs != nil,
+                        onRun: runQuery,
+                        onApplyDelete: applyDelete,
+                        onApplySetValue: applySetValue,
+                        onClose: { showQueryBar = false }
+                    )
+                    if queryResults != nil { Divider() }
+                }
+
+                if let results = queryResults {
+                    QueryResultsView(results: results, onClose: clearResults)
+                }
+            }
+            .background(.bar)
+        }
+    }
+
+    // MARK: - Data Workbench actions (v2.0)
+
+    private func toggleQueryBar() {
+        showQueryBar.toggle()
+        if !showQueryBar { clearResults() }
+    }
+
+    private func toggleFindReplace() {
+        showFindReplace.toggle()
+        if showFindReplace { updateFindCount() }
+    }
+
+    private func clearResults() {
+        queryResults = nil
+        querySourceIDs = nil
+    }
+
+    /// Run the current jq query through `QueryEngine` on a background actor.
+    private func runQuery() {
+        queryTask?.cancel()
+        let q = queryText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let index = document.nodeIndex, !q.isEmpty else { return }
+        isQuerying = true
+        queryError = nil
+
+        queryTask = Task {   // inherits the view's MainActor context
+            let engine = QueryEngine()
+            do {
+                let result = try await engine.run(q, on: index)
+                queryResults = result.values
+                querySourceIDs = result.sourceNodeIDs
+                queryError = nil
+                QueryStore.addRecent(q)
+            } catch QueryEngine.QueryError.parse(let e) {
+                queryError = "Column \(e.column): \(e.message)"
+                clearResults()
+            } catch QueryEngine.QueryError.runtime(let e) {
+                queryError = e.message
+                clearResults()
+            } catch {
+                // Cancellation (a newer query started) — leave state to the
+                // newer task.
+            }
+            isQuerying = false
+        }
+    }
+
+    /// Delete every node matched by a path-only query in one undoable step.
+    /// For object members the enclosing key-value pair is removed (so the key
+    /// disappears), not just its value.
+    private func applyDelete() {
+        guard let index = document.nodeIndex, let ids = querySourceIDs else { return }
+        let targets: [NodeID] = ids.map { id in
+            if let node = index.node(for: id), let pid = node.parentID,
+               index.node(for: pid)?.type == .keyValue {
+                return pid
+            }
+            return id
+        }
+        if let tx = EditTransaction.batchRemove(targets, in: index) {
+            document.commitEdit(tx, undoManager: undoManager)
+        }
+        clearResults()
+    }
+
+    /// Set every matched scalar to the given value (type inferred from the text).
+    private func applySetValue(_ text: String) {
+        guard let index = document.nodeIndex, let ids = querySourceIDs else { return }
+        let value = parseScalarValue(text)
+        if let tx = EditTransaction.batchSetValue(ofScalars: ids, to: value,
+                                                  description: "Set value via query",
+                                                  in: index) {
+            document.commitEdit(tx, undoManager: undoManager)
+        }
+        clearResults()
+    }
+
+    private func currentFindOptions() -> SearchEngine.FindOptions {
+        SearchEngine.FindOptions(useRegex: findUseRegex,
+                                 caseSensitive: findCaseSensitive,
+                                 scope: findScope)
+    }
+
+    private func updateFindCount() {
+        guard let index = document.nodeIndex, !findText.isEmpty else {
+            findMatchCount = 0
+            return
+        }
+        findMatchCount = SearchEngine.matches(pattern: findText,
+                                              options: currentFindOptions(),
+                                              in: index).count
+    }
+
+    private func replaceAllAction() {
+        guard let index = document.nodeIndex else { return }
+        if let tx = SearchEngine.replaceAll(pattern: findText,
+                                            replacement: replaceText,
+                                            options: currentFindOptions(),
+                                            in: index) {
+            document.commitEdit(tx, undoManager: undoManager)
+        }
+        updateFindCount()
+    }
+
     // MARK: - Toolbar
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
+        // ── Data Workbench: jq query + find & replace (v2.0) ───────────────
+        ToolbarItem(placement: .primaryAction) {
+            if document.nodeIndex != nil {
+                ControlGroup {
+                    Toggle(isOn: Binding(get: { showQueryBar },
+                                         set: { showQueryBar = $0; if !$0 { clearResults() } })) {
+                        Label("Query", systemImage: "terminal")
+                    }
+                    .help("jq query (⌥⌘F)")
+
+                    Toggle(isOn: Binding(get: { showFindReplace },
+                                         set: { showFindReplace = $0; if $0 { updateFindCount() } })) {
+                        Label("Find & Replace", systemImage: "text.magnifyingglass")
+                    }
+                    .help("Find & replace (⌃⌘F)")
+                }
+            }
+        }
+
         // ── Table view toggle (only when the document is tabular) ──────────
         ToolbarItem(placement: .primaryAction) {
             if document.isTabular {
@@ -867,6 +1081,17 @@ struct ContentView: View {
             cmds.append(PaletteCommand("Switch to Raw View",
                                        subtitle: "Serialized text",
                                        symbol: "doc.plaintext") { viewMode = .raw })
+
+            // Data Workbench (v2.0)
+            cmds.append(PaletteCommand("Run jq Query",
+                                       subtitle: "⌥⌘F",
+                                       symbol: "terminal") { showQueryBar = true })
+            cmds.append(PaletteCommand("Find & Replace",
+                                       subtitle: "⌃⌘F",
+                                       symbol: "text.magnifyingglass") {
+                showFindReplace = true
+                updateFindCount()
+            })
 
             if viewMode == .raw {
                 cmds.append(PaletteCommand(rawPretty ? "Minify Output" : "Pretty-Print Output",
