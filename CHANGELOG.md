@@ -5,9 +5,9 @@ All notable changes to MachStruct are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.0.0] — 2026-06-17
 
-### Added — Data Workbench (v2.0)
+### Added — Data Workbench
 - **jq query engine (⌥⌘F)** — query and reshape any open document with a real
   subset of [jq](https://jqlang.github.io/jq/): field/index/slice/iterate paths,
   pipes, `select`, `map`, comparisons, arithmetic, array/object construction, and
@@ -24,6 +24,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   step.
 - **Saved & recent queries** — name and reuse jq queries; recents are remembered
   across sessions.
+
+### Fixed
+- **Open panel flashing at launch on some macOS versions** — `DocumentGroup`'s
+  launch-time `openDocument` call could enter the `NSDocumentController`
+  open-panel chain at any rung and fire several run-loop cycles in, after the
+  previous next-cycle `suppressOpen` clear had run, letting the panel flash on
+  screen. Every rung of the chain is now gated on `suppressOpen`, and the flag
+  is held for 0.5 s after `applicationDidFinishLaunching`.
 
 ## [1.0.4] — 2026-04-27
 
@@ -140,7 +148,8 @@ Initial public release. Full feature set:
 - **Drag-and-drop reordering** of array elements in the tree.
 - **GitHub Actions release pipeline** — notarise, DMG, GitHub Release.
 
-[Unreleased]: https://github.com/lustech/MachStruct/compare/v1.0.4...HEAD
+[Unreleased]: https://github.com/lustech/MachStruct/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/lustech/MachStruct/compare/v1.0.4...v2.0.0
 [1.0.4]: https://github.com/lustech/MachStruct/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/lustech/MachStruct/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/lustech/MachStruct/compare/v1.0.1...v1.0.2
