@@ -92,19 +92,32 @@ func preferredDefaultWindowSize(for url: URL?) -> CGSize {
 /// Per Apple docs, a custom subclass must be the *first* NSDocumentController
 /// instantiated — done in applicationWillFinishLaunching (see AppDelegate).
 ///
-/// Two entry points are intercepted because DocumentGroup may call either:
-///   • openDocument(_:)       — the high-level "show Open panel" action
-///   • beginOpenPanel(…)      — the lower-level panel-display method
+/// Every entry point that could surface an Open panel is intercepted — the
+/// chain in AppKit is `openDocument:` → `beginOpenPanelWithCompletionHandler:`
+/// → `beginOpenPanel:forTypes:completionHandler:`, but DocumentGroup has been
+/// observed to enter at any of these levels depending on macOS version, so
+/// every rung is gated on `suppressOpen`.
 final class MachStructDocumentController: NSDocumentController {
 
     /// While true every path that would show the Open panel is a no-op.
-    /// Cleared on the next run-loop cycle after applicationDidFinishLaunching
-    /// so File > Open and WelcomeView's button work normally.
+    /// Cleared 0.5 s after applicationDidFinishLaunching so DocumentGroup's
+    /// (sometimes-deferred) launch-time openDocument call is still gated when
+    /// it fires, while File > Open and WelcomeView's button work normally.
     var suppressOpen = true
 
     override func openDocument(_ sender: Any?) {
         guard !suppressOpen else { return }
         super.openDocument(sender)
+    }
+
+    override func beginOpenPanel(
+        completionHandler: @escaping ([URL]?) -> Void
+    ) {
+        guard !suppressOpen else {
+            completionHandler(nil)
+            return
+        }
+        super.beginOpenPanel(completionHandler: completionHandler)
     }
 
     override func beginOpenPanel(
@@ -118,6 +131,15 @@ final class MachStructDocumentController: NSDocumentController {
         }
         super.beginOpenPanel(openPanel, forTypes: inTypes,
                              completionHandler: completionHandler)
+    }
+
+    override func runModalOpenPanel(
+        _ openPanel: NSOpenPanel, forTypes types: [String]?
+    ) -> Int {
+        guard !suppressOpen else {
+            return NSApplication.ModalResponse.cancel.rawValue
+        }
+        return super.runModalOpenPanel(openPanel, forTypes: types)
     }
 }
 
@@ -192,9 +214,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // Strategy A: defer flag-clear to next cycle so DocumentGroup's async
-        // openDocument call arrives while suppressOpen is still true.
-        DispatchQueue.main.async {
+        // Strategy A: hold the flag for 0.5 s so DocumentGroup's launch-time
+        // openDocument call lands while suppressOpen is still true. The next-
+        // runloop-cycle deferral used previously was racy — DocumentGroup
+        // sometimes fires the call several cycles in, after the flag had
+        // already been cleared, leaving the panel to flash on screen before
+        // Strategy B (didBecomeKey observer) caught it.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             (NSDocumentController.shared as? MachStructDocumentController)?
                 .suppressOpen = false
         }
