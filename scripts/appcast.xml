@@ -24,6 +24,23 @@
     <description>Most recent releases of MachStruct</description>
     <language>en</language>
 
+    <!-- ── v2.0.0 ───────────────────────────────────────────────── -->
+    <item>
+      <title>MachStruct 2.0.0</title>
+      <sparkle:releaseNotesLink>
+        https://machstruct.lustech.se/release-notes/2.0.0.html
+      </sparkle:releaseNotesLink>
+      <pubDate>Wed, 17 Jun 2026 09:19:05 +0000</pubDate>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <sparkle:version>4</sparkle:version>
+      <sparkle:shortVersionString>2.0.0</sparkle:shortVersionString>
+      <enclosure
+        url="https://github.com/lustech/MachStruct/releases/download/v2.0.0/MachStruct-v2.0.0.dmg"
+        sparkle:edSignature="+eUgynWZxJs+xxcIPoElgQQ+eL3BROZnuUi9jnxt3H9d57N/Kbgi+8ToB5HsUQyllnE326tkFmAVqhz/i0VQAA=="
+        length="3385904"
+        type="application/octet-stream"/>
+    </item>
+
     <!-- ── v1.0.4 ───────────────────────────────────────────────── -->
     <item>
       <title>MachStruct 1.0.4</title>
