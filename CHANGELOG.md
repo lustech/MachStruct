@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Data Workbench (v2.0)
+- **jq query engine (⌥⌘F)** — query and reshape any open document with a real
+  subset of [jq](https://jqlang.github.io/jq/): field/index/slice/iterate paths,
+  pipes, `select`, `map`, comparisons, arithmetic, array/object construction, and
+  builtins (`length`, `keys`, `sort_by`, `unique`, `has`, `type`, `test`, …).
+  Works across JSON/YAML/CSV/XML via the unified document model.
+- **Non-destructive results pane** — query output shows in a resizable bottom
+  pane as an expandable tree or raw JSON, with one-click Copy and Export
+  (JSON/YAML/CSV).
+- **Apply to document** — path-only queries (no value construction) can be
+  applied back to the open document: *Delete Matched Nodes* or *Set Value*. Each
+  apply is a single undoable step via the existing transaction system.
+- **Regex find & replace (⌃⌘F)** — find across keys, values, or both with
+  case-sensitivity and regular-expression toggles; *Replace All* is one undoable
+  step.
+- **Saved & recent queries** — name and reuse jq queries; recents are remembered
+  across sessions.
+
 ## [1.0.4] — 2026-04-27
 
 ### Fixed

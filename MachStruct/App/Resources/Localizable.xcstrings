@@ -1,7 +1,13 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "" : {
+
+    },
     ":" : {
+
+    },
+    ".*" : {
 
     },
     "\"%@\"" : {
@@ -59,6 +65,16 @@
         }
       }
     },
+    "%lld match%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld match%2$@"
+          }
+        }
+      }
+    },
     "%lld of %lld" : {
       "localizations" : {
         "en" : {
@@ -72,10 +88,19 @@
     "%lld pt" : {
 
     },
+    "%lld results" : {
+
+    },
     "<%@>" : {
 
     },
+    "1 result" : {
+
+    },
     "A fast, native viewer and editor for structured data." : {
+
+    },
+    "Aa" : {
 
     },
     "About" : {
@@ -128,10 +153,19 @@
         }
       }
     },
+    "Apply" : {
+
+    },
+    "Apply this path query to the document" : {
+
+    },
     "Bookmarks" : {
 
     },
     "Bookmarks (⌘D to toggle)" : {
+
+    },
+    "Both" : {
 
     },
     "Build" : {
@@ -146,10 +180,25 @@
         }
       }
     },
+    "Cancel" : {
+
+    },
+    "Case sensitive" : {
+
+    },
     "Check for Updates…" : {
 
     },
     "Clear All Bookmarks" : {
+
+    },
+    "Close find & replace" : {
+
+    },
+    "Close query bar" : {
+
+    },
+    "Close results" : {
 
     },
     "Collapse All" : {
@@ -175,7 +224,13 @@
         }
       }
     },
+    "Copy" : {
+
+    },
     "Copy as JSON" : {
+
+    },
+    "Copy results as JSON" : {
 
     },
     "Could not read the dropped file." : {
@@ -212,6 +267,9 @@
       }
     },
     "Delete" : {
+
+    },
+    "Delete Matched Nodes" : {
 
     },
     "Dismiss" : {
@@ -308,6 +366,15 @@
         }
       }
     },
+    "Find" : {
+
+    },
+    "Find & Replace" : {
+
+    },
+    "Find & replace (⌃⌘F)" : {
+
+    },
     "Font" : {
       "comment" : "Settings — Raw View section header",
       "extractionState" : "manual",
@@ -361,7 +428,19 @@
     "Inspect value" : {
 
     },
+    "jq filter — e.g. .users[] | select(.age > 30) | .name" : {
+
+    },
+    "jq query (⌥⌘F)" : {
+
+    },
+    "JSON…" : {
+
+    },
     "Key" : {
+
+    },
+    "Keys" : {
 
     },
     "MachStruct" : {
@@ -416,6 +495,12 @@
 
     },
     "Move Up" : {
+
+    },
+    "Name" : {
+
+    },
+    "New value" : {
 
     },
     "Next match (↩)" : {
@@ -492,6 +577,9 @@
       }
     },
     "OK" : {
+
+    },
+    "Only path queries (no construction) can be applied" : {
 
     },
     "Open" : {
@@ -655,6 +743,9 @@
         }
       }
     },
+    "Query" : {
+
+    },
     "Raw Text" : {
 
     },
@@ -669,6 +760,9 @@
           }
         }
       }
+    },
+    "Recent" : {
+
     },
     "Recent Files" : {
       "comment" : "Welcome window — recents header",
@@ -685,10 +779,46 @@
     "Recovered with auto-fix" : {
 
     },
+    "Regular expression" : {
+
+    },
     "Remove Bookmark" : {
 
     },
+    "Replace" : {
+
+    },
+    "Replace All" : {
+
+    },
+    "Replace every match in one undoable step" : {
+
+    },
+    "Run" : {
+
+    },
+    "Save" : {
+
+    },
+    "Save Current Query…" : {
+
+    },
+    "Save query as:" : {
+
+    },
+    "Saved" : {
+
+    },
+    "Saved & recent queries" : {
+
+    },
     "Search keys and values" : {
+
+    },
+    "Set matched values to:" : {
+
+    },
+    "Set Value…" : {
 
     },
     "Show CSV column statistics" : {
@@ -812,6 +942,9 @@
     "Value" : {
 
     },
+    "Values" : {
+
+    },
     "Version" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -839,6 +972,9 @@
           }
         }
       }
+    },
+    "YAML…" : {
+
     },
     "You can revisit this any time from the Help menu." : {
 
