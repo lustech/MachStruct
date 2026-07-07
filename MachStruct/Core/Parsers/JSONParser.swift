@@ -21,6 +21,12 @@ public actor JSONParser: StructParser {
     /// Files below this threshold use the Foundation path (eager keys + values).
     static let foundationThreshold: UInt64 = 5 * 1024 * 1024  // 5 MB
 
+    /// Maximum nesting depth accepted on the Foundation path.
+    /// `JSONSerialization` recurses per object level and overflows a 512 KB
+    /// task stack somewhere past ~700 levels; 512 leaves generous margin and
+    /// matches the cap common JSON implementations use.
+    static let maxFoundationNestingDepth = 512
+
     public init() {}
 
     // MARK: - Phase 1
@@ -80,7 +86,27 @@ public actor JSONParser: StructParser {
         guard entry.byteLength > 0 else { return .unparsed }
         let raw = try file.data(offset: entry.byteOffset, length: entry.byteLength)
         let any = try JSONSerialization.jsonObject(with: raw, options: [.allowFragments])
-        return .scalar(scalarValue(from: any))
+        return .scalar(ScalarValue(jsonAny: any))
+    }
+
+    // MARK: - Shared byte-token helpers
+
+    /// Decode a raw JSON string token (including surrounding quotes).
+    /// Fast path for the common no-escape case; Foundation fallback otherwise.
+    ///
+    /// The single implementation behind key resolution in `SearchEngine`,
+    /// `StructDocument`, and `SchemaInferenceEngine`.
+    public nonisolated static func decodeStringToken(_ bytes: UnsafeRawBufferPointer) -> String? {
+        guard bytes.count >= 2,
+              bytes[0] == UInt8(ascii: "\""),
+              bytes[bytes.count - 1] == UInt8(ascii: "\"") else { return nil }
+        let inner = UnsafeRawBufferPointer(rebasing: bytes[1..<(bytes.count - 1)])
+        if !inner.contains(UInt8(ascii: "\\")) {
+            return String(bytes: inner, encoding: .utf8)
+        }
+        let data = Data(bytes)
+        return (try? JSONSerialization.jsonObject(with: data,
+                                                  options: .allowFragments)) as? String
     }
 
     // MARK: - Serialize
@@ -120,85 +146,108 @@ public actor JSONParser: StructParser {
 private extension JSONParser {
 
     func buildIndexFoundation(file: MappedFile) throws -> StructuralIndex {
+        guard file.fileSize <= UInt64(UInt32.max) else {
+            throw JSONParserError.fileTooLargeForEagerParse(bytes: file.fileSize)
+        }
+        // JSONSerialization recurses once per nesting level with no depth
+        // guard of its own for objects: past ~700 levels it overflows the
+        // 512 KB Swift-Concurrency stack (SIGBUS). Refuse cleanly first.
+        let buffer = UnsafeRawBufferPointer(start: file.rawPointer,
+                                            count: Int(file.fileSize))
+        let depth = JSONParser.measureNestingDepth(
+            buffer, limit: JSONParser.maxFoundationNestingDepth)
+        guard depth <= JSONParser.maxFoundationNestingDepth else {
+            throw JSONParserError.nestingTooDeep(limit: JSONParser.maxFoundationNestingDepth)
+        }
         let raw = try file.data(offset: 0, length: UInt32(file.fileSize))
         let root = try JSONSerialization.jsonObject(with: raw,
                                                     options: [.allowFragments])
         var entries: [IndexEntry] = []
         entries.reserveCapacity(256)
-        walkFoundation(any: root, parentID: nil, depth: 0, key: nil, entries: &entries)
+        walkFoundation(root: root, entries: &entries)
         return StructuralIndex(entries: entries)
     }
 
-    func walkFoundation(any: Any,
-                        parentID: NodeID?,
-                        depth: UInt16,
-                        key: String?,
-                        entries: inout [IndexEntry]) {
-        switch any {
-        case let dict as NSDictionary:
-            // Cast to NSDictionary (not [String: Any]) so we preserve the
-            // insertion order that Foundation records when parsing JSON left-to-right.
-            // Bridging to [String: Any] loses order because Swift Dictionary is
-            // an unordered hash table.
-            let nodeID = NodeID.generate()
-            entries.append(IndexEntry(
-                id: nodeID,
-                nodeType: .object,
-                depth: depth,
-                parentID: parentID,
-                childCount: UInt32(dict.count),
-                key: key
-            ))
-            for k in dict.allKeys.compactMap({ $0 as? String }) {
-                guard let v = dict[k] else { continue }
-                walkFoundationKeyValue(key: k, value: v,
-                                       parentID: nodeID, depth: depth + 1,
-                                       entries: &entries)
-            }
-
-        case let arr as [Any]:
-            let nodeID = NodeID.generate()
-            entries.append(IndexEntry(
-                id: nodeID,
-                nodeType: .array,
-                depth: depth,
-                parentID: parentID,
-                childCount: UInt32(arr.count),
-                key: key
-            ))
-            for (i, v) in arr.enumerated() {
-                walkFoundation(any: v, parentID: nodeID,
-                               depth: depth + 1, key: String(i), entries: &entries)
-            }
-
-        default:
-            let nodeID = NodeID.generate()
-            entries.append(IndexEntry(
-                id: nodeID,
-                nodeType: .scalar,
-                depth: depth,
-                parentID: parentID,
-                childCount: 0,
-                key: key,
-                parsedValue: scalarValue(from: any)
-            ))
+    /// DFS walk over the Foundation object graph using an explicit work stack.
+    ///
+    /// Must not recurse per nesting level: Swift Concurrency threads have
+    /// 512 KB stacks, and a recursive walk overflows at ~200 levels of nesting
+    /// on valid (if pathological) documents.
+    ///
+    /// Work items are pushed in reverse so entries pop in document order —
+    /// NodeIDs stay contiguous, which `StructuralIndex.entryIDBase` relies on.
+    func walkFoundation(root: Any, entries: inout [IndexEntry]) {
+        enum Work {
+            case value(Any, parentID: NodeID?, depth: UInt16, key: String?)
+            case keyValue(key: String, value: Any, parentID: NodeID, depth: UInt16)
         }
-    }
+        var stack: [Work] = [.value(root, parentID: nil, depth: 0, key: nil)]
 
-    func walkFoundationKeyValue(key: String, value: Any,
-                                parentID: NodeID, depth: UInt16,
-                                entries: inout [IndexEntry]) {
-        let kvID = NodeID.generate()
-        entries.append(IndexEntry(
-            id: kvID,
-            nodeType: .keyValue,
-            depth: depth,
-            parentID: parentID,
-            childCount: 1,
-            key: key
-        ))
-        walkFoundation(any: value, parentID: kvID,
-                       depth: depth + 1, key: nil, entries: &entries)
+        while let work = stack.popLast() {
+            switch work {
+            case .keyValue(let key, let value, let parentID, let depth):
+                let kvID = NodeID.generate()
+                entries.append(IndexEntry(
+                    id: kvID,
+                    nodeType: .keyValue,
+                    depth: depth,
+                    parentID: parentID,
+                    childCount: 1,
+                    key: key
+                ))
+                stack.append(.value(value, parentID: kvID,
+                                    depth: depth + 1, key: nil))
+
+            case .value(let any, let parentID, let depth, let key):
+                switch any {
+                case let dict as NSDictionary:
+                    // Keep NSDictionary (not [String: Any]) to preserve the
+                    // insertion order Foundation records when parsing JSON
+                    // left-to-right; bridging to Swift Dictionary loses it.
+                    let nodeID = NodeID.generate()
+                    entries.append(IndexEntry(
+                        id: nodeID,
+                        nodeType: .object,
+                        depth: depth,
+                        parentID: parentID,
+                        childCount: UInt32(dict.count),
+                        key: key
+                    ))
+                    for k in dict.allKeys.compactMap({ $0 as? String }).reversed() {
+                        guard let v = dict[k] else { continue }
+                        stack.append(.keyValue(key: k, value: v,
+                                               parentID: nodeID, depth: depth + 1))
+                    }
+
+                case let arr as [Any]:
+                    let nodeID = NodeID.generate()
+                    entries.append(IndexEntry(
+                        id: nodeID,
+                        nodeType: .array,
+                        depth: depth,
+                        parentID: parentID,
+                        childCount: UInt32(arr.count),
+                        key: key
+                    ))
+                    for (i, v) in arr.enumerated().reversed() {
+                        stack.append(.value(v, parentID: nodeID,
+                                            depth: depth + 1, key: String(i)))
+                    }
+
+                default:
+                    let nodeID = NodeID.generate()
+                    entries.append(IndexEntry(
+                        id: nodeID,
+                        nodeType: .scalar,
+                        depth: depth,
+                        parentID: parentID,
+                        childCount: 0,
+                        key: key,
+                        parsedValue: ScalarValue(jsonAny: any)
+                    ))
+                }
+            }
+        }
     }
 }
 
@@ -228,15 +277,149 @@ private extension JSONParser {
             throw JSONParserError.simdjsonParseFailed(code: count)
         }
 
-        let entries = convertBridgeEntries(Array(msEntries.prefix(Int(count))))
+        // The DOM bridge cannot report token positions, so align source byte
+        // ranges to the entries with one linear scan over the raw bytes.
+        let rawEntries = Array(msEntries.prefix(Int(count)))
+        let buffer = UnsafeRawBufferPointer(start: file.rawPointer,
+                                            count: Int(file.fileSize))
+        guard let ranges = JSONParser.scanTokenRanges(buffer: buffer,
+                                                      entryCount: rawEntries.count)
+        else {
+            // Tokens and entries disagree — the bridge's depth cap truncated
+            // the walk. Zeroed byte ranges would silently break every lazy
+            // key/value read, so fall back to the (iterative, stack-safe)
+            // Foundation walk when its own depth limit allows; otherwise
+            // refuse with a clean error rather than crash or corrupt.
+            return try buildIndexFoundation(file: file)
+            // buildIndexFoundation enforces maxFoundationNestingDepth and the
+            // 4 GB eager-parse ceiling itself.
+        }
+        let entries = convertBridgeEntries(rawEntries, ranges: ranges)
         return StructuralIndex(entries: entries)
+    }
+}
+
+extension JSONParser {
+
+    /// Assign a source byte range to every bridge entry in one linear pass.
+    ///
+    /// Bridge entries are in strict DFS document order — exactly the order
+    /// value and key tokens appear in the source — so scanning tokens
+    /// left-to-right aligns 1:1 with the entry list:
+    /// - `{` / `[` opens a container entry (length patched at its close)
+    /// - a string token is an object key (`.keyValue`) or string scalar
+    /// - a number/`true`/`false`/`null` token is a scalar
+    ///
+    /// Returns `nil` when tokens and entries disagree (e.g. the bridge's
+    /// depth cap truncated the walk) so callers can refuse rather than
+    /// mis-assign.
+    /// Measure the maximum container nesting depth of raw JSON bytes.
+    /// Stops early once `limit + 1` is reached — callers only need to know
+    /// whether the document is safe, not how deep it actually goes.
+    nonisolated static func measureNestingDepth(_ buffer: UnsafeRawBufferPointer,
+                                                limit: Int) -> Int {
+        let quote = UInt8(ascii: "\""), backslash = UInt8(ascii: "\\")
+        var depth = 0, maxDepth = 0, i = 0
+        let n = buffer.count
+        while i < n {
+            switch buffer[i] {
+            case quote:
+                i += 1
+                while i < n, buffer[i] != quote {
+                    i += buffer[i] == backslash ? 2 : 1
+                }
+            case UInt8(ascii: "{"), UInt8(ascii: "["):
+                depth += 1
+                if depth > maxDepth {
+                    maxDepth = depth
+                    if maxDepth > limit { return maxDepth }
+                }
+            case UInt8(ascii: "}"), UInt8(ascii: "]"):
+                depth -= 1
+            default:
+                break
+            }
+            i += 1
+        }
+        return maxDepth
+    }
+
+    nonisolated static func scanTokenRanges(buffer: UnsafeRawBufferPointer,
+                                            entryCount: Int) -> [(offset: UInt64, length: UInt32)]? {
+        var ranges = [(offset: UInt64, length: UInt32)](repeating: (0, 0),
+                                                        count: entryCount)
+        var containerStack: [Int] = []   // entry indices of open containers
+        var next = 0                     // next entry index to assign
+        var i = 0
+        let n = buffer.count
+
+        let quote = UInt8(ascii: "\""), backslash = UInt8(ascii: "\\")
+        let comma = UInt8(ascii: ","), colon = UInt8(ascii: ":")
+        let openBrace = UInt8(ascii: "{"), closeBrace = UInt8(ascii: "}")
+        let openBracket = UInt8(ascii: "["), closeBracket = UInt8(ascii: "]")
+
+        @inline(__always) func isWhitespace(_ c: UInt8) -> Bool {
+            c == 0x20 || c == 0x09 || c == 0x0A || c == 0x0D
+        }
+
+        while i < n {
+            let b = buffer[i]
+            switch b {
+            case _ where isWhitespace(b), comma, colon:
+                i += 1
+
+            case openBrace, openBracket:
+                guard next < entryCount else { return nil }
+                ranges[next] = (UInt64(i), 0)
+                containerStack.append(next)
+                next += 1
+                i += 1
+
+            case closeBrace, closeBracket:
+                guard let open = containerStack.popLast() else { return nil }
+                // Container spans in >4 GiB files exceed UInt32 — degrade to
+                // "range unknown" (0) instead of trapping. Leaf tokens are
+                // unaffected, so lazy keys/values keep working.
+                let span = UInt64(i) - ranges[open].offset + 1
+                ranges[open].length = span <= UInt64(UInt32.max) ? UInt32(span) : 0
+                i += 1
+
+            case quote:
+                let start = i
+                i += 1
+                while i < n, buffer[i] != quote {
+                    i += buffer[i] == backslash ? 2 : 1
+                }
+                guard i < n, next < entryCount else { return nil }
+                i += 1   // include the closing quote
+                ranges[next] = (UInt64(start), UInt32(i - start))
+                next += 1
+
+            default:
+                // number / true / false / null
+                let start = i
+                while i < n {
+                    let c = buffer[i]
+                    if isWhitespace(c) || c == comma
+                        || c == closeBrace || c == closeBracket { break }
+                    i += 1
+                }
+                guard next < entryCount else { return nil }
+                ranges[next] = (UInt64(start), UInt32(i - start))
+                next += 1
+            }
+        }
+
+        guard next == entryCount, containerStack.isEmpty else { return nil }
+        return ranges
     }
 
     /// Convert flat `MSIndexEntry` array to `IndexEntry` array.
     ///
     /// Per the bridge contract, STRING nodes whose parent is an OBJECT are key nodes.
     /// These become `.keyValue` entries; their single child holds the actual value.
-    func convertBridgeEntries(_ raw: [MSIndexEntry]) -> [IndexEntry] {
+    func convertBridgeEntries(_ raw: [MSIndexEntry],
+                              ranges: [(offset: UInt64, length: UInt32)]) -> [IndexEntry] {
         var entries = [IndexEntry]()
         entries.reserveCapacity(raw.count)
 
@@ -266,8 +449,8 @@ private extension JSONParser {
 
             entries.append(IndexEntry(
                 id: nodeID,
-                byteOffset: ms.byte_offset,
-                byteLength: ms.byte_length,
+                byteOffset: ranges[i].offset,
+                byteLength: ranges[i].length,
                 nodeType: nodeType,
                 depth: ms.depth,
                 parentID: parentID,
@@ -292,25 +475,6 @@ private extension JSONParser {
 
 private extension JSONParser {
 
-    nonisolated func scalarValue(from any: Any) -> ScalarValue {
-        // Must check Bool before NSNumber — Bool bridges to NSNumber in Foundation.
-        if let b = any as? Bool {
-            return .boolean(b)
-        }
-        if let n = any as? NSNumber,
-           CFGetTypeID(n as CFTypeRef) != CFBooleanGetTypeID() {
-            if n.doubleValue.truncatingRemainder(dividingBy: 1) == 0,
-               n.doubleValue >= Double(Int64.min),
-               n.doubleValue <= Double(Int64.max) {
-                return .integer(n.int64Value)
-            }
-            return .float(n.doubleValue)
-        }
-        if let s = any as? String { return .string(s) }
-        if any is NSNull { return .null }
-        return .string(String(describing: any))
-    }
-
     nonisolated func anyValue(from sv: ScalarValue) -> Any {
         switch sv {
         case .string(let s):  return s
@@ -324,8 +488,25 @@ private extension JSONParser {
 
 // MARK: - Errors
 
-public enum JSONParserError: Error, Sendable {
+public enum JSONParserError: Error, Sendable, LocalizedError {
     case simdjsonParseFailed(code: Int64)
     case cannotSerializeContainer
     case noValueToSerialize
+    case nestingTooDeep(limit: Int)
+    case fileTooLargeForEagerParse(bytes: UInt64)
+
+    public var errorDescription: String? {
+        switch self {
+        case .simdjsonParseFailed(let code):
+            return "JSON parse failed (simdjson error \(code))."
+        case .cannotSerializeContainer:
+            return "Containers cannot be serialized as scalar values."
+        case .noValueToSerialize:
+            return "The node has no parsed value to serialize."
+        case .nestingTooDeep(let limit):
+            return "The document nests deeper than \(limit) levels, which MachStruct cannot open safely."
+        case .fileTooLargeForEagerParse(let bytes):
+            return "The file (\(bytes) bytes) is too large to parse eagerly."
+        }
+    }
 }

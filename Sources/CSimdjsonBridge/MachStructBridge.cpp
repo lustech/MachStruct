@@ -63,7 +63,10 @@ static void walk(dom::element el,
             int64_t key_idx = static_cast<int64_t>(buf.size());
             std::string_view key = field.key;
             buf.push_back({
-                0,                          // byte_offset — TODO in P1-06
+                // byte_offset/byte_length are placeholders: the DOM API has no
+                // token positions. JSONParser.scanTokenRanges (Swift) assigns
+                // real source ranges to every entry after this walk.
+                0,
                 static_cast<uint32_t>(key.size()),
                 MS_NODE_TYPE_STRING,
                 static_cast<uint16_t>(depth + 1),

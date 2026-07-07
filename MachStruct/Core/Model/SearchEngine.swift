@@ -207,11 +207,10 @@ public enum SearchEngine {
 
     private static func parseKeyBytes(entry: IndexEntry, from file: MappedFile?) -> String? {
         guard let file, entry.byteLength > 0,
-              let raw = try? file.data(offset: entry.byteOffset, length: entry.byteLength),
-              let str = try? JSONSerialization.jsonObject(with: raw,
-                                                          options: .allowFragments) as? String
+              let bytes = try? file.slice(offset: entry.byteOffset,
+                                          length: entry.byteLength)
         else { return nil }
-        return str
+        return JSONParser.decodeStringToken(bytes)
     }
 
     private static func parseScalarBytes(entry: IndexEntry, from file: MappedFile?) -> ScalarValue? {
@@ -219,22 +218,6 @@ public enum SearchEngine {
               let raw = try? file.data(offset: entry.byteOffset, length: entry.byteLength),
               let any = try? JSONSerialization.jsonObject(with: raw, options: .allowFragments)
         else { return nil }
-        return scalarFromAny(any)
-    }
-
-    private static func scalarFromAny(_ any: Any) -> ScalarValue {
-        if let b = any as? Bool { return .boolean(b) }
-        if let n = any as? NSNumber,
-           CFGetTypeID(n as CFTypeRef) != CFBooleanGetTypeID() {
-            if n.doubleValue.truncatingRemainder(dividingBy: 1) == 0,
-               n.doubleValue >= Double(Int64.min),
-               n.doubleValue <= Double(Int64.max) {
-                return .integer(n.int64Value)
-            }
-            return .float(n.doubleValue)
-        }
-        if let s = any as? String { return .string(s) }
-        if any is NSNull { return .null }
-        return .string(String(describing: any))
+        return ScalarValue(jsonAny: any)
     }
 }

@@ -45,6 +45,47 @@ public enum ScalarValue: Sendable, Equatable {
     }
 }
 
+// MARK: - Foundation JSON bridging
+
+public extension ScalarValue {
+    /// Convert a `JSONSerialization`-produced value (`NSNumber`, `NSString`,
+    /// `NSNull`, …) to a `ScalarValue`.
+    ///
+    /// The boolean check must use `CFBooleanGetTypeID` — a plain `as? Bool`
+    /// cast succeeds for `NSNumber(0)`/`NSNumber(1)` and would corrupt the
+    /// JSON numbers `0` and `1` into `false`/`true`.
+    init(jsonAny any: Any) {
+        if let n = any as? NSNumber {
+            // NSNumber covers native Bool via bridging; CFBoolean type check
+            // is the only reliable discriminator.
+            if CFGetTypeID(n as CFTypeRef) == CFBooleanGetTypeID() {
+                self = .boolean(n.boolValue)
+            } else if String(cString: n.objCType) == "Q" {
+                // JSONSerialization types numbers ≥ 2^63 as unsigned 64-bit;
+                // int64Value would bit-wrap them negative. Values beyond
+                // Int64.max degrade to float (sign- and magnitude-correct).
+                let u = n.uint64Value
+                self = u <= UInt64(Int64.max) ? .integer(Int64(u))
+                                              : .float(n.doubleValue)
+            } else if n.doubleValue.truncatingRemainder(dividingBy: 1) == 0,
+                      n.doubleValue >= Double(Int64.min),
+                      n.doubleValue <= Double(Int64.max) {
+                self = .integer(n.int64Value)
+            } else {
+                self = .float(n.doubleValue)
+            }
+        } else if let s = any as? String {
+            self = .string(s)
+        } else if any is NSNull {
+            self = .null
+        } else if let b = any as? Bool {
+            self = .boolean(b)   // non-Foundation Bool (defensive)
+        } else {
+            self = .string(String(describing: any))
+        }
+    }
+}
+
 // MARK: - Parsing helper
 
 /// Infers the most appropriate `ScalarValue` from free-form text input.

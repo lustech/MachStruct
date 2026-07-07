@@ -465,27 +465,7 @@ public extension EditTransaction {
 
         } else {
             // Scalar leaf.
-            let sv: ScalarValue
-            if let b = value as? Bool {
-                sv = .boolean(b)
-            } else if let n = value as? NSNumber {
-                // Check Bool again — NSNumber bridges Bool on Foundation side.
-                if CFGetTypeID(n as CFTypeRef) == CFBooleanGetTypeID() {
-                    sv = .boolean(n.boolValue)
-                } else if n.doubleValue.truncatingRemainder(dividingBy: 1) == 0,
-                          n.doubleValue >= Double(Int64.min),
-                          n.doubleValue <= Double(Int64.max) {
-                    sv = .integer(n.int64Value)
-                } else {
-                    sv = .float(n.doubleValue)
-                }
-            } else if let s = value as? String {
-                sv = .string(s)
-            } else if value is NSNull {
-                sv = .null
-            } else {
-                sv = .string(String(describing: value))
-            }
+            let sv = ScalarValue(jsonAny: value)
             let nodeID = NodeID.generate()
             result[nodeID] = DocumentNode(id: nodeID, type: .scalar, depth: depth,
                                            parentID: parentID, key: key, value: .scalar(sv))
