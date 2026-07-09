@@ -5,6 +5,45 @@ All notable changes to MachStruct are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **X-Ray Mode (⇧⌘X)** — infer the implicit schema of any open document and
+  show it as an expandable type tree. Field types are merged across array
+  elements (`{ name: string, age: int, email: string? }`), optional fields are
+  detected from presence counts, and type inconsistencies are flagged with
+  exact counts (e.g. *"age — mostly int, but string in 3 of 10000"*). Runs on
+  the structural index for large files (no full materialisation) and includes
+  a Copy Schema action. Available from the toolbar, ⇧⌘X, and the command
+  palette.
+
+### Fixed
+- **JSON numbers `0` and `1` were parsed, displayed, and re-saved as
+  `false`/`true`** in files under 5 MB (and in clipboard paste and lazy value
+  parsing). `NSNumber(0)`/`NSNumber(1)` cast to Swift `Bool` successfully, so
+  the boolean check in four scalar-conversion paths hijacked the numbers.
+  Saving an affected document silently corrupted the data. All conversions now
+  go through a single `ScalarValue(jsonAny:)` that discriminates with
+  `CFBooleanGetTypeID`.
+- **Keys and values never resolved on JSON files ≥ 5 MB** — the simdjson
+  bridge never recorded source byte offsets (a `TODO` left from P1-06), so
+  lazy key/value parsing read from file offset 0 and produced empty keys,
+  unparsed values, and broken search on exactly the large files the app is
+  built for. A single linear token scan now aligns real byte ranges with the
+  structural index.
+- **Deeply nested JSON crashed the app** — two layers deep: the
+  Foundation-path index walk recursed per nesting level and overflowed the
+  512 KB Swift-Concurrency thread stack at roughly 200 levels (SIGBUS), and
+  Apple's `JSONSerialization` itself does the same past ~700 object levels.
+  The walk is now iterative, and documents nesting beyond 512 levels on the
+  Foundation path are refused with a clear error instead of crashing. A
+  400-level regression test and the previously-crashing
+  `testPathologicalDeepDoesNotCrash` benchmark both pass.
+- **Unsigned 64-bit JSON numbers ≥ 2⁶³ bit-wrapped to negative** —
+  `{"big": 9223372036854775808}` displayed and re-saved as
+  `-9223372036854775808`. Such values now degrade to a sign-correct float
+  instead of wrapping.
+
 ## [2.0.0] — 2026-06-17
 
 ### Added — Data Workbench

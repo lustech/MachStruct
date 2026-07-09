@@ -501,11 +501,10 @@ final class StructDocument: ReferenceFileDocument {
     /// On the simdjson path, the key is stored as a quoted JSON string at `byteOffset`.
     private static func parseKeyBytes(entry: IndexEntry, from file: MappedFile) -> String? {
         guard entry.byteLength > 0,
-              let raw = try? file.data(offset: entry.byteOffset, length: entry.byteLength),
-              let str = try? JSONSerialization.jsonObject(with: raw,
-                                                          options: .allowFragments) as? String
+              let bytes = try? file.slice(offset: entry.byteOffset,
+                                          length: entry.byteLength)
         else { return nil }
-        return str
+        return JSONParser.decodeStringToken(bytes)
     }
 
     /// Parse the JSON value for a `.scalar` entry (simdjson path).
@@ -515,24 +514,7 @@ final class StructDocument: ReferenceFileDocument {
               let any = try? JSONSerialization.jsonObject(with: raw,
                                                           options: .allowFragments)
         else { return .unparsed }
-        return .scalar(scalarFromAny(any))
-    }
-
-    /// Mirror of `JSONParser.scalarValue(from:)` without requiring the actor.
-    private static func scalarFromAny(_ any: Any) -> ScalarValue {
-        if let b = any as? Bool { return .boolean(b) }
-        if let n = any as? NSNumber,
-           CFGetTypeID(n as CFTypeRef) != CFBooleanGetTypeID() {
-            if n.doubleValue.truncatingRemainder(dividingBy: 1) == 0,
-               n.doubleValue >= Double(Int64.min),
-               n.doubleValue <= Double(Int64.max) {
-                return .integer(n.int64Value)
-            }
-            return .float(n.doubleValue)
-        }
-        if let s = any as? String { return .string(s) }
-        if any is NSNull { return .null }
-        return .string(String(describing: any))
+        return .scalar(ScalarValue(jsonAny: any))
     }
 }
 

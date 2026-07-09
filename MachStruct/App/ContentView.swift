@@ -69,6 +69,9 @@ struct ContentView: View {
     /// True when the CSV column statistics sheet is visible.
     @State private var showCSVStats: Bool = false
 
+    /// Toggles the X-Ray inferred-schema sheet (⇧⌘X).
+    @State private var showXRay: Bool = false
+
     // MARK: - Navigation history
 
     /// Ordered list of node IDs visited during this session.
@@ -183,6 +186,11 @@ struct ContentView: View {
                 CSVStatsPanel(nodeIndex: index)
             }
         }
+        .sheet(isPresented: $showXRay) {
+            XRaySchemaPanel(structuralIndex: document.structuralIndex,
+                            nodeIndex: document.nodeIndex,
+                            mappedFile: document.mappedFile)
+        }
         .sheet(isPresented: $showCommandPalette) {
             CommandPaletteView(commands: paletteCommands(),
                                onDismiss: { showCommandPalette = false })
@@ -202,6 +210,13 @@ struct ContentView: View {
             Button("Command Palette") { showCommandPalette = true }
                 .keyboardShortcut("p", modifiers: [.command, .shift])
                 .hidden()
+
+            // ⇧⌘X — X-Ray inferred schema
+            if document.nodeIndex != nil {
+                Button("X-Ray Schema") { showXRay = true }
+                    .keyboardShortcut("x", modifiers: [.command, .shift])
+                    .hidden()
+            }
 
             // ⌥⌘F — toggle the jq query bar (Data Workbench, v2.0)
             if document.nodeIndex != nil {
@@ -554,6 +569,18 @@ struct ContentView: View {
                 }
                 .disabled(isExporting)
                 .help("Export document as a different format")
+            }
+        }
+
+        // ── X-Ray inferred schema ─────────────────────────────────────────
+        ToolbarItem(placement: .primaryAction) {
+            if document.nodeIndex != nil {
+                Button {
+                    showXRay = true
+                } label: {
+                    Label("X-Ray", systemImage: "cube.transparent")
+                }
+                .help("Infer and show the document's implicit schema (⇧⌘X)")
             }
         }
 
@@ -1081,6 +1108,10 @@ struct ContentView: View {
             cmds.append(PaletteCommand("Switch to Raw View",
                                        subtitle: "Serialized text",
                                        symbol: "doc.plaintext") { viewMode = .raw })
+
+            cmds.append(PaletteCommand("X-Ray: Show Inferred Schema",
+                                       subtitle: "⇧⌘X",
+                                       symbol: "cube.transparent") { showXRay = true })
 
             // Data Workbench (v2.0)
             cmds.append(PaletteCommand("Run jq Query",

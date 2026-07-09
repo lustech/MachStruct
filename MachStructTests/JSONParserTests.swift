@@ -19,6 +19,160 @@ final class JSONParserTests: XCTestCase {
         return try await parser.buildIndex(from: file)
     }
 
+    // MARK: - simdjson path: byte ranges (P1-06)
+
+    /// On the simdjson path every entry must carry a real byte range so
+    /// Phase 2 can lazily parse keys and values from the mapped file.
+    /// (Regression: the bridge left `byte_offset = 0` everywhere, so keys and
+    /// values on ≥ 5 MB files resolved to garbage or stayed `.unparsed`.)
+    func testSimdjsonPathRecordsUsableByteRanges() async throws {
+        var rows: [String] = []
+        for i in 0..<80_000 {
+            rows.append(#"{"idx":\#(i),"label":"row \#(i)","flag":true,"#
+                        + #""ratio":0.25,"note":null,"esc":"a\"b\#(i)"}"#)
+        }
+        let json = "[\n" + rows.joined(separator: ",\n") + "\n]"
+        XCTAssertGreaterThan(UInt64(json.utf8.count), JSONParser.foundationThreshold)
+
+        let file = try makeFile(json: json)
+        let parser = JSONParser()
+        let index = try await parser.buildIndex(from: file)
+
+        // Confirm simdjson path (keys are lazy).
+        let kvEntries = index.entries.filter { $0.nodeType == .keyValue }
+        XCTAssertNil(kvEntries.first?.key)
+
+        // 1. Every scalar and keyValue entry has a byte range.
+        // (Count violations rather than asserting per entry — a regression
+        // would otherwise record millions of XCTest failures.)
+        let missingRanges = index.entries.reduce(into: 0) { count, entry in
+            if entry.nodeType == .scalar || entry.nodeType == .keyValue,
+               entry.byteOffset == 0 || entry.byteLength == 0 {
+                count += 1
+            }
+        }
+        XCTAssertEqual(missingRanges, 0,
+                       "\(missingRanges) scalar/keyValue entries lack byte ranges")
+
+        // 2. Keys decode from their byte ranges (first object's fields).
+        let root = index.entries[0]
+        let firstObjIdx = try XCTUnwrap(index.childIndices[root.id]?.first)
+        let firstObj = index.entries[firstObjIdx]
+        let keyIdxs = try XCTUnwrap(index.childIndices[firstObj.id])
+        let keys = try keyIdxs.map { kvIdx -> String in
+            let kv = index.entries[kvIdx]
+            let raw = try file.data(offset: kv.byteOffset, length: kv.byteLength)
+            let decoded = try JSONSerialization.jsonObject(with: raw,
+                                                           options: .allowFragments)
+            return try XCTUnwrap(decoded as? String)
+        }
+        XCTAssertEqual(keys, ["idx", "label", "flag", "ratio", "note", "esc"])
+
+        // 3. Values parse via Phase 2 with correct types.
+        func phase2Value(key: String) throws -> NodeValue {
+            let kvIdx = try XCTUnwrap(keyIdxs.first { idx in
+                let kv = index.entries[idx]
+                let raw = try? file.data(offset: kv.byteOffset, length: kv.byteLength)
+                let s = raw.flatMap {
+                    try? JSONSerialization.jsonObject(with: $0,
+                                                      options: .allowFragments) as? String
+                }
+                return s == key
+            })
+            let valIdx = try XCTUnwrap(index.childIndices[index.entries[kvIdx].id]?.first)
+            return try parser.parseValue(entry: index.entries[valIdx], from: file)
+        }
+        XCTAssertEqual(try phase2Value(key: "idx"),   .scalar(.integer(0)))
+        XCTAssertEqual(try phase2Value(key: "label"), .scalar(.string("row 0")))
+        XCTAssertEqual(try phase2Value(key: "flag"),  .scalar(.boolean(true)))
+        XCTAssertEqual(try phase2Value(key: "ratio"), .scalar(.float(0.25)))
+        XCTAssertEqual(try phase2Value(key: "note"),  .scalar(.null))
+        XCTAssertEqual(try phase2Value(key: "esc"),   .scalar(.string(#"a"b0"#)))
+
+        // 4. Containers span their full source range.
+        XCTAssertEqual(root.byteOffset, 0)
+        XCTAssertEqual(UInt64(root.byteLength), UInt64(json.utf8.count))
+
+        // 5. Key search works end-to-end on the lazy path.
+        let matches = SearchEngine.search(query: "ratio", in: index, file: file)
+        XCTAssertEqual(matches.count, 80_000)
+    }
+
+    /// Beyond the safe cap, parsing must fail with a thrown error — never a
+    /// stack overflow. (Foundation's JSONSerialization recurses per nesting
+    /// level with no depth guard; ~700+ levels overflow a 512 KB task stack.)
+    func testExtremeNestingThrowsCleanError() async throws {
+        // Object chains are the dangerous shape: Foundation rejects deep
+        // arrays with an error but recurses (and crashes) on deep objects.
+        let depth = 2_000
+        let json = String(repeating: #"{"a":"#, count: depth) + "1"
+            + String(repeating: "}", count: depth)
+        let file = try makeFile(json: json)
+        do {
+            _ = try await JSONParser().buildIndex(from: file)
+            XCTFail("expected a nesting-depth error")
+        } catch {
+            // Clean error is the required outcome.
+        }
+    }
+
+    // MARK: - Token scanner alignment guard
+
+    /// When tokens and entries disagree, the scanner must refuse (nil) rather
+    /// than mis-assign ranges.
+    func testScanTokenRangesRefusesOnCountMismatch() {
+        let json = Array(#"{"a":1}"#.utf8)
+        json.withUnsafeBytes { buf in
+            // Correct count: root + kv + scalar = 3.
+            XCTAssertNotNil(JSONParser.scanTokenRanges(buffer: buf, entryCount: 3))
+            // Wrong counts: must refuse, not truncate or pad.
+            XCTAssertNil(JSONParser.scanTokenRanges(buffer: buf, entryCount: 2))
+            XCTAssertNil(JSONParser.scanTokenRanges(buffer: buf, entryCount: 4))
+        }
+    }
+
+    /// Whatever path buildIndex takes, it must never produce the silent-garbage
+    /// state where a keyValue entry has neither an eager key nor a usable byte
+    /// range. (Files the parser cannot represent should throw instead.)
+    func testNoSilentlyUnresolvableKeysOnAnyPath() async throws {
+        // ≥ 5 MB with a deep chain that exceeds the bridge's depth cap (1000),
+        // which forces the token scanner to detect misalignment.
+        let depth = 1005
+        let padding = String(repeating: "x", count: 6_000_000)
+        let json = #"{"pad":"\#(padding)","deep":"#
+            + String(repeating: #"{"a":"#, count: depth) + "1"
+            + String(repeating: "}", count: depth) + "}"
+        let file = try makeFile(json: json)
+        do {
+            let si = try await JSONParser().buildIndex(from: file)
+            let unresolvable = si.entries.reduce(into: 0) { count, entry in
+                if entry.nodeType == .keyValue,
+                   entry.key == nil, entry.byteLength == 0 {
+                    count += 1
+                }
+            }
+            XCTAssertEqual(unresolvable, 0,
+                "\(unresolvable) keyValue entries have neither key nor byte range")
+        } catch {
+            // An explicit error is an acceptable outcome; silent garbage is not.
+        }
+    }
+
+    // MARK: - Deep nesting (stack safety)
+
+    /// Parsing must not recurse per nesting level: Swift Concurrency threads
+    /// have 512 KB stacks, and a recursive walk overflows (SIGBUS) at roughly
+    /// 200 levels — crashing the app on pathological-but-valid files.
+    func testDeeplyNestedJSONDoesNotOverflowStack() async throws {
+        let depth = 400
+        let json = String(repeating: #"{"a":"#, count: depth) + "1"
+            + String(repeating: "}", count: depth)
+        let index = try await buildIndex(json: json)
+        let maxDepth = index.entries.map { Int($0.depth) }.max() ?? 0
+        XCTAssertGreaterThanOrEqual(maxDepth, depth,
+            "expected \(depth)+ levels, got \(maxDepth)")
+    }
+
     // MARK: - Foundation path: structure
 
     func testEmptyObjectFoundation() async throws {
