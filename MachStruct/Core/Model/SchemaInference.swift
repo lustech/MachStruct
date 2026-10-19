@@ -317,6 +317,9 @@ public enum SchemaInferenceEngine {
             guard rootID.rawValue >= si.entryIDBase else { return empty }
             let i = Int(rootID.rawValue - si.entryIDBase)
             guard i < si.entries.count else { return empty }
+            // Confirm the slot really holds the requested node — a stale ID
+            // would otherwise infer a schema for an unrelated subtree (#14).
+            guard si.entries[i].id == rootID else { return empty }
             startIdx = i
         } else {
             startIdx = 0
