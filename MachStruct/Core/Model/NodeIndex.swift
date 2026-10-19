@@ -108,8 +108,13 @@ public struct NodeIndex: Sendable {
     public func path(to id: NodeID) -> [NodeID] {
         var result: [NodeID] = []
         var current: NodeID? = id
+        // Mirrors the guard in `StructuralIndex.path(to:)`: no edit path can
+        // currently build a parent cycle (moves reorder within one parent and
+        // never reparent), but this walk runs on the main actor, so a cycle
+        // would hang the UI rather than surface as a wrong answer.
         while let cid = current {
             result.append(cid)
+            guard result.count <= count else { return [] }
             current = node(for: cid)?.parentID
         }
         return result.reversed()

@@ -16,6 +16,16 @@ public struct NodeID: Hashable, Sendable, Identifiable {
     public static func generate() -> NodeID {
         NodeID(rawValue: _nodeIDSource.next())
     }
+
+    /// Atomically reserve `count` consecutive IDs and return the first.
+    ///
+    /// `generate()` alone only guarantees IDs are globally *monotonic*. Two
+    /// documents parsed concurrently interleave, which breaks the contiguity
+    /// `StructuralIndex.entryIDBase` relies on — see issue #14. Reserving a
+    /// block gives one document a run of IDs nothing else can draw from.
+    public static func reserveBlock(count: Int) -> UInt64 {
+        _nodeIDSource.reserve(UInt64(max(0, count)))
+    }
 }
 
 private final class _NodeIDSource {
@@ -27,6 +37,15 @@ private final class _NodeIDSource {
         defer { lock.unlock() }
         counter += 1
         return counter
+    }
+
+    /// Bump the counter by `count` and return the first ID of the block.
+    func reserve(_ count: UInt64) -> UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
+        let first = counter &+ 1
+        counter &+= count
+        return first
     }
 }
 

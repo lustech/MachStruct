@@ -8,7 +8,7 @@ import Foundation
 /// via `StructParser.parseValue(entry:from:)`.
 public struct IndexEntry: Sendable {
 
-    public let id: NodeID
+    public fileprivate(set) var id: NodeID
 
     /// Byte offset of this node's raw source in the file. 0 when not yet extracted.
     public let byteOffset: UInt64
@@ -18,7 +18,7 @@ public struct IndexEntry: Sendable {
 
     public let nodeType: NodeType
     public let depth: UInt16
-    public let parentID: NodeID?
+    public fileprivate(set) var parentID: NodeID?
     public let childCount: UInt32
 
     /// Object key or string-encoded array index for `.keyValue` / array-element nodes.
@@ -76,8 +76,10 @@ public struct StructuralIndex: Sendable {
 
     /// Base NodeID rawValue for the first entry in `entries`.
     ///
-    /// NodeIDs are assigned by a global monotonic counter in document order, so
-    /// `entries[i].id.rawValue == entryIDBase + UInt64(i)` for all i.
+    /// `entries[i].id.rawValue == entryIDBase + UInt64(i)` for all i. `init`
+    /// *enforces* this: NodeIDs are globally monotonic but not contiguous when
+    /// two documents parse concurrently (issue #14), so a non-contiguous run is
+    /// renumbered onto a freshly reserved block before the index is built.
     /// This lets `entry(for:)` resolve a NodeID → index in O(1) with a single
     /// subtraction + bounds-check instead of a hash-table lookup, eliminating the
     /// ~30 ms overhead of building an N-entry `[NodeID: Int]` dictionary.
@@ -94,6 +96,13 @@ public struct StructuralIndex: Sendable {
     public let keyTable: StringTable
 
     public init(entries: [IndexEntry]) {
+        // `entry(for:)` resolves IDs by arithmetic, which requires this
+        // document's IDs to be contiguous. Concurrent parses interleave the
+        // global counter, so repair the run before anything depends on it.
+        var entries = entries
+        if !StructuralIndex.idsAreContiguous(entries) {
+            StructuralIndex.renumberContiguously(&entries)
+        }
         self.entries = entries
         self.entryIDBase = entries.first?.id.rawValue ?? 0
         var ci = [NodeID: [Int]]()
@@ -118,7 +127,44 @@ public struct StructuralIndex: Sendable {
         guard id.rawValue >= entryIDBase else { return nil }
         let i = Int(id.rawValue - entryIDBase)
         guard i < entries.count else { return nil }
-        return entries[i]
+        let candidate = entries[i]
+        // Confirm the arithmetic landed on the node actually asked for. Without
+        // this a stale or foreign ID resolves to whichever node occupies that
+        // slot, silently returning another node's data instead of nothing.
+        guard candidate.id == id else { return nil }
+        return candidate
+    }
+
+    /// True when `entries[i].id == entryIDBase + i` throughout — the invariant
+    /// `entry(for:)` depends on. O(n), no allocation; the common case.
+    private static func idsAreContiguous(_ entries: [IndexEntry]) -> Bool {
+        guard let base = entries.first?.id.rawValue else { return true }
+        for (i, entry) in entries.enumerated()
+        where entry.id.rawValue != base &+ UInt64(i) {
+            return false
+        }
+        return true
+    }
+
+    /// Reassign every ID onto a freshly reserved contiguous block, rewriting
+    /// `parentID` links to match. Only runs when contiguity was broken, so the
+    /// `[NodeID: NodeID]` remap is off the hot path.
+    private static func renumberContiguously(_ entries: inout [IndexEntry]) {
+        guard !entries.isEmpty else { return }
+        let base = NodeID.reserveBlock(count: entries.count)
+
+        var remap = [NodeID: NodeID](minimumCapacity: entries.count)
+        for (i, entry) in entries.enumerated() {
+            remap[entry.id] = NodeID(rawValue: base &+ UInt64(i))
+        }
+        for i in entries.indices {
+            if let newID = remap[entries[i].id] { entries[i].id = newID }
+            // A parent outside this document would be corrupt input; leaving it
+            // unmapped makes `entry(for:)` reject it rather than mis-resolve it.
+            if let parent = entries[i].parentID, let newParent = remap[parent] {
+                entries[i].parentID = newParent
+            }
+        }
     }
 
     /// Ancestor path from root down to (and including) `id`, derived purely
@@ -129,8 +175,12 @@ public struct StructuralIndex: Sendable {
         guard entry(for: id) != nil else { return [] }
         var result: [NodeID] = []
         var current: NodeID? = id
+        // A corrupted parent chain can cycle. This walk runs on the main actor
+        // behind search navigation, so an unbounded loop beachballs the app and
+        // grows `result` until it exhausts memory — bail out instead.
         while let cid = current {
             result.append(cid)
+            guard result.count <= entries.count else { return [] }
             current = entry(for: cid)?.parentID
         }
         return result.reversed()
