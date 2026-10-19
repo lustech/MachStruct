@@ -238,11 +238,19 @@ jobs:
           TAG="${{ github.ref_name }}"
           RELEASE_NAME="MachStruct ${TAG#v}"
 
+          # `gh release create file#label` sets the asset LABEL, not its
+          # filename — the asset still lands as MachStruct-<tag>.dmg, which
+          # breaks /releases/latest/download/MachStruct.dmg on the website.
+          # Upload a real versionless copy alongside the versioned one.
+          STABLE_PATH="$(dirname "$DMG_PATH")/MachStruct.dmg"
+          cp "$DMG_PATH" "$STABLE_PATH"
+
           gh release create "$TAG" \
             --title "$RELEASE_NAME" \
             --generate-notes \
             --draft \
-            "$DMG_PATH#MachStruct.dmg"
+            "$DMG_PATH" \
+            "$STABLE_PATH"
 
           echo "::notice::Draft release created. Review and publish at:"
           echo "::notice::https://github.com/${{ github.repository }}/releases/tag/$TAG"
