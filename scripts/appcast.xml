@@ -24,6 +24,41 @@
     <description>Most recent releases of MachStruct</description>
     <language>en</language>
 
+    <!-- ── v2.1.1 ───────────────────────────────────────────────── -->
+    <item>
+      <title>MachStruct 2.1.1</title>
+      <description><![CDATA[
+        <h3>Fixed</h3>
+        <ul>
+          <li><b>Object keys appeared in the wrong order, and repeated keys
+              vanished</b>, in files under 5 MB. Saving wrote back the
+              truncated version. Structure now comes from the file&rsquo;s
+              bytes at every size, so a document reads the same whatever its
+              size &mdash; and small files parse slightly faster.</li>
+          <li><b>Opening two documents at once could show one file&rsquo;s data
+              in the other, or hang the app.</b> Search results, breadcrumbs
+              and X-Ray schemas could report another document&rsquo;s contents,
+              and navigating to a search result could consume gigabytes of
+              memory until the app was force-quit.</li>
+          <li><b>Whole-number decimals such as <code>1.0</code> were displayed
+              and re-saved as <code>1</code></b>, losing the number type and
+              silently rewriting the file.</li>
+          <li><b>The download link on machstruct.com returned a 404 for some
+              releases.</b> Every release now publishes a versionless disk
+              image.</li>
+        </ul>
+      ]]></description>
+      <pubDate>Mon, 19 Oct 2026 15:30:00 +0000</pubDate>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <sparkle:version>6</sparkle:version>
+      <sparkle:shortVersionString>2.1.1</sparkle:shortVersionString>
+      <enclosure
+        url="https://github.com/lustech/MachStruct/releases/download/v2.1.1/MachStruct.dmg"
+        sparkle:edSignature="8TphuZflufanTH7aMjJD6P9ko7NQ5V8x9lfbMmd1TdtgbXElEEMaaQPuaoveUirUGZlDGfBRMmZ8I4KA45yxAA=="
+        length="3475523"
+        type="application/octet-stream"/>
+    </item>
+
     <!-- ── v2.1.0 ───────────────────────────────────────────────── -->
     <item>
       <title>MachStruct 2.1.0</title>
