@@ -282,7 +282,7 @@ final class SchemaInferenceTests: XCTestCase {
             }
         }
         let json = "[" + rows.joined(separator: ",") + "]"
-        XCTAssertGreaterThan(UInt64(json.utf8.count), JSONParser.foundationThreshold,
+        XCTAssertGreaterThan(UInt64(json.utf8.count), JSONParser.eagerResolveThreshold,
                              "test must exercise the simdjson path")
 
         let file = try makeFile(json: json)
@@ -322,7 +322,7 @@ final class SchemaInferenceTests: XCTestCase {
         }
         rows.append(#"{"a\"b":true}"#)
         let json = "[" + rows.joined(separator: ",") + "]"
-        XCTAssertGreaterThan(UInt64(json.utf8.count), JSONParser.foundationThreshold)
+        XCTAssertGreaterThan(UInt64(json.utf8.count), JSONParser.eagerResolveThreshold)
 
         let file = try makeFile(json: json)
         let si = try await JSONParser().buildIndex(from: file)
