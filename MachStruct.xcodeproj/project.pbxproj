@@ -146,7 +146,6 @@
 			children = (
 				CD1AED5FC09F9D81BC3932C3 /* FindReplaceBar.swift */,
 			);
-			name = FindReplace;
 			path = FindReplace;
 			sourceTree = "<group>";
 		};
@@ -211,7 +210,7 @@
 			path = MachStructSpotlight;
 			sourceTree = "<group>";
 		};
-		5C929680C2FCD90B6747114D /* App */ = {
+		5C929680C2FCD90B6747114D /* MachStruct/App */ = {
 			isa = PBXGroup;
 			children = (
 				78176BDF8A0409D74304F7A5 /* MachStructApp.swift */,
@@ -261,7 +260,6 @@
 				7E2C5045FEBD684C1F0116AE /* QueryBar.swift */,
 				DEA1AED36E219D83CA070E3C /* QueryResultsView.swift */,
 			);
-			name = Query;
 			path = Query;
 			sourceTree = "<group>";
 		};
@@ -270,7 +268,6 @@
 			children = (
 				4FBEABF8FAC7666D751B89FE /* XRaySchemaPanel.swift */,
 			);
-			name = XRay;
 			path = XRay;
 			sourceTree = "<group>";
 		};
@@ -343,7 +340,7 @@
 		DFC7840EB6FC0CCF76C5601D = {
 			isa = PBXGroup;
 			children = (
-				5C929680C2FCD90B6747114D /* App */,
+				5C929680C2FCD90B6747114D /* MachStruct/App */,
 				1E3DACDFE7A4470EA529C9A5 /* MachStructQuickLook */,
 				57389D9417344BB491BFBD36 /* MachStructSpotlight */,
 				21E155D6FE28ADA886C1B619 /* Products */,
@@ -426,7 +423,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1500;
-				LastUpgradeCheck = 2640;
+				LastUpgradeCheck = 2710;
 				TargetAttributes = {
 					C123C8EF7469F5F53F566E9B = {
 						CreatedOnToolsVersion = 15.0;
@@ -585,6 +582,7 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
@@ -659,6 +657,7 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "c++17";

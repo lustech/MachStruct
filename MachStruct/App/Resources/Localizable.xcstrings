@@ -4,6 +4,9 @@
     "" : {
 
     },
+    " " : {
+
+    },
     ":" : {
 
     },
@@ -75,6 +78,9 @@
         }
       }
     },
+    "%lld nodes analysed" : {
+
+    },
     "%lld of %lld" : {
       "localizations" : {
         "en" : {
@@ -90,6 +96,16 @@
     },
     "%lld results" : {
 
+    },
+    "%lld type inconsistenc%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld type inconsistenc%2$@"
+          }
+        }
+      }
     },
     "<%@>" : {
 
@@ -231,6 +247,12 @@
 
     },
     "Copy results as JSON" : {
+
+    },
+    "Copy Schema" : {
+
+    },
+    "Copy the schema as indented text" : {
 
     },
     "Could not read the dropped file." : {
@@ -422,6 +444,12 @@
     "Go Forward" : {
 
     },
+    "Infer and show the document's implicit schema (⇧⌘X)" : {
+
+    },
+    "Inferring schema…" : {
+
+    },
     "Inspect detected formats" : {
 
     },
@@ -539,6 +567,9 @@
           }
         }
       }
+    },
+    "No Schema" : {
+
     },
     "No selection" : {
       "comment" : "Status bar — path placeholder",
@@ -779,6 +810,9 @@
     "Recovered with auto-fix" : {
 
     },
+    "Reflects the file as loaded — unsaved edits not included" : {
+
+    },
     "Regular expression" : {
 
     },
@@ -810,6 +844,9 @@
 
     },
     "Saved & recent queries" : {
+
+    },
+    "Schema" : {
 
     },
     "Search keys and values" : {
@@ -892,6 +929,9 @@
     "Table View" : {
 
     },
+    "The document has no analysable structure." : {
+
+    },
     "This document has no tabular data." : {
 
     },
@@ -972,6 +1012,15 @@
           }
         }
       }
+    },
+    "X-Ray" : {
+
+    },
+    "X-Ray — Inferred Schema" : {
+
+    },
+    "X-Ray Schema" : {
+
     },
     "YAML…" : {
 
