@@ -5,6 +5,37 @@ All notable changes to MachStruct are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1] — 2026-10-19
+
+### Fixed
+- **Object keys appeared in the wrong order, and repeated keys vanished**, in
+  files under 5 MB. The structural walk for smaller files ran through
+  `JSONSerialization`, whose dictionary representation can record neither the
+  order keys appear in nor the same key twice — so `{"a":1,"a":2,"b":3}` was
+  shown as two entries in arbitrary order, and saving wrote back the truncated
+  version. Files at or above 5 MB were always correct, which meant the same
+  document could read differently depending on its size. Structure now comes
+  from the file's bytes at every size. As a side effect, small files parse
+  slightly faster than before.
+- **Opening two documents at once could show one file's data in the other, or
+  hang the app.** Node identifiers were handed out from a single counter, so
+  two files parsed at the same time interleaved theirs, and lookups then
+  resolved to whichever node happened to occupy that slot. Search results,
+  breadcrumbs, and X-Ray schemas could all report another document's contents,
+  and navigating to a search result could spin the app up to gigabytes of
+  memory until it was force-quit. Each document now gets its own reserved
+  range, lookups verify they found the node asked for, and the affected walks
+  can no longer loop indefinitely.
+- **Whole-number decimals such as `1.0` were displayed and re-saved as `1`.**
+  Numbers were classified by their value rather than by how they were written,
+  so any float that happened to land on a whole number lost its `num` type
+  badge and was silently rewritten as an integer on save.
+- **The download link on machstruct.com returned a 404 for some releases.**
+  The release pipeline labelled the disk image `MachStruct.dmg` but still
+  uploaded it under a versioned filename, so the website's
+  `releases/latest/download/MachStruct.dmg` link only worked when a copy had
+  been uploaded by hand. Every release now publishes a versionless copy.
+
 ## [2.1.0] — 2026-07-09
 
 ### Added
@@ -187,7 +218,9 @@ Initial public release. Full feature set:
 - **Drag-and-drop reordering** of array elements in the tree.
 - **GitHub Actions release pipeline** — notarise, DMG, GitHub Release.
 
-[Unreleased]: https://github.com/lustech/MachStruct/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/lustech/MachStruct/compare/v2.1.1...HEAD
+[2.1.1]: https://github.com/lustech/MachStruct/compare/v2.1.0...v2.1.1
+[2.1.0]: https://github.com/lustech/MachStruct/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/lustech/MachStruct/compare/v1.0.4...v2.0.0
 [1.0.4]: https://github.com/lustech/MachStruct/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/lustech/MachStruct/compare/v1.0.2...v1.0.3
