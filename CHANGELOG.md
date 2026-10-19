@@ -5,6 +5,38 @@ All notable changes to MachStruct are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.2] — 2026-10-19
+
+A correctness release. Three of these fixes concern data the app was
+displaying wrongly or writing back wrongly, so upgrading is recommended for
+anyone who edits and saves files.
+
+### Fixed
+- **Large files could not be navigated.** Expanding any object or array in a
+  JSON file of 5 MB or more produced nothing: the arrow opened, no rows
+  appeared, and the node count never moved. The tree draws a row's children by
+  looking *through* the key/value pair to the value beneath it, but the lazy
+  loader only ever prepared the value itself — which was already present, so it
+  concluded there was nothing to do and stopped. Files below 5 MB were
+  unaffected, which is why this went unnoticed.
+- **Saving a JSON file reordered its keys, dropped repeated keys, and rewrote
+  its numbers.** `8.7` was written back as `8.6999999999999993`, `1.0` as `1`,
+  and `{"k":1,"k":2}` collapsed to a single entry. The raw view used the same
+  machinery, so the altered values were visible there before anything had been
+  saved. JSON is now written directly from the document rather than being
+  routed through Foundation, which cannot represent key order or repeated keys
+  and prints decimals at full precision. Saving a file you have not edited now
+  leaves it as it was.
+- **Files containing very large whole numbers would not open at all.** Any
+  integer beyond 18,446,744,073,709,551,615 — Twitter-style IDs, some database
+  identifiers — caused the entire document to be rejected. Such files now open,
+  falling back to a parser that accepts them. This had worked in 2.1.0 and
+  broke in 2.1.1.
+- **The table view cut the first character off its leftmost column**, at every
+  window size, so `Order ID` appeared as `rder ID`.
+- **Search had no keyboard shortcut.** ⌘F now focuses the search field, and
+  Find… has been added to the Edit menu.
+
 ## [2.1.1] — 2026-10-19
 
 ### Fixed
@@ -218,7 +250,8 @@ Initial public release. Full feature set:
 - **Drag-and-drop reordering** of array elements in the tree.
 - **GitHub Actions release pipeline** — notarise, DMG, GitHub Release.
 
-[Unreleased]: https://github.com/lustech/MachStruct/compare/v2.1.1...HEAD
+[Unreleased]: https://github.com/lustech/MachStruct/compare/v2.1.2...HEAD
+[2.1.2]: https://github.com/lustech/MachStruct/compare/v2.1.1...v2.1.2
 [2.1.1]: https://github.com/lustech/MachStruct/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/lustech/MachStruct/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/lustech/MachStruct/compare/v1.0.4...v2.0.0
