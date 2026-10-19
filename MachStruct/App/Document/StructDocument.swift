@@ -311,12 +311,16 @@ final class StructDocument: ReferenceFileDocument {
                                       expandedIDs: Set<NodeID> = [],
                                       selectedID: NodeID? = nil) async {
         guard let si = structuralIndex,
-              let file = mappedFile,
-              let childIdxs = si.childIndices[nodeID],
-              !childIdxs.isEmpty else { return }
+              let file = mappedFile else { return }
+        // Rows drill through `.keyValue` nodes to their value, so the nodes a row
+        // needs are the value's children — not the keyValue's direct child, which
+        // `buildShallowNodeIndex` has already materialised. Probing that value
+        // node made this method bail out every time (issue #23).
+        let childIdxs = si.expansionTargets(for: nodeID)
+        guard !childIdxs.isEmpty else { return }
         guard var idx = nodeIndex else { return }
 
-        // Skip if the first child is already in the index.
+        // Skip only if the nodes this row needs are already present.
         let firstChildID = si.entries[childIdxs[0]].id
         guard idx.node(for: firstChildID) == nil else { return }
 
@@ -351,25 +355,25 @@ final class StructDocument: ReferenceFileDocument {
     func evictIfNeeded(expandedIDs: Set<NodeID>, selectedID: NodeID?) {
         guard var idx = nodeIndex,
               idx.count > StructDocument.evictionThreshold,
-              structuralIndex != nil else { return }
+              let si = structuralIndex else { return }
 
         var hot = Set<NodeID>()
         hot.reserveCapacity(expandedIDs.count * 20)
 
-        // Root is always hot.
+        // The hot set must follow what the tree actually renders, which drills
+        // through `.keyValue` nodes. Deriving it from `childIDs` kept the value
+        // node but neither the rows beneath it nor the value nodes those rows
+        // need, so materialised children were evicted immediately and visible
+        // rows lost their values (issue #23).
+
+        // Root is always hot, along with the rows rendered directly beneath it.
         hot.insert(idx.rootID)
+        hot.formUnion(si.visibleDescendantIDs(for: idx.rootID))
 
-        // Root's direct children are always visible.
-        if let root = idx.node(for: idx.rootID) {
-            hot.formUnion(root.childIDs)
-        }
-
-        // Expanded nodes and their immediate children.
+        // Expanded rows and the rows they reveal.
         for id in expandedIDs {
             hot.insert(id)
-            if let node = idx.node(for: id) {
-                hot.formUnion(node.childIDs)
-            }
+            hot.formUnion(si.visibleDescendantIDs(for: id))
         }
 
         // Keep the selected node (details panel / editing needs it).
@@ -404,6 +408,27 @@ final class StructDocument: ReferenceFileDocument {
 
     // MARK: - Phase-2 parse helpers (static, called from background tasks)
 
+    /// Node value for a lazily-materialised entry.
+    ///
+    /// Mirrors `StructuralIndex.makeDocumentNode`, which is the canonical
+    /// version: containers carry their child count, scalars are parsed from the
+    /// mapped bytes, and keyValue nodes hold nothing themselves. Computing this
+    /// as `parsedValue ?? parseValueBytes(...)` silently produced `.unparsed`
+    /// for objects and arrays, so every lazily-materialised container rendered
+    /// as "{0 keys}" (issue #23).
+    private static func nodeValue(for entry: IndexEntry,
+                                   from file: MappedFile) -> NodeValue {
+        switch entry.nodeType {
+        case .object, .array:
+            return .container(childCount: Int(entry.childCount))
+        case .scalar:
+            return entry.parsedValue.map { NodeValue.scalar($0) }
+                   ?? parseValueBytes(entry: entry, from: file)
+        case .keyValue:
+            return .unparsed
+        }
+    }
+
     /// Build `DocumentNode` updates for the children of `nodeID` and, for keyValue
     /// children, their value grandchildren too (needed for correct display).
     private static func buildChildUpdates(for nodeID: NodeID,
@@ -419,8 +444,7 @@ final class StructDocument: ReferenceFileDocument {
             // Intern the key through the shared table so that repeated keys across
             // sibling objects share the same String backing storage.
             let key   = si.keyTable.intern(entry.key ?? parseKeyBytes(entry: entry, from: file))
-            let value = entry.parsedValue.map { NodeValue.scalar($0) }
-                        ?? parseValueBytes(entry: entry, from: file)
+            let value = StructDocument.nodeValue(for: entry, from: file)
             result[entry.id] = DocumentNode(
                 id: entry.id, type: entry.nodeType, depth: entry.depth,
                 parentID: entry.parentID, childIDs: childIDs,
@@ -436,8 +460,7 @@ final class StructDocument: ReferenceFileDocument {
                 for vi in valIdxs {
                     let ve = si.entries[vi]
                     let gcChildIDs = (si.childIndices[ve.id] ?? []).map { si.entries[$0].id }
-                    let veValue = ve.parsedValue.map { NodeValue.scalar($0) }
-                                  ?? parseValueBytes(entry: ve, from: file)
+                    let veValue = StructDocument.nodeValue(for: ve, from: file)
                     result[ve.id] = DocumentNode(
                         id: ve.id, type: ve.nodeType, depth: ve.depth,
                         parentID: ve.parentID, childIDs: gcChildIDs,
