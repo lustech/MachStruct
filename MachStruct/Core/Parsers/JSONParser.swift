@@ -300,7 +300,21 @@ private extension JSONParser {
         }
 
         guard count >= 0 else {
-            throw JSONParserError.simdjsonParseFailed(code: count)
+            // simdjson refuses some documents that are perfectly valid JSON —
+            // most notably integer literals beyond UInt64.max, which it reports
+            // as a parse error for the whole file (#25). Before giving up, try
+            // the Foundation walk, which accepts them and degrades such values
+            // to Double.
+            //
+            // Trade-off: the Foundation walk cannot preserve key order or
+            // repeated keys (#13, #15), so a document rescued here is shown
+            // with its object keys reordered. Opening it imperfectly beats
+            // refusing to open it, but it is the reason this is a fallback
+            // rather than the primary path.
+            //
+            // Foundation's error is surfaced when it also fails, because it
+            // reports a position and simdjson's bare code does not.
+            return try buildIndexFoundation(file: file)
         }
 
         // The DOM bridge cannot report token positions, so align source byte
