@@ -467,6 +467,14 @@ struct MachStructApp: App {
             }
             #endif
 
+            // Find — the search field had no key equivalent and no menu
+            // entry, so search was unreachable by keyboard (#27). `textEditing`
+            // is where macOS users expect Find to live.
+            CommandGroup(after: .textEditing) {
+                Divider()
+                FindCommandButton()
+            }
+
             CommandGroup(after: .windowList) {
                 Divider()
                 Button("Show Welcome Window") {
@@ -475,5 +483,25 @@ struct MachStructApp: App {
                 .keyboardShortcut("0", modifiers: [.command, .shift])
             }
         }
+    }
+}
+
+
+// MARK: - Find command
+
+/// Focuses the search field of the frontmost document window.
+///
+/// Reads the focused scene's binding rather than broadcasting, so only the key
+/// window responds. Disabled when no document is focused, which also gives the
+/// menu item the correct greyed-out appearance.
+private struct FindCommandButton: View {
+    @FocusedValue(\.searchFieldPresented) private var searchFieldPresented
+
+    var body: some View {
+        Button("Find…") {
+            searchFieldPresented?.wrappedValue = true
+        }
+        .keyboardShortcut("f", modifiers: .command)
+        .disabled(searchFieldPresented == nil)
     }
 }

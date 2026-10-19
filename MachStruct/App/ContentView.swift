@@ -96,6 +96,13 @@ struct ContentView: View {
     /// The live search query bound to the `.searchable` modifier.
     @State private var searchQuery: String = ""
 
+    /// Drives focus of the `.searchable` field so ⌘F can reach it.
+    ///
+    /// The search field is the primary way into the app's most-used feature,
+    /// but it had no key equivalent and no menu item, so it was unreachable
+    /// without a mouse (#27).
+    @State private var searchFieldPresented: Bool = false
+
     /// All matches for the current query, in document order.
     @State private var searchMatches: [SearchMatch] = []
 
@@ -241,8 +248,11 @@ struct ContentView: View {
             }
         }
         .searchable(text: $searchQuery,
+                    isPresented: $searchFieldPresented,
                     placement: .toolbar,
                     prompt: "Search keys and values")
+        // Lets the Find menu item act on the focused window only.
+        .focusedSceneValue(\.searchFieldPresented, $searchFieldPresented)
         .onSubmit(of: .search) { advanceMatch() }
         .alert("Export Failed", isPresented: .init(
             get: { exportError != nil },
@@ -1304,4 +1314,21 @@ struct ContentView: View {
 
 #Preview("Placeholder") {
     ContentView(document: StructDocument())
+}
+
+
+// MARK: - Focused values
+
+/// Exposes the focused document window's search-field focus binding so the
+/// Find menu item can target it. A plain notification would reach every open
+/// window; a focused value reaches only the key one.
+struct SearchFieldPresentedKey: FocusedValueKey {
+    typealias Value = Binding<Bool>
+}
+
+extension FocusedValues {
+    var searchFieldPresented: Binding<Bool>? {
+        get { self[SearchFieldPresentedKey.self] }
+        set { self[SearchFieldPresentedKey.self] = newValue }
+    }
 }

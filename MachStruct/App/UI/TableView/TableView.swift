@@ -38,10 +38,20 @@ struct TableView: View {
     /// Column names from the first row's key order.
     private var columns: [String] { nodeIndex.tabularColumns }
 
+    /// Width of the `Divider()` that follows each column in the header and in
+    /// every data row.
+    private let dividerWidth: CGFloat = 1
+
     /// Minimum total content width — ensures the scroll area is never narrower
     /// than the window.
+    ///
+    /// Must include the per-column dividers. Counting only the columns made the
+    /// declared frame narrower than the row content, and `.frame(width:)`
+    /// centres content it cannot fit — so roughly half a divider per column was
+    /// clipped off each side, cutting the first character of the leftmost
+    /// column at every window width (#32).
     private var totalWidth: CGFloat {
-        max(CGFloat(columns.count) * colWidth, 600)
+        max(CGFloat(columns.count) * (colWidth + dividerWidth), 600)
     }
 
     /// Light-weight row identifiers; children are looked up lazily per-row.
