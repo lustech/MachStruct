@@ -186,6 +186,56 @@ public struct StructuralIndex: Sendable {
         return result.reversed()
     }
 
+    /// Entry indices that must be materialised for the row representing `id` to
+    /// render its children.
+    ///
+    /// Tree rows drill *through* `.keyValue` nodes to their value, so the row for
+    /// `"events": [...]` displays the elements of the array rather than the array
+    /// itself. Expanding such a row must therefore materialise the **value's**
+    /// children, not the value node — `buildShallowNodeIndex` already placed the
+    /// value node in the index, so materialising it again is a no-op and leaves
+    /// the row with nothing to show (issue #23).
+    ///
+    /// Returns `[]` for leaves, scalar-valued keyValues, and unknown IDs.
+    public func expansionTargets(for id: NodeID) -> [Int] {
+        guard let entry = entry(for: id) else { return [] }
+
+        if entry.nodeType == .keyValue {
+            // Drill through to the value node, mirroring `TreeNode.children`.
+            guard let valueIdx = childIndices[id]?.first else { return [] }
+            let value = entries[valueIdx]
+            guard value.nodeType == .object || value.nodeType == .array else {
+                return []   // scalar value renders inline; no sub-rows
+            }
+            return childIndices[value.id] ?? []
+        }
+
+        return childIndices[id] ?? []
+    }
+
+    /// NodeIDs that must stay materialised for the row representing `id` to
+    /// render its visible children.
+    ///
+    /// This is `expansionTargets(for:)` resolved to IDs, plus — for keyValue
+    /// rows — the value node each row needs in order to display its value.
+    /// Eviction uses it as the hot set: computing that set from `childIDs`
+    /// instead drops the value nodes and the drilled-through grandchildren, so
+    /// freshly materialised rows were evicted the moment they appeared and
+    /// surviving rows lost their values (issue #23).
+    public func visibleDescendantIDs(for id: NodeID) -> [NodeID] {
+        let targets = expansionTargets(for: id)
+        var out = [NodeID]()
+        out.reserveCapacity(targets.count * 2)
+        for idx in targets {
+            let entry = entries[idx]
+            out.append(entry.id)
+            if entry.nodeType == .keyValue, let valIdxs = childIndices[entry.id] {
+                for vi in valIdxs { out.append(entries[vi].id) }
+            }
+        }
+        return out
+    }
+
     // MARK: - Full (eager) build
 
     /// Build a `NodeIndex` (DocumentNode tree) from this structural index.
