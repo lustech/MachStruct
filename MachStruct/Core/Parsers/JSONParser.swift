@@ -6,10 +6,15 @@ import CSimdjsonBridge
 /// Two-phase JSON parser.
 ///
 /// **Phase 1** — `buildIndex(from:)`
-///   - Files < `foundationThreshold` (5 MB): Foundation `JSONSerialization` walk.
-///     Keys and scalar values are captured eagerly into each `IndexEntry`.
-///   - Files ≥ `foundationThreshold`: simdjson C bridge for speed.
-///     `IndexEntry.key` and `.parsedValue` are `nil`; values are resolved lazily in Phase 2.
+///   Structure always comes from the simdjson C bridge, which walks the byte
+///   stream and therefore preserves document order and repeated keys. Routing
+///   objects through `JSONSerialization`/`NSDictionary` lost both (#13, #15),
+///   so the Foundation walk remains only as a fallback for documents whose
+///   nesting defeats the bridge's depth cap.
+///   - Files < `eagerResolveThreshold` (5 MB): `IndexEntry.key` and
+///     `.parsedValue` are resolved eagerly from the mapped bytes.
+///   - Files ≥ `eagerResolveThreshold`: both are `nil` and resolve lazily in
+///     Phase 2, so opening a large file never touches every node.
 ///
 /// **Phase 2** — `parseValue(entry:from:)`
 ///   Called on-demand when a node becomes visible. Slices the mapped bytes and parses
@@ -18,8 +23,10 @@ public actor JSONParser: StructParser {
 
     public static let supportedExtensions: Set<String> = ["json", "jsonl"]
 
-    /// Files below this threshold use the Foundation path (eager keys + values).
-    static let foundationThreshold: UInt64 = 5 * 1024 * 1024  // 5 MB
+    /// Files below this threshold get their keys and scalar values resolved
+    /// eagerly at index-build time; larger files resolve them lazily as nodes
+    /// are materialised.
+    static let eagerResolveThreshold: UInt64 = 5 * 1024 * 1024  // 5 MB
 
     /// Maximum nesting depth accepted on the Foundation path.
     /// `JSONSerialization` recurses per object level and overflows a 512 KB
@@ -32,11 +39,12 @@ public actor JSONParser: StructParser {
     // MARK: - Phase 1
 
     public func buildIndex(from file: MappedFile) async throws -> StructuralIndex {
-        if file.fileSize < JSONParser.foundationThreshold {
-            return try buildIndexFoundation(file: file)
-        } else {
-            return try buildIndexSimdjson(file: file)
-        }
+        // The simdjson walk reads the byte stream directly, so it preserves
+        // document order and repeated keys. `JSONSerialization` routes objects
+        // through `NSDictionary`, which silently discards both (#13, #15), so
+        // the Foundation walk survives only as a fallback for documents the
+        // bridge's depth cap cannot handle.
+        try buildIndexSimdjson(file: file)
     }
 
     // MARK: - Progressive streaming
@@ -90,6 +98,24 @@ public actor JSONParser: StructParser {
     }
 
     // MARK: - Shared byte-token helpers
+
+    /// Decode the quoted key token of a `.keyValue` entry.
+    nonisolated static func decodeKeyToken(at range: (offset: UInt64, length: UInt32),
+                                           in file: MappedFile) -> String? {
+        guard let bytes = try? file.slice(offset: range.offset,
+                                          length: range.length) else { return nil }
+        return decodeStringToken(bytes)
+    }
+
+    /// Decode a scalar token (`"s"`, `1.0`, `true`, `null`) to a `ScalarValue`.
+    nonisolated static func decodeScalarToken(at range: (offset: UInt64, length: UInt32),
+                                              in file: MappedFile) -> ScalarValue? {
+        guard let raw = try? file.data(offset: range.offset, length: range.length),
+              let any = try? JSONSerialization.jsonObject(with: raw,
+                                                          options: .allowFragments)
+        else { return nil }
+        return ScalarValue(jsonAny: any)
+    }
 
     /// Decode a raw JSON string token (including surrounding quotes).
     /// Fast path for the common no-escape case; Foundation fallback otherwise.
@@ -294,7 +320,13 @@ private extension JSONParser {
             // buildIndexFoundation enforces maxFoundationNestingDepth and the
             // 4 GB eager-parse ceiling itself.
         }
-        let entries = convertBridgeEntries(rawEntries, ranges: ranges)
+        // Small files historically carried eagerly-parsed keys and values on
+        // the entries themselves; Core consumers (schema inference, tabular
+        // detection) still rely on that, so resolve them here rather than
+        // deferring to the app layer.
+        let eager = file.fileSize < JSONParser.eagerResolveThreshold
+        let entries = convertBridgeEntries(rawEntries, ranges: ranges,
+                                           resolvingFrom: eager ? file : nil)
         return StructuralIndex(entries: entries)
     }
 }
@@ -419,13 +451,19 @@ extension JSONParser {
     /// Per the bridge contract, STRING nodes whose parent is an OBJECT are key nodes.
     /// These become `.keyValue` entries; their single child holds the actual value.
     func convertBridgeEntries(_ raw: [MSIndexEntry],
-                              ranges: [(offset: UInt64, length: UInt32)]) -> [IndexEntry] {
+                              ranges: [(offset: UInt64, length: UInt32)],
+                              resolvingFrom file: MappedFile?) -> [IndexEntry] {
         var entries = [IndexEntry]()
         entries.reserveCapacity(raw.count)
 
         // Index → NodeID mapping built as we go (entries are in document order).
         var idMap = [Int: NodeID]()
         idMap.reserveCapacity(raw.count)
+
+        // Position of each array element among its siblings. The Foundation
+        // walk used to store these as the element's key ("0", "1", …) and
+        // `NodeIndex.pathString` still renders array steps from it.
+        var arrayOrdinal = [Int: Int]()
 
         for (i, ms) in raw.enumerated() {
             let nodeID = NodeID.generate()
@@ -447,6 +485,28 @@ extension JSONParser {
                 nodeType = swiftNodeType(from: ms.node_type)
             }
 
+            // Resolved now for small files, left nil for large ones (Phase 2
+            // materialisation fills them in as the user expands nodes).
+            var key: String?
+            var parsedValue: ScalarValue?
+            if file != nil, ms.parent_index >= 0,
+               Int32(raw[Int(ms.parent_index)].node_type) == MS_NODE_TYPE_ARRAY {
+                let parent = Int(ms.parent_index)
+                let ordinal = arrayOrdinal[parent, default: 0]
+                arrayOrdinal[parent] = ordinal + 1
+                key = String(ordinal)
+            }
+            if let file, ranges[i].length > 0 {
+                switch nodeType {
+                case .keyValue:
+                    key = JSONParser.decodeKeyToken(at: ranges[i], in: file)
+                case .scalar:
+                    parsedValue = JSONParser.decodeScalarToken(at: ranges[i], in: file)
+                default:
+                    break
+                }
+            }
+
             entries.append(IndexEntry(
                 id: nodeID,
                 byteOffset: ranges[i].offset,
@@ -454,8 +514,9 @@ extension JSONParser {
                 nodeType: nodeType,
                 depth: ms.depth,
                 parentID: parentID,
-                childCount: ms.child_count
-                // key and parsedValue are nil — resolved lazily in Phase 2
+                childCount: ms.child_count,
+                key: key,
+                parsedValue: parsedValue
             ))
         }
 

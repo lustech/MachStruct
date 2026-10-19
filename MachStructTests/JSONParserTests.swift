@@ -32,7 +32,7 @@ final class JSONParserTests: XCTestCase {
                         + #""ratio":0.25,"note":null,"esc":"a\"b\#(i)"}"#)
         }
         let json = "[\n" + rows.joined(separator: ",\n") + "\n]"
-        XCTAssertGreaterThan(UInt64(json.utf8.count), JSONParser.foundationThreshold)
+        XCTAssertGreaterThan(UInt64(json.utf8.count), JSONParser.eagerResolveThreshold)
 
         let file = try makeFile(json: json)
         let parser = JSONParser()
