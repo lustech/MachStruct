@@ -24,6 +24,46 @@
     <description>Most recent releases of MachStruct</description>
     <language>en</language>
 
+    <!-- ── v2.1.2 ───────────────────────────────────────────────── -->
+    <item>
+      <title>MachStruct 2.1.2</title>
+      <description><![CDATA[
+        <p>A correctness release. Three of these fixes concern data MachStruct
+        was displaying wrongly or writing back wrongly, so updating is
+        recommended if you edit and save files.</p>
+        <h3>Fixed</h3>
+        <ul>
+          <li><b>Large files could not be navigated.</b> Expanding any object or
+              array in a JSON file of 5&nbsp;MB or more produced nothing — the
+              arrow opened and no rows appeared. Files below 5&nbsp;MB were
+              unaffected, which is why it went unnoticed.</li>
+          <li><b>Saving a JSON file reordered its keys, dropped repeated keys,
+              and rewrote its numbers.</b> <code>8.7</code> was written back as
+              <code>8.6999999999999993</code> and <code>1.0</code> as
+              <code>1</code>. The raw view showed the altered values before
+              anything had been saved. Saving a file you have not edited now
+              leaves it as it was.</li>
+          <li><b>Files containing very large whole numbers would not open at
+              all</b> — anything beyond 18,446,744,073,709,551,615, such as
+              Twitter-style IDs. This worked in 2.1.0 and broke in 2.1.1.</li>
+          <li><b>The table view cut the first character off its leftmost
+              column</b>, so <code>Order ID</code> appeared as
+              <code>rder ID</code>.</li>
+          <li><b>Search had no keyboard shortcut.</b> &#8984;F now focuses the
+              search field, and Find&hellip; has been added to the Edit menu.</li>
+        </ul>
+      ]]></description>
+      <pubDate>Mon, 19 Oct 2026 19:15:00 +0000</pubDate>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <sparkle:version>7</sparkle:version>
+      <sparkle:shortVersionString>2.1.2</sparkle:shortVersionString>
+      <enclosure
+        url="https://github.com/lustech/MachStruct/releases/download/v2.1.2/MachStruct.dmg"
+        sparkle:edSignature="uIV+mG4I3xzxYXobyQw9UHtrkmF7qZ2QoKCYhQOvBfp9DFZhj34rrNLPhMkBDEgRA/GWr/QNSuMW0XB11h4TAQ=="
+        length="3476776"
+        type="application/octet-stream"/>
+    </item>
+
     <!-- ── v2.1.1 ───────────────────────────────────────────────── -->
     <item>
       <title>MachStruct 2.1.1</title>
