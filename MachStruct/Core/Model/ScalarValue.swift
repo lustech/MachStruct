@@ -67,12 +67,15 @@ public extension ScalarValue {
                 let u = n.uint64Value
                 self = u <= UInt64(Int64.max) ? .integer(Int64(u))
                                               : .float(n.doubleValue)
-            } else if n.doubleValue.truncatingRemainder(dividingBy: 1) == 0,
-                      n.doubleValue >= Double(Int64.min),
-                      n.doubleValue <= Double(Int64.max) {
-                self = .integer(n.int64Value)
-            } else {
+            } else if _isFloatObjCType(n) {
+                // Trust how JSONSerialization typed the token, not the value's
+                // shape: `1.0` is stored as a double and must stay a float.
+                // Testing `truncatingRemainder == 0` instead collapsed every
+                // whole-valued float to an integer, so `1.0` displayed — and
+                // re-serialized — as `1`.
                 self = .float(n.doubleValue)
+            } else {
+                self = .integer(n.int64Value)
             }
         } else if let s = any as? String {
             self = .string(s)
@@ -103,6 +106,13 @@ public func parseScalarValue(_ text: String) -> ScalarValue {
         return .string(String(t.dropFirst().dropLast()))
     }
     return .string(t)
+}
+
+/// True when a `JSONSerialization`-produced `NSNumber` holds a floating-point
+/// token (`objCType` "f"/"d"), i.e. the source text had a `.`, `e`, or `E`.
+private func _isFloatObjCType(_ n: NSNumber) -> Bool {
+    let t = String(cString: n.objCType)
+    return t == "d" || t == "f"
 }
 
 private func _formatDouble(_ value: Double) -> String {

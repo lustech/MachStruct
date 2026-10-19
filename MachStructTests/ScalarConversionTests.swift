@@ -133,4 +133,46 @@ final class ScalarConversionTests: XCTestCase {
         XCTAssertTrue(scalars.contains(.integer(0)), "scalars: \(scalars)")
         XCTAssertTrue(scalars.contains(.boolean(true)), "scalars: \(scalars)")
     }
+
+    // MARK: - Whole-valued floats (issue #7)
+
+    /// `1.0` is a float token; collapsing it to `.integer` because its value
+    /// happens to be whole loses the type badge and rewrites the file on save.
+    func testWholeValuedFloatsStayFloats() {
+        XCTAssertEqual(ScalarValue(jsonAny: NSNumber(value: 1.0)), .float(1.0))
+        XCTAssertEqual(ScalarValue(jsonAny: NSNumber(value: 0.0)), .float(0.0))
+        XCTAssertEqual(ScalarValue(jsonAny: NSNumber(value: -2.0)), .float(-2.0))
+        XCTAssertEqual(ScalarValue(jsonAny: NSNumber(value: 1.0)).typeBadge, "num")
+        XCTAssertEqual(ScalarValue(jsonAny: NSNumber(value: 1.0)).displayText, "1.0")
+    }
+
+    func testFoundationPathKeepsWholeFloatsDistinctFromInts() async throws {
+        let file = try makeFile(json: #"{"score":1.0,"n":1,"flag":true,"exp":1e2}"#)
+        let si = try await JSONParser().buildIndex(from: file)
+
+        func value(forKey key: String) -> ScalarValue? {
+            guard let kv = si.entries.first(where: { $0.key == key }) else { return nil }
+            return si.entries.first { $0.parentID == kv.id }?.parsedValue
+        }
+
+        XCTAssertEqual(value(forKey: "score"), .float(1.0))
+        XCTAssertEqual(value(forKey: "n"), .integer(1))
+        XCTAssertEqual(value(forKey: "flag"), .boolean(true))
+        XCTAssertEqual(value(forKey: "exp"), .float(100.0))
+    }
+
+    /// The byte-slice path used for files >= 5 MB must agree with the
+    /// Foundation path on float-vs-integer typing.
+    func testByteSlicePathKeepsWholeFloatsAsFloats() throws {
+        for (token, expected) in [("1.0", ScalarValue.float(1.0)),
+                                  ("1", .integer(1)),
+                                  ("0.0", .float(0.0)),
+                                  ("1.5", .float(1.5)),
+                                  ("true", .boolean(true))] {
+            let any = try JSONSerialization.jsonObject(
+                with: token.data(using: .utf8)!, options: .allowFragments)
+            XCTAssertEqual(ScalarValue(jsonAny: any), expected, "token: \(token)")
+        }
+    }
+
 }
