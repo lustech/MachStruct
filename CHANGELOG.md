@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Saving a CSV or YAML file replaced it with JSON.** After any edit, ⌘S
+  wrote the document as JSON into the original `.csv` or `.yaml` file, without
+  warning. CSV and YAML files are now saved in their own format, and CSV keeps
+  its delimiter and its header (or lack of one). XML files can't be saved
+  after editing and are left untouched. Edits to CSV or YAML files of 5 MB or
+  more can't be saved yet, and saving them reports an error instead of
+  writing a partial file.
 - **CSV rows with more fields than the header lost the extras.** In `a,b,c`
   followed by `3,4,5,6`, the `6` was silently discarded. Surplus fields are
   now kept under generated column names (`column_4`, `column_5`, …) and are
