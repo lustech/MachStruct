@@ -61,7 +61,12 @@ let package = Package(
 
         .testTarget(
             name: "MachStructTests",
-            dependencies: ["MachStructCore", "CSimdjsonBridge"],
+            dependencies: [
+                "MachStructCore",
+                "CSimdjsonBridge",
+                // Lets YAMLParserTests build Yams nodes that compose() never emits (#21).
+                .product(name: "Yams", package: "Yams"),
+            ],
             path: "MachStructTests"
         ),
     ],

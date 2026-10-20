@@ -9,7 +9,7 @@ import Foundation
 /// other shape throws `CSVSerializerError.notTabular`.
 ///
 /// **Output format:**
-/// - Header row derived from `NodeIndex.tabularColumns`.
+/// - Header row: every key used by any row, in order of first appearance.
 /// - One data row per root-level child.
 /// - Fields are quoted with double-quotes when they contain the delimiter,
 ///   double-quote, newline, or carriage-return characters.
@@ -36,14 +36,15 @@ public struct CSVDocumentSerializer {
             throw CSVSerializerError.emptyDocument
         }
 
-        let columns = index.tabularColumns
+        let rowNodes = index.children(of: root.id)
+        let columns = allColumns(of: rowNodes)
         var lines: [String] = []
 
         // Header row
         lines.append(row(cells: columns, delimiter: delimiter))
 
         // Data rows
-        for rowNode in index.children(of: root.id) {
+        for rowNode in rowNodes {
             let kvs = index.children(of: rowNode.id)
             let cells = columns.map { col -> String in
                 guard let kv = kvs.first(where: { $0.key == col }),
@@ -59,6 +60,22 @@ public struct CSVDocumentSerializer {
     }
 
     // MARK: - Private helpers
+
+    /// Every key used by any row, in order of first appearance.
+    ///
+    /// `isTabular()` only samples the leading rows, so a later row can carry
+    /// keys the first row lacks — e.g. surplus fields of a ragged CSV (#28).
+    /// Taking columns from the first row alone would drop them on export.
+    private func allColumns(of rowNodes: [DocumentNode]) -> [String] {
+        var columns: [String] = []
+        var seen = Set<String>()
+        for rowNode in rowNodes {
+            for kv in index.children(of: rowNode.id) {
+                if let key = kv.key, seen.insert(key).inserted { columns.append(key) }
+            }
+        }
+        return columns
+    }
 
     private func row(cells: [String], delimiter: Character) -> String {
         cells.map { quote($0, delimiter: delimiter) }.joined(separator: String(delimiter))

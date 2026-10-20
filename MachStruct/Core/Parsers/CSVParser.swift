@@ -173,24 +173,29 @@ private extension CSVParser {
             metadata: .csv(rootMeta)
         ))
 
+        // Rows longer than the header keep their surplus fields under
+        // synthesised keys rather than dropping them (#28).
+        var keys = headers
+        if hasHeader, let widest = dataRows.map(\.count).max(), widest > colCount {
+            keys += synthesisedKeys(for: colCount ..< widest, avoiding: headers)
+        }
+
         for row in dataRows {
             let rowID   = NodeID.generate()
-            let usedCols = min(row.count, colCount)
 
             if hasHeader {
                 // Represent each data row as an object keyed by column name.
                 entries.append(IndexEntry(
                     id: rowID, nodeType: .object, depth: 1, parentID: rootID,
-                    childCount: UInt32(usedCols)
+                    childCount: UInt32(row.count)
                 ))
-                for colIdx in 0 ..< usedCols {
+                for (colIdx, cell) in row.enumerated() {
                     let kvID  = NodeID.generate()
                     let sID   = NodeID.generate()
-                    let cell  = row[colIdx]
                     let meta  = CSVMetadata(delimiter: delimiter, hasHeader: true, columnIndex: colIdx)
                     entries.append(IndexEntry(
                         id: kvID, nodeType: .keyValue, depth: 2, parentID: rowID,
-                        childCount: 1, key: headers[colIdx]
+                        childCount: 1, key: keys[colIdx]
                     ))
                     entries.append(IndexEntry(
                         id: sID, nodeType: .scalar, depth: 3, parentID: kvID,
@@ -218,6 +223,24 @@ private extension CSVParser {
         }
 
         return StructuralIndex(entries: entries)
+    }
+
+    /// Keys for columns past the end of the header: `column_N`, where N is the
+    /// 1-based column position, suffixed `_2`, `_3`, … if a header already
+    /// uses that name.
+    nonisolated func synthesisedKeys(for columns: Range<Int>, avoiding headers: [String]) -> [String] {
+        var taken = Set(headers)
+        return columns.map { colIdx in
+            let base = "column_\(colIdx + 1)"
+            var key = base
+            var n = 2
+            while taken.contains(key) {
+                key = "\(base)_\(n)"
+                n += 1
+            }
+            taken.insert(key)
+            return key
+        }
     }
 }
 
