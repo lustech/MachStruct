@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.3] — 2026-10-21
+
+A data-safety release. Upgrading is strongly recommended for anyone who opens
+CSV or YAML files: in earlier versions, saving one after an edit replaced its
+contents with JSON.
+
 ### Fixed
 - **Saving a CSV or YAML file replaced it with JSON.** After any edit, ⌘S
   wrote the document as JSON into the original `.csv` or `.yaml` file, without
@@ -269,7 +275,8 @@ Initial public release. Full feature set:
 - **Drag-and-drop reordering** of array elements in the tree.
 - **GitHub Actions release pipeline** — notarise, DMG, GitHub Release.
 
-[Unreleased]: https://github.com/lustech/MachStruct/compare/v2.1.2...HEAD
+[Unreleased]: https://github.com/lustech/MachStruct/compare/v2.1.3...HEAD
+[2.1.3]: https://github.com/lustech/MachStruct/compare/v2.1.2...v2.1.3
 [2.1.2]: https://github.com/lustech/MachStruct/compare/v2.1.1...v2.1.2
 [2.1.1]: https://github.com/lustech/MachStruct/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/lustech/MachStruct/compare/v2.0.0...v2.1.0
