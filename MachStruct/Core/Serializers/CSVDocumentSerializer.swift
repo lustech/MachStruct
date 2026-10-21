@@ -45,17 +45,52 @@ public struct CSVDocumentSerializer {
 
         // Data rows
         for rowNode in rowNodes {
-            let kvs = index.children(of: rowNode.id)
-            let cells = columns.map { col -> String in
-                guard let kv = kvs.first(where: { $0.key == col }),
-                      let scalar = index.children(of: kv.id).first
-                else { return "" }
-                return cellText(scalar)
-            }
-            lines.append(row(cells: cells, delimiter: delimiter))
+            lines.append(row(cells: cells(of: rowNode, columns: columns), delimiter: delimiter))
         }
 
         let text = lines.joined(separator: "\n") + "\n"
+        return Data(text.utf8)
+    }
+
+    /// Serialize a document that was opened from a CSV file, for saving it
+    /// back to that file (#39).
+    ///
+    /// Unlike `serialize(delimiter:)`, which exports any uniform array of
+    /// objects, this writes the file's own layout as recorded by `CSVParser`:
+    /// its delimiter, and no header row when the file had none. Rows need not
+    /// share a key set; a row missing a column gets an empty cell.
+    public func serializeInSourceLayout() throws -> Data {
+        guard let root = index.root else {
+            throw CSVSerializerError.emptyDocument
+        }
+        guard root.type == .array else {
+            throw CSVSerializerError.notTabular
+        }
+        var delimiter: Character = ","
+        if case .csv(let meta) = root.metadata {
+            delimiter = meta.delimiter
+        }
+
+        let rowNodes = index.children(of: root.id)
+        var lines: [String] = []
+
+        if rowNodes.allSatisfy({ $0.type == .array }) {
+            // No header: each row is a positional array of scalars.
+            for rowNode in rowNodes {
+                let cells = index.children(of: rowNode.id).map(cellText)
+                lines.append(row(cells: cells, delimiter: delimiter))
+            }
+        } else if rowNodes.allSatisfy({ $0.type == .object }) {
+            let columns = allColumns(of: rowNodes)
+            lines.append(row(cells: columns, delimiter: delimiter))
+            for rowNode in rowNodes {
+                lines.append(row(cells: cells(of: rowNode, columns: columns), delimiter: delimiter))
+            }
+        } else {
+            throw CSVSerializerError.notTabular
+        }
+
+        let text = lines.map { $0 + "\n" }.joined()
         return Data(text.utf8)
     }
 
@@ -75,6 +110,17 @@ public struct CSVDocumentSerializer {
             }
         }
         return columns
+    }
+
+    /// Cell text of an object row for each column, empty where the row lacks it.
+    private func cells(of rowNode: DocumentNode, columns: [String]) -> [String] {
+        let kvs = index.children(of: rowNode.id)
+        return columns.map { col -> String in
+            guard let kv = kvs.first(where: { $0.key == col }),
+                  let scalar = index.children(of: kv.id).first
+            else { return "" }
+            return cellText(scalar)
+        }
     }
 
     private func row(cells: [String], delimiter: Character) -> String {

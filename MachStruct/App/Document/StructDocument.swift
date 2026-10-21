@@ -11,6 +11,10 @@ import MachStructCore
 struct DocumentSnapshot: Sendable {
     let index: NodeIndex
     let mappedFile: MappedFile?
+    /// True for large files whose `index` holds only the nodes materialised so
+    /// far. JSON can still be saved (unmaterialised regions are copied from
+    /// `mappedFile`); other formats cannot.
+    let isPartiallyLoaded: Bool
 }
 
 // MARK: - StructDocument
@@ -38,6 +42,16 @@ final class StructDocument: ReferenceFileDocument {
             UTType(filenameExtension: "yaml") ?? .data,
             UTType(filenameExtension: "yml")  ?? .data,
         ]
+    }
+
+    /// Formats `fileWrapper` can write. XML has no serializer, so it is left
+    /// out and an XML document cannot be saved in place (#39).
+    static var writableContentTypes: [UTType] {
+        readableContentTypes.filter { $0 != .xml && $0 != .data }
+    }
+
+    private static let yamlTypes: [UTType] = ["yaml", "yml"].compactMap {
+        UTType(filenameExtension: $0)
     }
 
     // MARK: - Published state
@@ -115,14 +129,32 @@ final class StructDocument: ReferenceFileDocument {
         guard let idx = nodeIndex else {
             throw StructDocumentError.noContent
         }
-        return DocumentSnapshot(index: idx, mappedFile: mappedFile)
+        return DocumentSnapshot(index: idx, mappedFile: mappedFile,
+                                isPartiallyLoaded: structuralIndex != nil)
     }
 
     func fileWrapper(snapshot: DocumentSnapshot,
                      configuration: WriteConfiguration) throws -> FileWrapper {
-        let serializer = JSONDocumentSerializer(index: snapshot.index,
-                                                mappedFile: snapshot.mappedFile)
-        let data = try serializer.serialize(pretty: true)
+        // Write the file back in its own format. This used to emit JSON
+        // whatever the type, so saving a CSV or YAML file replaced it with
+        // JSON (#39).
+        let type = configuration.contentType
+        let data: Data
+        if type.conforms(to: .json) {
+            data = try JSONDocumentSerializer(index: snapshot.index,
+                                              mappedFile: snapshot.mappedFile)
+                .serialize(pretty: true)
+        } else if snapshot.isPartiallyLoaded {
+            // The CSV and YAML serializers would write only the rows that had
+            // been expanded.
+            throw StructDocumentError.largeFileSaveUnsupported
+        } else if type.conforms(to: .commaSeparatedText) {
+            data = try CSVDocumentSerializer(index: snapshot.index).serializeInSourceLayout()
+        } else if Self.yamlTypes.contains(where: { type.conforms(to: $0) }) {
+            data = try YAMLDocumentSerializer(index: snapshot.index).serialize()
+        } else {
+            throw StructDocumentError.unsupportedSaveFormat
+        }
         return FileWrapper(regularFileWithContents: data)
     }
 
@@ -546,11 +578,17 @@ final class StructDocument: ReferenceFileDocument {
 enum StructDocumentError: LocalizedError {
     case noFileContent
     case noContent
+    case unsupportedSaveFormat
+    case largeFileSaveUnsupported
 
     var errorDescription: String? {
         switch self {
         case .noFileContent: return "The file could not be read."
         case .noContent:     return "The document has no content to save."
+        case .unsupportedSaveFormat:
+            return "MachStruct can't save documents in this format."
+        case .largeFileSaveUnsupported:
+            return "MachStruct can't save edits to CSV or YAML files of 5 MB or more."
         }
     }
 }
