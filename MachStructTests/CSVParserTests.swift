@@ -276,6 +276,51 @@ final class CSVParserTests: XCTestCase {
         XCTAssertEqual(nameCell.value, .scalar(.string("Alice")))
     }
 
+    // MARK: - Ragged rows (#28)
+
+    /// Keys of each row object, in order.
+    private func rowKeys(_ index: StructuralIndex) -> [[String]] {
+        let rows = index.entries.filter { $0.nodeType == .object && $0.depth == 1 }
+        return rows.map { row in
+            index.entries.filter { $0.parentID == row.id }.compactMap { $0.key }
+        }
+    }
+
+    func testSurplusFieldsGetSynthesisedKeys() async throws {
+        let index = try await buildIndex(csv: "a,b,c\n1,2\n3,4,5,6\n7,8,9\n")
+        XCTAssertEqual(rowKeys(index), [
+            ["a", "b"],
+            ["a", "b", "c", "column_4"],
+            ["a", "b", "c"],
+        ])
+        let row2 = index.entries.filter { $0.nodeType == .object && $0.depth == 1 }[1]
+        XCTAssertEqual(row2.childCount, 4)
+        let surplusKV = try XCTUnwrap(index.entries.first { $0.key == "column_4" })
+        let surplusCell = try XCTUnwrap(index.entries.first { $0.parentID == surplusKV.id })
+        XCTAssertEqual(surplusCell.parsedValue, .integer(6))
+        XCTAssertEqual(csvMeta(surplusCell)?.columnIndex, 3)
+    }
+
+    func testSynthesisedKeysAvoidExistingHeaders() async throws {
+        let index = try await buildIndex(csv: "a,column_3\n1,2,3,4\n5,6\n")
+        XCTAssertEqual(rowKeys(index)[0], ["a", "column_3", "column_3_2", "column_4"])
+    }
+
+    func testSurplusFieldsSurviveCSVExport() async throws {
+        // The ragged row sits past the 10-row `isTabular` sample, so the
+        // document still qualifies for CSV export.
+        let body = (1...12).map { "\($0),x" }.joined(separator: "\n")
+        let file = try makeFile(csv: "id,name\n" + body + "\n13,y,extra\n")
+        let nodeIndex = try await CSVParser().buildIndex(from: file).buildNodeIndex()
+        XCTAssertTrue(nodeIndex.isTabular())
+
+        let out = String(decoding: try CSVDocumentSerializer(index: nodeIndex).serialize(), as: UTF8.self)
+        let lines = out.split(separator: "\n").map(String.init)
+        XCTAssertEqual(lines.first, "id,name,column_3")
+        XCTAssertEqual(lines[1], "1,x,")
+        XCTAssertEqual(lines.last, "13,y,extra")
+    }
+
     // MARK: - parseValue
 
     func testParseValueScalar() throws {

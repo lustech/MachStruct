@@ -1,5 +1,6 @@
 import XCTest
 @testable import MachStructCore
+import Yams
 
 final class YAMLParserTests: XCTestCase {
 
@@ -218,6 +219,33 @@ final class YAMLParserTests: XCTestCase {
         let childValue = nodeIndex.children(of: childKV.id).first!
         XCTAssertEqual(baseValue.type, .object)
         XCTAssertEqual(childValue.type, .object)
+    }
+
+    // MARK: - Nodes compose() does not normally emit (#21)
+
+    func testAliasNodeIsIndexedNotDropped() {
+        // compose() resolves aliases, so build the node by hand.
+        let root = Yams.Node.mapping(.init([
+            (Yams.Node("child"), Yams.Node.alias(.init(Anchor(rawValue: "base")))),
+        ]))
+        let entries = YAMLParser().indexEntries(for: root)
+
+        XCTAssertEqual(entries.count, 3)   // object + keyValue + alias placeholder
+        guard entries.count == 3 else { return }
+        XCTAssertEqual(entries[0].childCount, 1)
+        let alias = entries[2]
+        XCTAssertEqual(alias.nodeType, .scalar)
+        XCTAssertEqual(alias.parentID, entries[1].id)
+        XCTAssertEqual(alias.parsedValue, .string("*base"))
+        XCTAssertEqual(yamlMeta(alias)?.alias, "base")
+    }
+
+    func testNonScalarMappingKeyIsKept() async throws {
+        let index = try await buildIndex(yaml: "? [a, b]\n: 1\nplain: 2\n")
+        let kvs = index.entries.filter { $0.nodeType == .keyValue }
+        XCTAssertEqual(index.entries[0].childCount, 2)
+        XCTAssertEqual(kvs.count, 2)
+        XCTAssertEqual(kvs.map(\.key), ["[a, b]", "plain"])
     }
 
     // MARK: - Special YAML booleans

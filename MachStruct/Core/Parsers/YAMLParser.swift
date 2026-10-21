@@ -17,6 +17,8 @@ import Yams
 ///   Anchor names are captured eagerly in `YAMLMetadata.anchor`.
 ///   Aliases are resolved by Yams before we walk the tree; the resolved node
 ///   receives a fresh `NodeID` but no alias marker (Phase 4 can add tracking).
+///   An unresolved alias, should one ever reach the walker, is indexed as a
+///   `*anchor` placeholder scalar rather than dropped.
 ///
 /// **Phase 2** — `parseValue(entry:from:)`:
 ///   All scalars are parsed eagerly during Phase 1 via `parsedValue`.
@@ -51,8 +53,15 @@ public actor YAMLParser: StructParser {
             return StructuralIndex(entries: entries)
         }
 
-        walkNode(root, parentID: nil, depth: 0, key: nil, into: &entries)
+        entries.append(contentsOf: indexEntries(for: root))
         return StructuralIndex(entries: entries)
+    }
+
+    /// Flatten a composed Yams tree into `IndexEntry` values in pre-order.
+    nonisolated func indexEntries(for root: Yams.Node) -> [IndexEntry] {
+        var entries: [IndexEntry] = []
+        walkNode(root, parentID: nil, depth: 0, key: nil, into: &entries)
+        return entries
     }
 
     // MARK: - Progressive streaming
@@ -155,7 +164,6 @@ private extension YAMLParser {
                 metadata: .yaml(meta)
             ))
             for (keyNode, valueNode) in mapping {
-                guard case .scalar(let ks) = keyNode else { continue }
                 let kvID = NodeID.generate()
                 entries.append(IndexEntry(
                     id: kvID,
@@ -163,7 +171,7 @@ private extension YAMLParser {
                     depth: depth + 1,
                     parentID: nodeID,
                     childCount: 1,
-                    key: ks.string
+                    key: keyText(keyNode)
                 ))
                 walkNode(valueNode, parentID: kvID, depth: depth + 2, key: nil, into: &entries)
             }
@@ -205,8 +213,41 @@ private extension YAMLParser {
                 metadata: .yaml(meta)
             ))
 
-        @unknown default:
-            break
+        // MARK: Alias → .scalar placeholder
+        //
+        // compose() resolves aliases before we see the tree, so this is not
+        // reached today. If a Yams change ever lets one through, show it as
+        // `*anchor` rather than silently dropping the node (#21).
+
+        case .alias(let alias):
+            let name = alias.anchor.rawValue
+            entries.append(IndexEntry(
+                id: NodeID.generate(),
+                nodeType: .scalar,
+                depth: depth,
+                parentID: parentID,
+                childCount: 0,
+                key: key,
+                parsedValue: .string("*\(name)"),
+                metadata: .yaml(YAMLMetadata(alias: name, scalarStyle: .plain))
+            ))
+        }
+    }
+
+    /// Display text for a mapping key. Scalar keys use their string; complex
+    /// keys (`? [a, b]`) are rendered as flow YAML so the pair is kept rather
+    /// than skipped.
+    nonisolated func keyText(_ keyNode: Yams.Node) -> String {
+        switch keyNode {
+        case .scalar(let scalar):
+            return scalar.string
+        case .sequence(let sequence):
+            return "[" + sequence.map(keyText).joined(separator: ", ") + "]"
+        case .mapping(let mapping):
+            return "{" + mapping.map { "\(keyText($0.key)): \(keyText($0.value))" }
+                .joined(separator: ", ") + "}"
+        case .alias(let alias):
+            return "*\(alias.anchor.rawValue)"
         }
     }
 
