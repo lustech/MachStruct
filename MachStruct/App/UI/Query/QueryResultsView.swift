@@ -47,6 +47,7 @@ struct QueryResultsView: View {
         HStack(spacing: 8) {
             Image(systemName: "line.3.horizontal.decrease.circle")
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             Text(results.count == 1 ? "1 result" : "\(results.count) results")
                 .font(.callout.weight(.medium))
 
@@ -56,6 +57,7 @@ struct QueryResultsView: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .fixedSize()
+            .accessibilityLabel("Show results as")
 
             Spacer()
 

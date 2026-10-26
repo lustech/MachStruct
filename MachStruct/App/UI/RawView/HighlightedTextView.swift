@@ -32,6 +32,7 @@ struct HighlightedTextView: NSViewRepresentable {
         }
 
         textView.isEditable                     = false
+        textView.setAccessibilityLabel("Raw text")
         textView.isSelectable                   = true
         textView.drawsBackground                = true
         textView.backgroundColor                = .textBackgroundColor

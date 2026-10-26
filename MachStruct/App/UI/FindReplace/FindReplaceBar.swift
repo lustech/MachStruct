@@ -28,10 +28,12 @@ struct FindReplaceBar: View {
         VStack(spacing: 4) {
             HStack(spacing: 8) {
                 Image(systemName: "text.magnifyingglass").foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
 
                 TextField("Find", text: $find)
                     .textFieldStyle(.roundedBorder)
                     .focused($focused)
+                    .accessibilityLabel("Find")
 
                 Text(matchLabel)
                     .font(.caption.monospacedDigit())
@@ -48,9 +50,11 @@ struct FindReplaceBar: View {
 
             HStack(spacing: 8) {
                 Image(systemName: "arrow.2.squarepath").foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
 
                 TextField("Replace", text: $replace)
                     .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("Replace with")
 
                 Button("Replace All", action: onReplaceAll)
                     .disabled(find.isEmpty || (matchCount ?? 0) == 0)
@@ -73,10 +77,12 @@ struct FindReplaceBar: View {
             Toggle(isOn: $caseSensitive) { Text("Aa") }
                 .toggleStyle(.button)
                 .help("Case sensitive")
+                .accessibilityLabel("Case sensitive")
 
             Toggle(isOn: $useRegex) { Text(".*") }
                 .toggleStyle(.button)
                 .help("Regular expression")
+                .accessibilityLabel("Regular expression")
 
             Picker("", selection: $scope) {
                 Text("Keys").tag(SearchEngine.FindOptions.Scope.keys)
@@ -86,6 +92,7 @@ struct FindReplaceBar: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .fixedSize()
+            .accessibilityLabel("Search in")
         }
     }
 }

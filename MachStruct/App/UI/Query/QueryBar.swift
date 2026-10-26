@@ -38,6 +38,7 @@ struct QueryBar: View {
             HStack(spacing: 8) {
                 Image(systemName: "terminal")
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
 
                 TextField("jq filter — e.g. .users[] | select(.age > 30) | .name",
                           text: $query)
@@ -45,6 +46,7 @@ struct QueryBar: View {
                     .font(.system(.body, design: .monospaced))
                     .focused($focused)
                     .onSubmit(onRun)
+                    .accessibilityLabel("jq filter")
 
                 historyMenu
 
@@ -68,6 +70,7 @@ struct QueryBar: View {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
+                        .accessibilityLabel("Error")
                     Text(errorMessage)
                         .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
@@ -110,6 +113,7 @@ struct QueryBar: View {
         .menuStyle(.borderlessButton)
         .fixedSize()
         .help("Saved & recent queries")
+        .accessibilityLabel("Saved and recent queries")
         .popover(isPresented: $showSave) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Save query as:").font(.callout)
