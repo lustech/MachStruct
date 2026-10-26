@@ -963,10 +963,13 @@ struct ContentView: View {
         let pathIDs: [NodeID]
         if let si = document.structuralIndex {
             pathIDs = si.path(to: nodeID)
-            // Materialise each ancestor level so the target node appears in the tree.
+            // Materialise each ancestor level so the target node appears in the
+            // tree. Eviction must count the path as expanded already, or in a
+            // large file it drops the rows just built before they are shown.
+            let postExpand = expandedIDs.union(pathIDs)
             for ancestorID in pathIDs.dropLast() {
                 await document.materializeChildrenIfNeeded(of: ancestorID,
-                                                            expandedIDs: expandedIDs,
+                                                            expandedIDs: postExpand,
                                                             selectedID: selectedNodeID)
             }
         } else {

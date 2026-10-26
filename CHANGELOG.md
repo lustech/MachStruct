@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Containers with more than 1,000 children are shown in ranges.** Their
+  children are grouped into rows such as `[0 … 999]` and `[1000 … 1999]`,
+  which open to show the items; ranges nest for very large containers. A CSV
+  file with 400,000 rows used to freeze the window for 20–30 seconds on
+  opening and for minutes on searching, because the tree listed every row.
+  It now opens in a few seconds, and searching opens the range holding the
+  match.
 - **Files that fail to open now say what is wrong and where.** Instead of
   "JSON parse failed (simdjson error -1)" or "Yams.YamlError error 1", the
   message gives the line, the column and the problem — for example
@@ -20,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file, which drops comments.
 
 ### Fixed
+- **Jumping to a search match in a large file showed the row without its
+  values.** In files with more than 50,000 nodes, the row's keys and values
+  were loaded and then dropped straight away, leaving only the matching key
+  with "…" as its value.
 - **Find & Replace and queries now cover the whole of a large file.** In files
   of 5 MB or more, they only saw rows that had been expanded, so the match
   count was too low, Replace All left the rest unchanged, and jq queries
