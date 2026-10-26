@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] — 2026-10-26
+
+Large files and YAML. Files of 5 MB or more are now handled in full: Find &
+Replace, queries, saving and exporting all cover the whole file, and edits
+are no longer lost while browsing. Very large files stay responsive; a
+400,000-row CSV opens in seconds instead of freezing the window. YAML files
+keep their comments when saved, and files with several `---` documents open.
+
 ### Added
 - **YAML files with several documents open.** A file whose documents are
   separated by `---`, such as a Kubernetes manifest, used to fail with
@@ -335,7 +343,8 @@ Initial public release. Full feature set:
 - **Drag-and-drop reordering** of array elements in the tree.
 - **GitHub Actions release pipeline** — notarise, DMG, GitHub Release.
 
-[Unreleased]: https://github.com/lustech/MachStruct/compare/v2.1.3...HEAD
+[Unreleased]: https://github.com/lustech/MachStruct/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/lustech/MachStruct/compare/v2.1.3...v2.2.0
 [2.1.3]: https://github.com/lustech/MachStruct/compare/v2.1.2...v2.1.3
 [2.1.2]: https://github.com/lustech/MachStruct/compare/v2.1.1...v2.1.2
 [2.1.1]: https://github.com/lustech/MachStruct/compare/v2.1.0...v2.1.1
