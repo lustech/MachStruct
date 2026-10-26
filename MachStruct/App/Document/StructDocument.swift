@@ -355,6 +355,10 @@ final class StructDocument: ReferenceFileDocument {
                     await load(data: result.fixed, attemptAutoFix: false)
                     if loadError == nil {
                         autoFixApplied = result.fixesApplied
+                    } else {
+                        // Report the file's own error: the retry's position
+                        // refers to the fixer's output, not to the file.
+                        loadError = error
                     }
                     return
                 }

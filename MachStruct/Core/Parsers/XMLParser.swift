@@ -33,7 +33,7 @@ public actor XMLParser: StructParser {
         parser.shouldReportNamespacePrefixes = false
 
         guard parser.parse() else {
-            throw builder.parseError ?? XMLParserError.parseFailed
+            throw XMLParser.parseError(from: builder.parseError, in: data)
         }
         return StructuralIndex(entries: builder.indexEntries())
     }
@@ -330,6 +330,26 @@ private final class ValidationDelegate: NSObject, Foundation.XMLParserDelegate {
 }
 
 // MARK: - Errors
+
+extension XMLParser {
+
+    /// libxml2's error, restated as a `ParseError`. Its message is already in
+    /// XML terms ("Opening and ending tag mismatch: b line 2 and a"); the
+    /// domain and code ("NSXMLParserErrorDomain error 76") are dropped.
+    static func parseError(from error: Error?, in data: Data) -> ParseError {
+        let info = (error as NSError?)?.userInfo ?? [:]
+        let problem = (info["NSXMLParserErrorMessage"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? "The file isn't well-formed XML"
+        guard let line = info["NSXMLParserErrorLineNumber"] as? Int,
+              let column = info["NSXMLParserErrorColumn"] as? Int, line > 0 else {
+            return ParseError(problem: problem)
+        }
+        return data.withUnsafeBytes {
+            ParseError(problem: problem, line: line, column: max(column, 1), in: $0)
+        }
+    }
+}
 
 public enum XMLParserError: Error, Sendable {
     case parseFailed

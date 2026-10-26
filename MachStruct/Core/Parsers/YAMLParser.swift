@@ -47,8 +47,14 @@ public actor YAMLParser: StructParser {
         var entries: [IndexEntry] = []
         entries.reserveCapacity(256)
 
-        // compose() returns the first document root, or nil for whitespace-only content.
-        guard let root = try Yams.compose(yaml: yamlString) else {
+        // compose() returns the document root, or nil for whitespace-only content.
+        let composed: Yams.Node?
+        do {
+            composed = try Yams.compose(yaml: yamlString)
+        } catch let error as YamlError {
+            throw data.withUnsafeBytes { YAMLParser.parseError(from: error, in: $0) }
+        }
+        guard let root = composed else {
             entries.append(IndexEntry(id: .generate(), nodeType: .object, depth: 0, parentID: nil))
             return StructuralIndex(entries: entries)
         }
@@ -131,6 +137,39 @@ public actor YAMLParser: StructParser {
             return []
         } catch {
             return [ValidationIssue(severity: .error, message: error.localizedDescription)]
+        }
+    }
+}
+
+// MARK: - Parse errors
+
+extension YAMLParser {
+
+    /// Yams' error, restated as a `ParseError`: libyaml's problem and context
+    /// ("did not find expected ',' or ']'" while parsing a flow sequence) at
+    /// the problem's position, without "Yams.YamlError error 1".
+    static func parseError(from error: YamlError, in source: UnsafeRawBufferPointer) -> ParseError {
+        switch error {
+        case .scanner(let context, let problem, let mark, _),
+             .parser(let context, let problem, let mark, _),
+             .composer(let context, let problem, let mark, _):
+            // libyaml's context is either a clause ("while parsing a flow
+            // sequence") or the first half of the sentence ("expected a
+            // single document in the stream" … "but found another document").
+            let text: String
+            switch context?.text {
+            case nil: text = problem
+            case let c? where c.hasPrefix("while"): text = "\(problem) \(c)"
+            case let c?: text = "\(c) \(problem)"
+            }
+            return ParseError(problem: text, line: mark.line, column: mark.column, in: source)
+        case .reader(let problem, let offset, _, _):
+            guard let offset else { return ParseError(problem: problem) }
+            return ParseError(problem: problem, byteOffset: offset, in: source)
+        case .dataCouldNotBeDecoded:
+            return ParseError(problem: "The file isn't valid UTF-8 text")
+        default:
+            return ParseError(problem: "The file isn't valid YAML")
         }
     }
 }
