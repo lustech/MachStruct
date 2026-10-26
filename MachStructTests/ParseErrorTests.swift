@@ -87,9 +87,8 @@ final class ParseErrorTests: XCTestCase {
         let flow = try await parseError("a: [1, 2\nb: 3\n", ext: "yaml", YAMLParser())
         XCTAssertEqual(flow.localizedDescription,
                        "Line 2, column 2: Did not find expected ',' or ']' while parsing a flow sequence.")
-        let documents = try await parseError("a: 1\n---\nb: 2\n", ext: "yaml", YAMLParser())
-        XCTAssertEqual(documents.localizedDescription,
-                       "Line 2, column 1: Expected a single document in the stream but found another document.")
+        let alias = try await parseError("a: 1\nb: *missing\n", ext: "yaml", YAMLParser())
+        XCTAssertEqual(alias.localizedDescription, "Line 2, column 4: Found undefined alias.")
     }
 
     // MARK: - XML

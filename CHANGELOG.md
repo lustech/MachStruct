@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **YAML files with several documents open.** A file whose documents are
+  separated by `---`, such as a Kubernetes manifest, used to fail with
+  "Expected a single document in the stream". Each document now appears as
+  an item of the root (`0`, `1`, …), and saving writes them back as
+  separate documents; value edits keep comments as in single-document
+  files. Exporting to JSON gives an array of the documents.
+
 ### Changed
 - **Containers with more than 1,000 children are shown in ranges.** Their
   children are grouped into rows such as `[0 … 999]` and `[1000 … 1999]`,

@@ -64,17 +64,22 @@ public struct YAMLMetadata: Sendable, Equatable {
     public var alias: String?       // *alias
     public var tag: String?         // !tag
     public var scalarStyle: YAMLScalarStyle
+    /// Set on the root of a file holding several `---` documents: the root is
+    /// a sequence of the documents, not a sequence in the file.
+    public var isDocumentStream: Bool
 
     public init(
         anchor: String? = nil,
         alias: String? = nil,
         tag: String? = nil,
-        scalarStyle: YAMLScalarStyle = .plain
+        scalarStyle: YAMLScalarStyle = .plain,
+        isDocumentStream: Bool = false
     ) {
         self.anchor = anchor
         self.alias = alias
         self.tag = tag
         self.scalarStyle = scalarStyle
+        self.isDocumentStream = isDocumentStream
     }
 }
 

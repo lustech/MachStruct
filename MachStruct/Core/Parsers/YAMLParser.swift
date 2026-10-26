@@ -6,8 +6,9 @@ import Yams
 /// Event-driven YAML parser built on Yams (libyaml wrapper).
 ///
 /// **Phase 1** — `buildIndex(from:)`:
-///   Calls `Yams.compose()` to get the raw YAML AST, then recursively walks it
-///   to produce a flat `IndexEntry` array in document order.
+///   Calls `Yams.compose_all()` to get the raw YAML AST, then recursively walks
+///   it to produce a flat `IndexEntry` array in document order. A file with
+///   several `---` documents gets a root sequence of the documents.
 ///
 ///   Node mapping:
 ///   - YAML mapping  → `.object`   (key-value pairs become `.keyValue` children)
@@ -47,26 +48,55 @@ public actor YAMLParser: StructParser {
         var entries: [IndexEntry] = []
         entries.reserveCapacity(256)
 
-        // compose() returns the document root, or nil for whitespace-only content.
-        let composed: Yams.Node?
+        // Whitespace-only content holds no documents.
+        let documents: [Yams.Node]
         do {
-            composed = try Yams.compose(yaml: yamlString)
+            documents = try Self.documents(in: yamlString)
         } catch let error as YamlError {
             throw data.withUnsafeBytes { YAMLParser.parseError(from: error, in: $0) }
         }
-        guard let root = composed else {
+        switch documents.count {
+        case 0:
             entries.append(IndexEntry(id: .generate(), nodeType: .object, depth: 0, parentID: nil))
-            return StructuralIndex(entries: entries)
+        case 1:
+            entries.append(contentsOf: indexEntries(for: documents[0]))
+        default:
+            entries.append(contentsOf: indexEntries(forDocuments: documents))
         }
-
-        entries.append(contentsOf: indexEntries(for: root))
         return StructuralIndex(entries: entries)
+    }
+
+    /// Every document in `yaml`, in order, including an error in a later one.
+    nonisolated static func documents(in yaml: String) throws -> [Yams.Node] {
+        var stream = try Yams.compose_all(yaml: yaml)
+        var documents: [Yams.Node] = []
+        while let document = stream.next() { documents.append(document) }
+        if let error = stream.error { throw error }
+        return documents
     }
 
     /// Flatten a composed Yams tree into `IndexEntry` values in pre-order.
     nonisolated func indexEntries(for root: Yams.Node) -> [IndexEntry] {
         var entries: [IndexEntry] = []
         walkNode(root, parentID: nil, depth: 0, key: nil, into: &entries)
+        return entries
+    }
+
+    /// Several documents, indexed as the items of a root sequence marked
+    /// `isDocumentStream` so they save back as separate documents.
+    nonisolated func indexEntries(forDocuments documents: [Yams.Node]) -> [IndexEntry] {
+        let rootID = NodeID.generate()
+        var entries = [IndexEntry(
+            id: rootID,
+            nodeType: .array,
+            depth: 0,
+            parentID: nil,
+            childCount: UInt32(documents.count),
+            metadata: .yaml(YAMLMetadata(isDocumentStream: true))
+        )]
+        for (i, document) in documents.enumerated() {
+            walkNode(document, parentID: rootID, depth: 1, key: String(i), into: &entries)
+        }
         return entries
     }
 
@@ -133,7 +163,7 @@ public actor YAMLParser: StructParser {
             return [ValidationIssue(severity: .error, message: "File is not valid UTF-8")]
         }
         do {
-            _ = try Yams.compose(yaml: yamlString)
+            _ = try Self.documents(in: yamlString)
             return []
         } catch {
             return [ValidationIssue(severity: .error, message: error.localizedDescription)]
