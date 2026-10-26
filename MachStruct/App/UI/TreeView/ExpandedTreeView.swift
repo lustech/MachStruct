@@ -254,8 +254,7 @@ struct ExpandedTreeView: View {
     private static func rootTreeNodes(for nodeIndex: NodeIndex) -> [TreeNode] {
         guard let root = nodeIndex.root else { return [] }
         if root.type == .object || root.type == .array {
-            return nodeIndex.children(of: nodeIndex.rootID)
-                .map { TreeNode(documentNode: $0, nodeIndex: nodeIndex) }
+            return TreeNode.rows(for: root, in: nodeIndex)
         }
         return [TreeNode(documentNode: root, nodeIndex: nodeIndex)]
     }

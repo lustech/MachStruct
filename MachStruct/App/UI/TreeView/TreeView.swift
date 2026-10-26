@@ -37,8 +37,7 @@ struct TreeView: View {
         guard let root = nodeIndex.root else { return [] }
 
         if root.type == .object || root.type == .array {
-            return nodeIndex.children(of: nodeIndex.rootID)
-                .map { TreeNode(documentNode: $0, nodeIndex: nodeIndex) }
+            return TreeNode.rows(for: root, in: nodeIndex)
         }
 
         return [TreeNode(documentNode: root, nodeIndex: nodeIndex)]

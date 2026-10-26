@@ -154,24 +154,39 @@ public struct NodeIndex: Sendable {
             default:
                 return nil
             }
-            guard let parent = node(for: current),
-                  let childID = parent.childIDs.first(where: { node(for: $0)?.key == segment })
-            else { return nil }
+            guard var parent = node(for: current) else { return nil }
+            // A key's children are those of the value it holds.
+            if parent.type == .keyValue {
+                guard let value = children(of: parent.id).first else { return nil }
+                parent = value
+            }
+            let childID: NodeID?
+            if parent.type == .array {
+                guard let i = Int(segment), parent.childIDs.indices.contains(i) else { return nil }
+                childID = parent.childIDs[i]
+            } else {
+                childID = parent.childIDs.first(where: { node(for: $0)?.key == segment })
+            }
+            guard let childID else { return nil }
             current = childID
         }
         return current
     }
 
     /// Human-readable path string, e.g. `"root.items[42].name"`.
+    ///
+    /// An array step is the item's position among its siblings, not its
+    /// stored key: that key is the index at parse time, which deletes and
+    /// moves leave behind, and CSV rows have none.
     public func pathString(to id: NodeID) -> String {
         let ids = path(to: id)
         var result = "root"
         for nodeID in ids.dropFirst() {
-            guard let n = node(for: nodeID), let key = n.key else { continue }
-            let parentType = n.parentID.flatMap { node(for: $0) }?.type
-            if parentType == .array {
-                result += "[\(key)]"
-            } else {
+            guard let n = node(for: nodeID) else { continue }
+            if let parent = n.parentID.flatMap({ node(for: $0) }), parent.type == .array,
+               let position = parent.childIDs.firstIndex(of: nodeID) {
+                result += "[\(position)]"
+            } else if let key = n.key {
                 result += ".\(key)"
             }
         }

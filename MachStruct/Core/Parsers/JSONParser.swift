@@ -503,8 +503,8 @@ extension JSONParser {
         idMap.reserveCapacity(raw.count)
 
         // Position of each array element among its siblings. The Foundation
-        // walk used to store these as the element's key ("0", "1", …) and
-        // `NodeIndex.pathString` still renders array steps from it.
+        // walk used to store these as the element's key ("0", "1", …), and
+        // the eager path still does; paths use the element's position.
         var arrayOrdinal = [Int: Int]()
 
         for (i, ms) in raw.enumerated() {
