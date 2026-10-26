@@ -80,8 +80,8 @@ struct TableView: View {
                 // ── Data rows ───────────────────────────────────────────────
                 ScrollView(.vertical, showsIndicators: true) {
                     LazyVStack(spacing: 0) {
-                        ForEach(tableRows) { row in
-                            dataRowView(row)
+                        ForEach(Array(tableRows.enumerated()), id: \.element.id) { position, row in
+                            dataRowView(row, position: position)
                             Divider().opacity(0.35)
                         }
                     }
@@ -110,12 +110,15 @@ struct TableView: View {
                 Divider().opacity(0.4)
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Columns: \(columns.joined(separator: ", "))")
+        .accessibilityAddTraits(.isHeader)
     }
 
     // MARK: - Data row
 
     @ViewBuilder
-    private func dataRowView(_ row: TableRow) -> some View {
+    private func dataRowView(_ row: TableRow, position: Int) -> some View {
         let kvs = nodeIndex.children(of: row.id)
         let isSelected = selection == row.id
 
@@ -129,6 +132,15 @@ struct TableView: View {
         .background(isSelected ? Color.accentColor.opacity(0.18) : Color.clear)
         .contentShape(Rectangle())
         .onTapGesture { selection = row.id }
+        // One element per row that reads each cell with its column name;
+        // the cells alone would read as an unlabelled run of values.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Row \(position + 1)")
+        .accessibilityValue(columns.map { col in
+            "\(col): \(scalarValue(in: kvs, forKey: col).map(spokenText) ?? "empty")"
+        }.joined(separator: ", "))
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { selection = row.id }
     }
 
     // MARK: - Individual cell
@@ -153,6 +165,12 @@ struct TableView: View {
               let scalar = nodeIndex.children(of: kv.id).first,
               case .scalar(let sv) = scalar.value else { return nil }
         return sv
+    }
+
+    /// A cell as VoiceOver should read it: strings without their quotes.
+    private func spokenText(_ sv: ScalarValue) -> String {
+        if case .string(let s) = sv { return s }
+        return sv.displayText
     }
 
     /// Per-type text colors matching the palette used in `NodeRow`.

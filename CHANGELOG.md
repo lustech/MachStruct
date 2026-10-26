@@ -16,6 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   files. Exporting to JSON gives an array of the documents.
 
 ### Changed
+- **VoiceOver names every control.** The document tree is announced as
+  "Document tree" rather than "Sidebar"; the disclosure triangles as "Expand"
+  or "Collapse" rather than "Forward"; and range rows as "Items 0 to 999".
+  The Export, Bookmarks and Expand/Collapse toolbar menus have names instead
+  of their icons' symbol names. The Find, Replace and jq fields, and the
+  case-sensitive and regular-expression toggles, have labels instead of "Aa"
+  and ".*", and decorative icons are no longer read out. In table view,
+  each row is read as one item with its column names ("Row 1: id: 1,
+  name: Alice"), and the raw text view is labelled. (#30)
 - **Containers with more than 1,000 children are shown in ranges.** Their
   children are grouped into rows such as `[0 … 999]` and `[1000 … 1999]`,
   which open to show the items; ranges nest for very large containers. A CSV

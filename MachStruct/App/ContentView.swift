@@ -624,7 +624,14 @@ struct ContentView: View {
                     if isExporting {
                         ProgressView().scaleEffect(0.6)
                     } else {
-                        Label("Export", systemImage: "square.and.arrow.up")
+                        // The menu button takes its accessibility title from
+                        // the icon, so the icon carries the name.
+                        Label {
+                            Text("Export")
+                        } icon: {
+                            Image(systemName: "square.and.arrow.up")
+                                .accessibilityLabel("Export")
+                        }
                     }
                 }
                 .disabled(isExporting)
@@ -718,8 +725,12 @@ struct ContentView: View {
                         }
                     }
                 } label: {
-                    Label("Bookmarks",
-                          systemImage: bookmarks.isEmpty ? "bookmark" : "bookmark.fill")
+                    Label {
+                        Text("Bookmarks")
+                    } icon: {
+                        Image(systemName: bookmarks.isEmpty ? "bookmark" : "bookmark.fill")
+                            .accessibilityLabel("Bookmarks")
+                    }
                 }
                 .help("Bookmarks (⌘D to toggle)")
             }
@@ -734,7 +745,12 @@ struct ContentView: View {
                     Button("Expand All") { expandAll() }
                     Button("Collapse All") { collapseAll() }
                 } label: {
-                    Label("Expand / Collapse", systemImage: "arrow.up.and.line.horizontal.and.arrow.down")
+                    Label {
+                        Text("Expand / Collapse")
+                    } icon: {
+                        Image(systemName: "arrow.up.and.line.horizontal.and.arrow.down")
+                            .accessibilityLabel("Expand or Collapse All")
+                    }
                 }
                 .help("Expand or collapse all nodes")
             }

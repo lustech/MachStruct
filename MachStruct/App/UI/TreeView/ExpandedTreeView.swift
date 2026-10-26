@@ -128,6 +128,7 @@ struct ExpandedTreeView: View {
                 .onMove { handleDragMove(from: $0, to: $1) }
             }
             .listStyle(.sidebar)
+            .accessibilityLabel("Document tree")
             .onAppear { rebuildFlatRows() }
             .onChange(of: expandedIDs) { _, _ in rebuildFlatRows() }
             // Watch `generation` instead of `count` so that value edits
@@ -306,6 +307,7 @@ struct ExpandedTreeView: View {
             Text(verbatim: "[\(range.bounds.lowerBound) … \(range.bounds.upperBound - 1)]")
                 .font(.system(.body, design: .monospaced))
                 .foregroundStyle(.secondary)
+                .accessibilityLabel("Items \(range.bounds.lowerBound) to \(range.bounds.upperBound - 1)")
             Spacer()
         }
         .contentShape(Rectangle())
@@ -325,6 +327,7 @@ struct ExpandedTreeView: View {
         }
         .buttonStyle(.borderless)
         .foregroundStyle(.secondary)
+        .accessibilityLabel(isOpen ? "Collapse" : "Expand")
     }
 
     private func toggleRange(_ range: ChildRange) {
