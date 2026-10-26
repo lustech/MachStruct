@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Files that fail to open now say what is wrong and where.** Instead of
+  "JSON parse failed (simdjson error -1)" or "Yams.YamlError error 1", the
+  message gives the line, the column and the problem — for example
+  "Line 3, column 3: Badly formed object." — and shows the offending line
+  with a marker under the problem. Applies to JSON, YAML and XML. (#26)
 - **Saving a YAML file keeps its comments.** Value edits and key renames are
   now written into the original text in place, so comments, anchors and
   aliases, quoting and blank lines survive. Edits that add, remove or move

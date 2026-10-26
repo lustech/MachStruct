@@ -186,8 +186,12 @@ private extension JSONParser {
             throw JSONParserError.nestingTooDeep(limit: JSONParser.maxFoundationNestingDepth)
         }
         let raw = try file.data(offset: 0, length: UInt32(file.fileSize))
-        let root = try JSONSerialization.jsonObject(with: raw,
-                                                    options: [.allowFragments])
+        let root: Any
+        do {
+            root = try JSONSerialization.jsonObject(with: raw, options: [.allowFragments])
+        } catch let error as NSError {
+            throw JSONParser.parseError(from: error, in: buffer)
+        }
         var entries: [IndexEntry] = []
         entries.reserveCapacity(256)
         walkFoundation(root: root, entries: &entries)
@@ -274,6 +278,30 @@ private extension JSONParser {
                 }
             }
         }
+    }
+}
+
+// MARK: - Parse errors
+
+extension JSONParser {
+
+    /// Foundation's error, restated as a `ParseError`.
+    ///
+    /// The problem text comes from `NSDebugDescription` ("Badly formed object
+    /// around line 3, column 2."); its position is replaced by one computed
+    /// from the byte index, because Foundation counts columns from 0.
+    static func parseError(from error: NSError,
+                           in source: UnsafeRawBufferPointer) -> ParseError {
+        var problem = (error.userInfo[NSDebugDescriptionErrorKey] as? String)
+            ?? "The file isn't valid JSON"
+        if let position = problem.range(of: #"\s*around line \d+, column \d+\.?$"#,
+                                         options: .regularExpression) {
+            problem.removeSubrange(position)
+        }
+        guard let index = error.userInfo["NSJSONSerializationErrorIndex"] as? Int else {
+            return ParseError(problem: problem)
+        }
+        return ParseError(problem: problem, byteOffset: index, in: source)
     }
 }
 
@@ -564,7 +592,6 @@ private extension JSONParser {
 // MARK: - Errors
 
 public enum JSONParserError: Error, Sendable, LocalizedError {
-    case simdjsonParseFailed(code: Int64)
     case cannotSerializeContainer
     case noValueToSerialize
     case nestingTooDeep(limit: Int)
@@ -572,8 +599,6 @@ public enum JSONParserError: Error, Sendable, LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .simdjsonParseFailed(let code):
-            return "JSON parse failed (simdjson error \(code))."
         case .cannotSerializeContainer:
             return "Containers cannot be serialized as scalar values."
         case .noValueToSerialize:

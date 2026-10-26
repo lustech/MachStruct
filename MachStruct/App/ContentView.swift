@@ -1295,11 +1295,21 @@ struct ContentView: View {
     }
 
     private func errorView(_ error: Error) -> some View {
-        ContentUnavailableView(
-            "Failed to Open File",
-            systemImage: "exclamationmark.triangle",
-            description: Text(error.localizedDescription)
-        )
+        ContentUnavailableView {
+            Label("Failed to Open File", systemImage: "exclamationmark.triangle")
+        } description: {
+            Text(error.localizedDescription)
+        } actions: {
+            // The offending line with a caret under the problem (#26).
+            if let excerpt = (error as? ParseError)?.excerpt {
+                Text(verbatim: excerpt)
+                    .font(.system(.callout, design: .monospaced))
+                    .multilineTextAlignment(.leading)
+                    .textSelection(.enabled)
+                    .padding(10)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+            }
+        }
     }
 
     private var placeholderView: some View {
