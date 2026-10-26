@@ -152,7 +152,15 @@ final class StructDocument: ReferenceFileDocument {
             data = try CSVDocumentSerializer(index: Self.completeIndex(of: snapshot))
                 .serializeInSourceLayout()
         } else if Self.yamlTypes.contains(where: { type.conforms(to: $0) }) {
-            data = try YAMLDocumentSerializer(index: Self.completeIndex(of: snapshot)).serialize()
+            // Patch the original text where possible: regenerating it drops
+            // comments, anchors and quoting.
+            let index = Self.completeIndex(of: snapshot)
+            if let source = Self.sourceText(of: snapshot),
+               let patched = YAMLSourcePatcher.patch(source: source, edited: index) {
+                data = Data(patched.utf8)
+            } else {
+                data = try YAMLDocumentSerializer(index: index).serialize()
+            }
         } else {
             throw StructDocumentError.unsupportedSaveFormat
         }
@@ -172,6 +180,13 @@ final class StructDocument: ReferenceFileDocument {
         // The simdjson path leaves keys and values to be parsed on demand.
         if let file { parseAllEntries(in: &full, structuralIndex: si, file: file) }
         return full
+    }
+
+    /// The file as it was opened, as UTF-8 text.
+    private static func sourceText(of snapshot: DocumentSnapshot) -> String? {
+        guard let file = snapshot.mappedFile, file.fileSize > 0, file.fileSize <= UInt64(UInt32.max),
+              let data = try? file.data(offset: 0, length: UInt32(file.fileSize)) else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 
     private static func completeIndex(of snapshot: DocumentSnapshot) -> NodeIndex {

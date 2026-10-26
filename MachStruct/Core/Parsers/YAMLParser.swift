@@ -137,10 +137,10 @@ public actor YAMLParser: StructParser {
 
 // MARK: - Tree walker
 
-private extension YAMLParser {
+extension YAMLParser {
 
     /// Recursively walk one Yams `Node` and append `IndexEntry` values in pre-order.
-    nonisolated func walkNode(
+    private nonisolated func walkNode(
         _ node: Yams.Node,
         parentID: NodeID?,
         depth: UInt16,
