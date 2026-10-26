@@ -173,31 +173,42 @@ jobs:
           ZIP_PATH=$RUNNER_TEMP/MachStruct-notarize.zip
           ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
 
+          OUTPUT=$RUNNER_TEMP/notarytool-output.json
+          ERRORS=$RUNNER_TEMP/notarytool-errors.txt
+
+          # The JSON result goes to $OUTPUT; progress and errors stay in the
+          # log and are kept in $ERRORS. notarytool's own exit status is taken
+          # from PIPESTATUS, since tee's would hide it.
           xcrun notarytool submit "$ZIP_PATH" \
             --apple-id "$APPLE_ID" \
             --password "$NOTARIZATION_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
             --wait \
             --output-format json \
-            | tee $RUNNER_TEMP/notarytool-output.json
+            2>&1 >"$OUTPUT" | tee "$ERRORS"
+          SUBMIT_EXIT=${PIPESTATUS[0]}
+          cat "$OUTPUT"
+          echo
 
-          # Extract submission ID and status
-          SUBMISSION_ID=$(python3 -c "
-          import json
-          d = json.load(open('$RUNNER_TEMP/notarytool-output.json'))
-          print(d.get('id',''))
-          ")
-          STATUS=$(python3 -c "
-          import json
-          d = json.load(open('$RUNNER_TEMP/notarytool-output.json'))
-          print(d.get('status','unknown'))
-          ")
+          # Without a JSON result (e.g. an expired agreement, bad credentials)
+          # there is nothing to parse: report notarytool's own message (#20).
+          if ! PARSED=$(python3 -c '
+          import json, sys
+          d = json.load(open(sys.argv[1]))
+          print(d.get("id", ""), d.get("status", "unknown"))
+          ' "$OUTPUT" 2>/dev/null); then
+            MESSAGE=$(grep -v '^[[:space:]]*$' "$ERRORS" | head -n 5 | awk 'NR > 1 { printf "%%0A" } { printf "%s", $0 }')
+            echo "::error title=Notarization failed::notarytool exited with status $SUBMIT_EXIT and no result.%0A${MESSAGE:-It printed nothing.}"
+            exit 1
+          fi
+          read -r SUBMISSION_ID STATUS <<< "$PARSED"
 
           echo "Notarization status: $STATUS"
 
           # On failure, fetch the detailed log before exiting
-          if [ "$STATUS" != "Accepted" ]; then
-            echo "::error::Notarization failed with status: $STATUS"
+          if [ "$STATUS" != "Accepted" ] || [ "$SUBMIT_EXIT" -ne 0 ]; then
+            echo "::error title=Notarization failed::Status: $STATUS (notarytool exited with status $SUBMIT_EXIT)"
+            [ -n "$SUBMISSION_ID" ] || exit 1
             echo "=== Fetching notarization log ==="
             xcrun notarytool log "$SUBMISSION_ID" \
               --apple-id "$APPLE_ID" \
