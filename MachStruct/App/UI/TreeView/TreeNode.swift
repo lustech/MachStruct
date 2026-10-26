@@ -16,16 +16,33 @@ struct TreeNode: Identifiable, Sendable {
     // Passed by value but COW means no actual copy until a mutation happens.
     let nodeIndex: NodeIndex
 
-    init(documentNode: DocumentNode, nodeIndex: NodeIndex) {
+    /// Position among the parent's children when the parent is an array. The
+    /// node's stored key is its index at parse time, which deletes and moves
+    /// leave behind, and CSV rows have none.
+    let arrayIndex: Int?
+
+    init(documentNode: DocumentNode, nodeIndex: NodeIndex, arrayIndex: Int? = nil) {
         self.id = documentNode.id
         self.documentNode = documentNode
         self.nodeIndex = nodeIndex
+        self.arrayIndex = arrayIndex
+    }
+
+    /// Rows for the children of `container`, numbered when it is an array.
+    static func rows(for container: DocumentNode, in nodeIndex: NodeIndex) -> [TreeNode] {
+        let kids = nodeIndex.children(of: container.id)
+        guard container.type == .array else {
+            return kids.map { TreeNode(documentNode: $0, nodeIndex: nodeIndex) }
+        }
+        return kids.enumerated().map {
+            TreeNode(documentNode: $1, nodeIndex: nodeIndex, arrayIndex: $0)
+        }
     }
 
     // MARK: - Display helpers
 
     /// The key to display on the left of this row.
-    var displayKey: String? { documentNode.key }
+    var displayKey: String? { arrayIndex.map(String.init) ?? documentNode.key }
 
     /// Non-nil when this node is an XML element (`.object` with `XMLMetadata`).
     var xmlElementMeta: XMLMetadata? {
@@ -130,8 +147,7 @@ struct TreeNode: Identifiable, Sendable {
     var children: [TreeNode]? {
         switch documentNode.type {
         case .object, .array:
-            let kids = nodeIndex.children(of: id)
-            return kids.map { TreeNode(documentNode: $0, nodeIndex: nodeIndex) }
+            return TreeNode.rows(for: documentNode, in: nodeIndex)
 
         case .keyValue:
             // Drill through the value child to present its children directly,
@@ -139,8 +155,7 @@ struct TreeNode: Identifiable, Sendable {
             guard let child = nodeIndex.children(of: id).first else { return nil }
             switch child.type {
             case .object, .array:
-                let grandkids = nodeIndex.children(of: child.id)
-                return grandkids.map { TreeNode(documentNode: $0, nodeIndex: nodeIndex) }
+                return TreeNode.rows(for: child, in: nodeIndex)
             default:
                 return nil  // scalar value — no sub-rows
             }

@@ -173,8 +173,7 @@ struct NodeRow: View {
                     .fixedSize()
             } else {
                 Group {
-                    if node.documentNode.type == .scalar,
-                       node.nodeIndex.parent(of: node.id)?.type == .array {
+                    if node.arrayIndex != nil {
                         Text("[\(key)]")
                     } else {
                         Text("\"\(key)\"")

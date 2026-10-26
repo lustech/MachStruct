@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Array items kept their old index after a delete or move.** Deleting
+  `[0]` from `["a","b","c"]` left the rest labelled `[1]` and `[2]`, and
+  moving an item kept its label, so the status-bar path and bookmarks could
+  name the wrong item. Indices now follow the items' positions. (#57)
+- **A CSV cell's path left out its row.** The status bar showed `root.name`
+  for the `name` cell of every row; it now shows `root[1].name`. CSV rows are
+  also numbered in the tree, and bookmarks in CSV files are found again when
+  the file is reopened. (#58)
+- **Bookmarks inside nested objects and arrays weren't found again** when the
+  file was reopened, such as one on `root.rows[0].n`.
+
 ## [2.2.0] — 2026-10-26
 
 Large files and YAML. Files of 5 MB or more are now handled in full: Find &

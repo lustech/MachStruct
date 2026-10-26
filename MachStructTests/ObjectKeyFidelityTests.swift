@@ -114,8 +114,8 @@ final class ObjectKeyFidelityTests: XCTestCase {
 
     // MARK: - Existing contracts must not regress
 
-    /// Array elements carry their index as `key` on the eager path; several
-    /// consumers, including `NodeIndex.pathString`, render array steps from it.
+    /// Array elements carry their index at parse time as `key` on the eager
+    /// path. Paths use the element's position instead, which edits keep right.
     func testArrayElementsKeepIndexKeys() async throws {
         let file = try makeFile(json: #"{"items":["a","b","c"]}"#)
         let si = try await JSONParser().buildIndex(from: file)
