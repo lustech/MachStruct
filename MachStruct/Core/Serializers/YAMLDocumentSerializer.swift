@@ -70,7 +70,7 @@ public struct YAMLDocumentSerializer {
     private func appendKeyValue(_ kv: DocumentNode, indent: Int, to out: inout String) {
         guard let key = kv.key else { return }
         let spaces = String(repeating: " ", count: indent)
-        out += spaces + quoteKeyIfNeeded(key) + ":"
+        out += spaces + Self.quoteKeyIfNeeded(key) + ":"
         let valueChildren = index.children(of: kv.id)
         if let valueNode = valueChildren.first {
             appendInlineOrBlock(valueNode, indent: indent + 2, to: &out)
@@ -121,7 +121,7 @@ public struct YAMLDocumentSerializer {
     private func scalarText(_ node: DocumentNode) -> String {
         switch node.value {
         case .scalar(let sv):
-            return yamlScalarLiteral(sv)
+            return Self.yamlScalarLiteral(sv)
         case .unparsed:
             return "null"
         case .container, .error:
@@ -129,7 +129,7 @@ public struct YAMLDocumentSerializer {
         }
     }
 
-    private func yamlScalarLiteral(_ sv: ScalarValue) -> String {
+    static func yamlScalarLiteral(_ sv: ScalarValue) -> String {
         switch sv {
         case .string(let s):  return quoteValueIfNeeded(s)
         case .integer(let i): return String(i)
@@ -139,7 +139,7 @@ public struct YAMLDocumentSerializer {
         }
     }
 
-    private func yamlDouble(_ value: Double) -> String {
+    private static func yamlDouble(_ value: Double) -> String {
         if value.isNaN      { return ".nan" }
         if value.isInfinite { return value > 0 ? ".inf" : "-.inf" }
         if value.truncatingRemainder(dividingBy: 1) == 0 {
@@ -158,7 +158,7 @@ public struct YAMLDocumentSerializer {
     ]
 
     /// Quote a scalar string value when YAML would misinterpret it.
-    private func quoteValueIfNeeded(_ s: String) -> String {
+    static func quoteValueIfNeeded(_ s: String) -> String {
         guard !s.isEmpty else { return "''" }
 
         // Reserved words that would be parsed as non-string
@@ -193,7 +193,7 @@ public struct YAMLDocumentSerializer {
     }
 
     /// Quote a mapping key when it would confuse YAML.
-    private func quoteKeyIfNeeded(_ key: String) -> String {
+    static func quoteKeyIfNeeded(_ key: String) -> String {
         guard !key.isEmpty else { return "''" }
         if Self.reservedWords.contains(key) { return singleQuote(key) }
         // Only quote keys that *look* like bare numbers (start with a digit or
@@ -212,7 +212,7 @@ public struct YAMLDocumentSerializer {
 
     /// Returns `true` when `key` is composed only of numeric characters
     /// (digits, `.`, `e`/`E`, `+`/`-`) and starts with a digit or `-digit`.
-    private func keyLooksNumeric(_ key: String) -> Bool {
+    private static func keyLooksNumeric(_ key: String) -> Bool {
         var idx = key.startIndex
         if key[idx] == "-" {
             idx = key.index(after: idx)
@@ -223,12 +223,12 @@ public struct YAMLDocumentSerializer {
     }
 
     /// Wrap in single quotes; escape interior single quotes by doubling them.
-    private func singleQuote(_ s: String) -> String {
+    static func singleQuote(_ s: String) -> String {
         "'" + s.replacingOccurrences(of: "'", with: "''") + "'"
     }
 
     /// Wrap in double quotes with YAML escape sequences.
-    private func doubleQuote(_ s: String) -> String {
+    static func doubleQuote(_ s: String) -> String {
         let escaped = s
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")

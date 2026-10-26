@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Saving a YAML file keeps its comments.** Value edits and key renames are
+  now written into the original text in place, so comments, anchors and
+  aliases, quoting and blank lines survive. Edits that add, remove or move
+  entries, or that change a block scalar (`|`, `>`), still rewrite the whole
+  file, which drops comments.
+
 ### Fixed
 - **Deleting a key from a JSON file of 5 MB or more didn't survive saving.**
   The deleted key was written back from the original file. Deletions in large
