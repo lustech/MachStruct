@@ -322,6 +322,54 @@ public struct StructuralIndex: Sendable {
         return full
     }
 
+    /// The whole document with `current`'s edits applied and every key and
+    /// value parsed: what saving, exporting, Find & Replace and queries need
+    /// from a lazily loaded file.
+    public func completeNodeIndex(overlaying current: NodeIndex, file: MappedFile?) -> NodeIndex {
+        var full = buildNodeIndex(overlaying: current)
+        if let file { parseUnparsedEntries(in: &full, file: file) }
+        return full
+    }
+
+    // MARK: - Phase-2 parsing
+
+    /// Parse the key or value of every node in `index` that is still without
+    /// one. The simdjson path leaves both to be read from the file on demand.
+    public func parseUnparsedEntries(in index: inout NodeIndex, file: MappedFile) {
+        var updates = [NodeID: DocumentNode]()
+        for entry in entries {
+            guard var node = index.node(for: entry.id) else { continue }
+            var changed = false
+            if node.key == nil, entry.nodeType == .keyValue {
+                node.key = keyTable.intern(Self.parsedKey(of: entry, in: file))
+                changed = true
+            }
+            if case .unparsed = node.value, entry.nodeType == .scalar {
+                node.value = Self.parsedValue(of: entry, in: file)
+                changed = true
+            }
+            if changed { updates[node.id] = node }
+        }
+        if !updates.isEmpty { index.applySnapshot(updates) }
+    }
+
+    /// The key of a `.keyValue` entry, read from its quoted JSON string.
+    public static func parsedKey(of entry: IndexEntry, in file: MappedFile) -> String? {
+        guard entry.byteLength > 0,
+              let bytes = try? file.slice(offset: entry.byteOffset, length: entry.byteLength)
+        else { return nil }
+        return JSONParser.decodeStringToken(bytes)
+    }
+
+    /// The value of a `.scalar` entry, read from its JSON bytes.
+    public static func parsedValue(of entry: IndexEntry, in file: MappedFile) -> NodeValue {
+        guard entry.nodeType == .scalar, entry.byteLength > 0,
+              let raw = try? file.data(offset: entry.byteOffset, length: entry.byteLength),
+              let any = try? JSONSerialization.jsonObject(with: raw, options: .allowFragments)
+        else { return .unparsed }
+        return .scalar(ScalarValue(jsonAny: any))
+    }
+
     // MARK: - Shallow (lazy) build
 
     /// Build a `NodeIndex` containing only the root and its immediate visible children.

@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file, which drops comments.
 
 ### Fixed
+- **Find & Replace and queries now cover the whole of a large file.** In files
+  of 5 MB or more, they only saw rows that had been expanded, so the match
+  count was too low, Replace All left the rest unchanged, and jq queries
+  returned partial results. They now work on the whole document, including
+  your edits; the match count shows "Counting…" while a large file is
+  searched, and it refreshes after undo and redo.
 - **Deleting a key from a JSON file of 5 MB or more didn't survive saving.**
   The deleted key was written back from the original file. Deletions in large
   JSON files are now saved.

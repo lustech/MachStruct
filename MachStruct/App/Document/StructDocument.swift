@@ -99,6 +99,13 @@ final class StructDocument: ReferenceFileDocument {
     /// node is rebuilt from the source file, which no longer matches.
     private var editedIDs = Set<NodeID>()
 
+    /// Bumped by every edit, undo and redo, so a `WholeDocument` can tell it
+    /// is out of date and the find bar can recount.
+    @Published private(set) var editCount = 0
+
+    /// The last `wholeDocument()` result, while it is current.
+    private var wholeDocumentCache: WholeDocument?
+
     // MARK: - Tabular heuristic
 
     /// True when the document looks tabular. Works for both lazy and fully-built indexes.
@@ -175,11 +182,7 @@ final class StructDocument: ReferenceFileDocument {
     static func completeIndex(_ current: NodeIndex,
                               structuralIndex si: StructuralIndex?,
                               file: MappedFile?) -> NodeIndex {
-        guard let si else { return current }
-        var full = si.buildNodeIndex(overlaying: current)
-        // The simdjson path leaves keys and values to be parsed on demand.
-        if let file { parseAllEntries(in: &full, structuralIndex: si, file: file) }
-        return full
+        si?.completeNodeIndex(overlaying: current, file: file) ?? current
     }
 
     /// The file as it was opened, as UTF-8 text.
@@ -209,6 +212,7 @@ final class StructDocument: ReferenceFileDocument {
         nodeIndex = tx.applying(to: current)
         editedIDs.formUnion(tx.beforeSnapshot.keys)
         editedIDs.formUnion(tx.afterSnapshot.keys)
+        editCount += 1
 
         // Register undo.  Calling commitEdit recursively from the undo handler
         // is safe because NSUndoManager automatically routes calls made inside
@@ -217,6 +221,70 @@ final class StructDocument: ReferenceFileDocument {
             doc.commitEdit(tx.reversed, undoManager: undoManager)
         }
         undoManager?.setActionName(tx.description)
+    }
+
+    // MARK: - Whole-document operations
+
+    /// The whole document at a given edit, for operations that must see every
+    /// node: Find & Replace and queries. `nodeIndex` holds only what has been
+    /// expanded in a large file, so working on it misses the rest.
+    struct WholeDocument {
+        let index: NodeIndex
+        fileprivate let editCount: Int
+    }
+
+    /// Builds the whole document in the background for a large file, and keeps
+    /// it until the next edit or `releaseWholeDocument()`.
+    @MainActor
+    func wholeDocument() async -> WholeDocument? {
+        while true {
+            guard let current = nodeIndex else { return nil }
+            guard let si = structuralIndex else {
+                return WholeDocument(index: current, editCount: editCount)
+            }
+            if let cached = wholeDocumentCache, cached.editCount == editCount { return cached }
+            let edits = editCount
+            let file = mappedFile
+            let full = await Task.detached(priority: .userInitiated) { [si, current, file] in
+                si.completeNodeIndex(overlaying: current, file: file)
+            }.value
+            // An edit made meanwhile isn't in `full`: build again.
+            guard edits == editCount else { continue }
+            wholeDocumentCache = WholeDocument(index: full, editCount: edits)
+            return wholeDocumentCache
+        }
+    }
+
+    /// Free the whole document built by `wholeDocument()`.
+    func releaseWholeDocument() {
+        wholeDocumentCache = nil
+    }
+
+    /// Commit an edit computed on `base`, which may touch nodes that were
+    /// never expanded. Returns `false`, changing nothing, if the document has
+    /// been edited since `base` was built.
+    ///
+    /// The whole document becomes the index first, so those nodes arrive with
+    /// their ancestors and siblings: saving JSON copies the original bytes of
+    /// any container with a child missing, which would drop the edit.
+    /// Eviction then trims it back, keeping the edits and what surrounds them.
+    @MainActor
+    @discardableResult
+    func commitEdit(_ tx: EditTransaction, over base: WholeDocument,
+                    undoManager: UndoManager?,
+                    expandedIDs: Set<NodeID>, selectedID: NodeID?) -> Bool {
+        guard base.editCount == editCount else { return false }
+        guard structuralIndex != nil else {
+            commitEdit(tx, undoManager: undoManager)
+            return true
+        }
+        nodeIndex = base.index
+        commitEdit(tx, undoManager: undoManager)
+        if let full = nodeIndex {
+            wholeDocumentCache = WholeDocument(index: full, editCount: editCount)
+        }
+        evictIfNeeded(expandedIDs: expandedIDs, selectedID: selectedID)
+        return true
     }
 
     // MARK: - Serialization helper (P2-09 raw view, P2-08 copy)
@@ -315,8 +383,7 @@ final class StructDocument: ReferenceFileDocument {
                         let (idx, retainedSI) = await Task.detached(priority: .userInitiated) {
                             [si, file] in
                             var idx = si.buildShallowNodeIndex()
-                            StructDocument.parseVisibleEntries(in: &idx,
-                                                               structuralIndex: si, file: file)
+                            si.parseUnparsedEntries(in: &idx, file: file)
                             return (idx, si)
                         }.value
 
@@ -479,26 +546,6 @@ final class StructDocument: ReferenceFileDocument {
         nodeIndex = idx
     }
 
-    /// Ensure every node in the structural index is materialised in `nodeIndex`.
-    ///
-    /// Called before search so `SearchEngine` can traverse the full document.
-    /// No-op when already fully materialised or no structural index is present.
-    @MainActor
-    func ensureFullyMaterialized() async {
-        guard let si = structuralIndex, let file = mappedFile else { return }
-        guard let current = nodeIndex, current.count < si.count else { return }
-
-        let full = await Task.detached(priority: .userInitiated) { [si, file] in
-            var idx = si.buildNodeIndex()
-            // Parse keys/values for all nodes (simdjson path has nil key/parsedValue).
-            StructDocument.parseAllEntries(in: &idx, structuralIndex: si, file: file)
-            return idx
-        }.value
-
-        nodeIndex       = full
-        structuralIndex = nil   // no longer needed
-    }
-
     // MARK: - Phase-2 parse helpers (static, called from background tasks)
 
     /// Node value for a lazily-materialised entry.
@@ -506,7 +553,7 @@ final class StructDocument: ReferenceFileDocument {
     /// Mirrors `StructuralIndex.makeDocumentNode`, which is the canonical
     /// version: containers carry their child count, scalars are parsed from the
     /// mapped bytes, and keyValue nodes hold nothing themselves. Computing this
-    /// as `parsedValue ?? parseValueBytes(...)` silently produced `.unparsed`
+    /// as `parsedValue ?? parsedValue(of:in:)` silently produced `.unparsed`
     /// for objects and arrays, so every lazily-materialised container rendered
     /// as "{0 keys}" (issue #23).
     private static func nodeValue(for entry: IndexEntry,
@@ -516,7 +563,7 @@ final class StructDocument: ReferenceFileDocument {
             return .container(childCount: Int(entry.childCount))
         case .scalar:
             return entry.parsedValue.map { NodeValue.scalar($0) }
-                   ?? parseValueBytes(entry: entry, from: file)
+                   ?? StructuralIndex.parsedValue(of: entry, in: file)
         case .keyValue:
             return .unparsed
         }
@@ -536,7 +583,7 @@ final class StructDocument: ReferenceFileDocument {
             let childIDs = (si.childIndices[entry.id] ?? []).map { si.entries[$0].id }
             // Intern the key through the shared table so that repeated keys across
             // sibling objects share the same String backing storage.
-            let key   = si.keyTable.intern(entry.key ?? parseKeyBytes(entry: entry, from: file))
+            let key   = si.keyTable.intern(entry.key ?? StructuralIndex.parsedKey(of: entry, in: file))
             let value = StructDocument.nodeValue(for: entry, from: file)
             result[entry.id] = DocumentNode(
                 id: entry.id, type: entry.nodeType, depth: entry.depth,
@@ -568,70 +615,6 @@ final class StructDocument: ReferenceFileDocument {
         return result
     }
 
-    /// Post-parse keys and values for every node already in `idx`.
-    /// Called after `buildShallowNodeIndex` (for initially-visible nodes)
-    /// and after `buildNodeIndex` (for the full-materialise-for-search path).
-    private static func parseVisibleEntries(in idx: inout NodeIndex,
-                                             structuralIndex si: StructuralIndex,
-                                             file: MappedFile) {
-        var updates = [NodeID: DocumentNode]()
-        for entry in si.entries {
-            guard var node = idx.node(for: entry.id) else { continue }
-            var changed = false
-
-            if node.key == nil, entry.nodeType == .keyValue {
-                node.key = si.keyTable.intern(parseKeyBytes(entry: entry, from: file))
-                changed = true
-            }
-            if case .unparsed = node.value, entry.nodeType == .scalar {
-                node.value = parseValueBytes(entry: entry, from: file)
-                changed = true
-            }
-            if changed { updates[node.id] = node }
-        }
-        if !updates.isEmpty { idx.applySnapshot(updates) }
-    }
-
-    /// Post-parse keys and values for ALL entries (used after full buildNodeIndex).
-    private static func parseAllEntries(in idx: inout NodeIndex,
-                                         structuralIndex si: StructuralIndex,
-                                         file: MappedFile) {
-        var updates = [NodeID: DocumentNode]()
-        for entry in si.entries {
-            guard var node = idx.node(for: entry.id) else { continue }
-            var changed = false
-            if node.key == nil, entry.nodeType == .keyValue {
-                node.key = si.keyTable.intern(parseKeyBytes(entry: entry, from: file))
-                changed = true
-            }
-            if case .unparsed = node.value, entry.nodeType == .scalar {
-                node.value = parseValueBytes(entry: entry, from: file)
-                changed = true
-            }
-            if changed { updates[node.id] = node }
-        }
-        if !updates.isEmpty { idx.applySnapshot(updates) }
-    }
-
-    /// Parse the JSON key string for a `.keyValue` entry (simdjson path).
-    /// On the simdjson path, the key is stored as a quoted JSON string at `byteOffset`.
-    private static func parseKeyBytes(entry: IndexEntry, from file: MappedFile) -> String? {
-        guard entry.byteLength > 0,
-              let bytes = try? file.slice(offset: entry.byteOffset,
-                                          length: entry.byteLength)
-        else { return nil }
-        return JSONParser.decodeStringToken(bytes)
-    }
-
-    /// Parse the JSON value for a `.scalar` entry (simdjson path).
-    private static func parseValueBytes(entry: IndexEntry, from file: MappedFile) -> NodeValue {
-        guard entry.nodeType == .scalar, entry.byteLength > 0,
-              let raw = try? file.data(offset: entry.byteOffset, length: entry.byteLength),
-              let any = try? JSONSerialization.jsonObject(with: raw,
-                                                          options: .allowFragments)
-        else { return .unparsed }
-        return .scalar(ScalarValue(jsonAny: any))
-    }
 }
 
 // MARK: - Errors

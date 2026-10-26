@@ -114,6 +114,43 @@ final class LazyExportTests: XCTestCase {
         return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
 
+    // MARK: - Whole-document operations (Find & Replace, queries)
+
+    private let peopleJSON = #"{"people":[{"name":"Alice"},{"name":"Bob"}]}"#
+
+    func testCompleteIndexParsesKeysAndValuesOfALazyJSONFile() async throws {
+        let file = try MappedFile(url: write(peopleJSON, ext: "json"))
+        let si = try await JSONParser().buildIndex(from: file)
+
+        let full = si.completeNodeIndex(overlaying: si.buildShallowNodeIndex(), file: file)
+
+        let names = full.nodesMatching { $0.key == "name" }.compactMap { kv -> String? in
+            guard case .scalar(.string(let s))? = full.children(of: kv.id).first?.value else { return nil }
+            return s
+        }
+        XCTAssertEqual(names.sorted(), ["Alice", "Bob"])
+    }
+
+    func testReplaceAllReachesRowsThatWereNeverExpandedAndSaves() async throws {
+        let file = try MappedFile(url: write(peopleJSON, ext: "json"))
+        let si = try await JSONParser().buildIndex(from: file)
+        var current = si.buildShallowNodeIndex()
+        // An earlier edit to a node that is loaded must survive too.
+        let people = try XCTUnwrap(current.root.map { current.children(of: $0.id) }?.first)
+        current.updateNode(people.id) { $0.key = "folks" }
+        let opts = SearchEngine.FindOptions(useRegex: false, caseSensitive: true, scope: .values)
+        XCTAssertNil(SearchEngine.replaceAll(pattern: "o", replacement: "0", options: opts, in: current),
+                     "the loaded rows alone hold no match")
+
+        let full = si.completeNodeIndex(overlaying: current, file: file)
+        let tx = try XCTUnwrap(SearchEngine.replaceAll(pattern: "o", replacement: "0",
+                                                       options: opts, in: full))
+
+        let saved = try saveJSON(tx.applying(to: full), file)
+        let folks = try XCTUnwrap(saved["folks"] as? [[String: Any]])
+        XCTAssertEqual(folks.map { $0["name"] as? String }, ["Alice", "B0b"])
+    }
+
     func testDeletingAKeyFromALazyJSONFileSurvivesSave() async throws {
         let (index, file) = try await lazyJSON(#"{"a":1,"b":2}"#)
         let b = try XCTUnwrap(index.root.map { index.children(of: $0.id) }?.first { $0.key == "b" })
