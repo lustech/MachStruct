@@ -26,9 +26,24 @@ public struct YAMLDocumentSerializer {
         guard let root = index.root else {
             throw YAMLSerializerError.emptyDocument
         }
-        var out = "---\n"
-        appendNode(root, indent: 0, to: &out)
+        var out = ""
+        if Self.isDocumentStream(root) {
+            for document in index.children(of: root.id) {
+                out += "---\n"
+                appendNode(document, indent: 0, to: &out)
+            }
+        } else {
+            out += "---\n"
+            appendNode(root, indent: 0, to: &out)
+        }
         return Data(out.utf8)
+    }
+
+    /// Whether `root` stands for a file of several documents, each of its
+    /// items one document.
+    static func isDocumentStream(_ root: DocumentNode) -> Bool {
+        guard root.type == .array, case .yaml(let meta)? = root.metadata else { return false }
+        return meta.isDocumentStream
     }
 
     // MARK: - Recursive node rendering

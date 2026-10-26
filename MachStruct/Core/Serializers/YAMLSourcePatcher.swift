@@ -23,7 +23,7 @@ public enum YAMLSourcePatcher {
     /// expressed as in-place replacements.
     public static func patch(source: String, edited index: NodeIndex) -> String? {
         guard let root = index.root,
-              let original = try? Yams.compose(yaml: source) else { return nil }
+              let original = try? YAMLParser.documents(in: source) else { return nil }
 
         let text = SourceText(source)
         var patches: [Patch] = []
@@ -48,7 +48,7 @@ public enum YAMLSourcePatcher {
         }
 
         let patched = String(decoding: bytes, as: UTF8.self)
-        guard let reparsed = try? Yams.compose(yaml: patched) else { return nil }
+        guard let reparsed = try? YAMLParser.documents(in: patched) else { return nil }
         var remaining: [Patch] = []
         guard collect(reparsed, root, in: index, text: SourceText(patched), into: &remaining),
               remaining.isEmpty else { return nil }
@@ -63,6 +63,23 @@ public enum YAMLSourcePatcher {
     }
 
     private static let parser = YAMLParser()
+
+    /// Pair the source's documents with the edited tree: each with an item of
+    /// a document-stream root, or a single one with the root itself.
+    private static func collect(_ documents: [Yams.Node], _ root: DocumentNode,
+                                in index: NodeIndex, text: SourceText,
+                                into patches: inout [Patch]) -> Bool {
+        guard YAMLDocumentSerializer.isDocumentStream(root) else {
+            guard documents.count == 1 else { return false }
+            return collect(documents[0], root, in: index, text: text, into: &patches)
+        }
+        let items = index.children(of: root.id)
+        guard items.count == documents.count else { return false }
+        for (document, item) in zip(documents, items) {
+            guard collect(document, item, in: index, text: text, into: &patches) else { return false }
+        }
+        return true
+    }
 
     /// Walk `node` (original) and `edited` together, appending a patch for
     /// every scalar or key that differs. `false` when the shapes differ or a
