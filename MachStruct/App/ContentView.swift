@@ -787,10 +787,14 @@ struct ContentView: View {
             guard response == .OK, let url = panel.url else { return }
             isExporting = true
             let mappedFile = document?.mappedFile
+            let structuralIndex = document?.structuralIndex
             Task.detached(priority: .userInitiated) {
                 do {
+                    // A large file's index holds only what has been expanded.
+                    let complete = StructDocument.completeIndex(
+                        index, structuralIndex: structuralIndex, file: mappedFile)
                     let data = try FormatConverter().convert(
-                        index: index,
+                        index: complete,
                         mappedFile: mappedFile,
                         to: format
                     )

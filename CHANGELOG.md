@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Deleting a key from a JSON file of 5 MB or more didn't survive saving.**
+  The deleted key was written back from the original file. Deletions in large
+  JSON files are now saved.
+- **Exporting a large CSV or YAML file wrote empty rows.** In files of 5 MB or
+  more, every row that hadn't been expanded was exported as an empty object,
+  and exporting a large JSON file to YAML or CSV had the same gap. Export now
+  writes the whole document, including your edits.
+- **Edits to CSV and YAML files of 5 MB or more can now be saved.** 2.1.3
+  refused to save them; they are now saved in full, in their own format.
+- **Edits in large files could be lost while browsing.** Expanding rows in a
+  large file could drop an edit made elsewhere — when memory was trimmed, or
+  when the edit was made while a row was still loading. Edits are now kept.
+
 ## [2.1.3] — 2026-10-21
 
 A data-safety release. Upgrading is strongly recommended for anyone who opens

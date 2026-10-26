@@ -11,10 +11,10 @@ import MachStructCore
 struct DocumentSnapshot: Sendable {
     let index: NodeIndex
     let mappedFile: MappedFile?
-    /// True for large files whose `index` holds only the nodes materialised so
-    /// far. JSON can still be saved (unmaterialised regions are copied from
-    /// `mappedFile`); other formats cannot.
-    let isPartiallyLoaded: Bool
+    /// Set for large files, whose `index` holds only the nodes materialised so
+    /// far. JSON copies the rest from `mappedFile`; other formats rebuild the
+    /// whole document from it (`StructDocument.completeIndex`).
+    let structuralIndex: StructuralIndex?
 }
 
 // MARK: - StructDocument
@@ -95,6 +95,10 @@ final class StructDocument: ReferenceFileDocument {
     /// When materialised node count exceeds this, evict cold nodes.
     private static let evictionThreshold: Int = 50_000
 
+    /// Every node an edit has touched. Eviction must keep them: an evicted
+    /// node is rebuilt from the source file, which no longer matches.
+    private var editedIDs = Set<NodeID>()
+
     // MARK: - Tabular heuristic
 
     /// True when the document looks tabular. Works for both lazy and fully-built indexes.
@@ -130,7 +134,7 @@ final class StructDocument: ReferenceFileDocument {
             throw StructDocumentError.noContent
         }
         return DocumentSnapshot(index: idx, mappedFile: mappedFile,
-                                isPartiallyLoaded: structuralIndex != nil)
+                                structuralIndex: structuralIndex)
     }
 
     func fileWrapper(snapshot: DocumentSnapshot,
@@ -144,18 +148,35 @@ final class StructDocument: ReferenceFileDocument {
             data = try JSONDocumentSerializer(index: snapshot.index,
                                               mappedFile: snapshot.mappedFile)
                 .serialize(pretty: true)
-        } else if snapshot.isPartiallyLoaded {
-            // The CSV and YAML serializers would write only the rows that had
-            // been expanded.
-            throw StructDocumentError.largeFileSaveUnsupported
         } else if type.conforms(to: .commaSeparatedText) {
-            data = try CSVDocumentSerializer(index: snapshot.index).serializeInSourceLayout()
+            data = try CSVDocumentSerializer(index: Self.completeIndex(of: snapshot))
+                .serializeInSourceLayout()
         } else if Self.yamlTypes.contains(where: { type.conforms(to: $0) }) {
-            data = try YAMLDocumentSerializer(index: snapshot.index).serialize()
+            data = try YAMLDocumentSerializer(index: Self.completeIndex(of: snapshot)).serialize()
         } else {
             throw StructDocumentError.unsupportedSaveFormat
         }
         return FileWrapper(regularFileWithContents: data)
+    }
+
+    /// The whole document with the user's edits applied.
+    ///
+    /// A large file's index holds only what has been expanded, and only the
+    /// JSON serializer can fill the gaps from the source bytes. The others
+    /// would write the unexpanded parts as empty.
+    static func completeIndex(_ current: NodeIndex,
+                              structuralIndex si: StructuralIndex?,
+                              file: MappedFile?) -> NodeIndex {
+        guard let si else { return current }
+        var full = si.buildNodeIndex(overlaying: current)
+        // The simdjson path leaves keys and values to be parsed on demand.
+        if let file { parseAllEntries(in: &full, structuralIndex: si, file: file) }
+        return full
+    }
+
+    private static func completeIndex(of snapshot: DocumentSnapshot) -> NodeIndex {
+        completeIndex(snapshot.index, structuralIndex: snapshot.structuralIndex,
+                      file: snapshot.mappedFile)
     }
 
     // MARK: - Edit API (P2-05)
@@ -171,6 +192,8 @@ final class StructDocument: ReferenceFileDocument {
     func commitEdit(_ tx: EditTransaction, undoManager: UndoManager?) {
         guard let current = nodeIndex else { return }
         nodeIndex = tx.applying(to: current)
+        editedIDs.formUnion(tx.beforeSnapshot.keys)
+        editedIDs.formUnion(tx.afterSnapshot.keys)
 
         // Register undo.  Calling commitEdit recursively from the undo handler
         // is safe because NSUndoManager automatically routes calls made inside
@@ -350,11 +373,10 @@ final class StructDocument: ReferenceFileDocument {
         // node made this method bail out every time (issue #23).
         let childIdxs = si.expansionTargets(for: nodeID)
         guard !childIdxs.isEmpty else { return }
-        guard var idx = nodeIndex else { return }
 
         // Skip only if the nodes this row needs are already present.
         let firstChildID = si.entries[childIdxs[0]].id
-        guard idx.node(for: firstChildID) == nil else { return }
+        guard nodeIndex?.node(for: firstChildID) == nil else { return }
 
         // Build DocumentNode updates on a background thread.
         let updates = await Task.detached(priority: .userInitiated) { [si, file] in
@@ -362,8 +384,13 @@ final class StructDocument: ReferenceFileDocument {
                                               structuralIndex: si, file: file)
         }.value
 
-        guard !updates.isEmpty else { return }
-        idx.applySnapshot(updates)
+        // Read the index only now: an edit committed during the build would
+        // otherwise be overwritten. Nodes already present are kept as they
+        // are — some of the siblings may hold edits.
+        guard var idx = nodeIndex else { return }
+        let missing = updates.filter { idx.node(for: $0.key) == nil }
+        guard !missing.isEmpty else { return }
+        idx.applySnapshot(missing)
         nodeIndex = idx
 
         // Evict cold nodes if we've grown past the threshold.
@@ -380,6 +407,7 @@ final class StructDocument: ReferenceFileDocument {
     /// - Every node in `expandedIDs` (rendered as rows)
     /// - Direct children of every expanded node (rendered as sub-rows)
     /// - `selectedID` if set (keeps details panel from going stale)
+    /// - Edited nodes, their ancestors and those ancestors' rows
     ///
     /// Everything else is removed from `nodeIndex`; it will be rebuilt lazily
     /// the next time the user expands that branch.
@@ -410,6 +438,20 @@ final class StructDocument: ReferenceFileDocument {
 
         // Keep the selected node (details panel / editing needs it).
         if let sel = selectedID { hot.insert(sel) }
+
+        // Keep edits, and everything around them a save needs: the JSON
+        // serializer copies a container's original bytes when any of its
+        // children is missing, which would undo the edit.
+        var keptAncestors: Set<NodeID> = [idx.rootID]
+        for id in editedIDs where idx.node(for: id) != nil {
+            hot.insert(id)
+            var parent = idx.node(for: id)?.parentID
+            while let p = parent, keptAncestors.insert(p).inserted {
+                hot.insert(p)
+                hot.formUnion(si.visibleDescendantIDs(for: p))
+                parent = idx.node(for: p)?.parentID ?? si.entry(for: p)?.parentID
+            }
+        }
 
         let toEvict = Set(idx.allNodeIDs).subtracting(hot)
         guard !toEvict.isEmpty else { return }
@@ -579,7 +621,6 @@ enum StructDocumentError: LocalizedError {
     case noFileContent
     case noContent
     case unsupportedSaveFormat
-    case largeFileSaveUnsupported
 
     var errorDescription: String? {
         switch self {
@@ -587,8 +628,25 @@ enum StructDocumentError: LocalizedError {
         case .noContent:     return "The document has no content to save."
         case .unsupportedSaveFormat:
             return "MachStruct can't save documents in this format."
-        case .largeFileSaveUnsupported:
-            return "MachStruct can't save edits to CSV or YAML files of 5 MB or more."
+        }
+    }
+
+    // NSDocument titles its save alert "The document … could not be saved."
+    // and drops `errorDescription`; it shows the failure reason and recovery
+    // suggestion underneath, so the explanation has to live there too.
+    var failureReason: String? {
+        switch self {
+        case .noFileContent, .noContent: return nil
+        case .unsupportedSaveFormat:
+            return "MachStruct can't save documents in this format."
+        }
+    }
+
+    var recoverySuggestion: String? {
+        switch self {
+        case .noFileContent, .noContent: return nil
+        case .unsupportedSaveFormat:
+            return "Use Export in the toolbar to save a copy in another format. The original file has not been changed."
         }
     }
 }
