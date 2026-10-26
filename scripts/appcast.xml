@@ -24,6 +24,59 @@
     <description>Most recent releases of MachStruct</description>
     <language>en</language>
 
+    <!-- ── v2.2.0 ───────────────────────────────────────────────── -->
+    <item>
+      <title>MachStruct 2.2.0</title>
+      <description><![CDATA[
+        <p>Large files and YAML. Files of 5&nbsp;MB or more are now handled in
+        full, and very large ones stay responsive. YAML files keep their
+        comments when saved, and files with several documents open.</p>
+        <h3>Added</h3>
+        <ul>
+          <li><b>YAML files with several <code>---</code> documents open</b>,
+              such as Kubernetes manifests. Each document is an item of the
+              root, and saving writes them back as separate documents.</li>
+        </ul>
+        <h3>Changed</h3>
+        <ul>
+          <li><b>Saving a YAML file keeps its comments.</b> Value edits and key
+              renames are written into the original text in place, so comments,
+              anchors, quoting and blank lines survive. Adding, removing or
+              moving entries still rewrites the whole file.</li>
+          <li><b>Containers with more than 1,000 children are shown in
+              ranges</b> such as <code>[0 &hellip; 999]</code>. A CSV file with
+              400,000 rows used to freeze the window for 20&ndash;30 seconds; it
+              now opens in a few seconds.</li>
+          <li><b>Files that fail to open say what is wrong and where</b>, with
+              the line, the column and the offending line, for JSON, YAML and
+              XML.</li>
+          <li><b>VoiceOver names every control</b>, including the document
+              tree, disclosure triangles, toolbar menus, the find and query
+              fields, and table rows.</li>
+        </ul>
+        <h3>Fixed</h3>
+        <ul>
+          <li><b>Find &amp; Replace and queries cover the whole of a large
+              file.</b> They used to see only rows that had been expanded.</li>
+          <li><b>Large files save and export in full.</b> Unexpanded rows were
+              exported as empty objects; edits to large CSV and YAML files can
+              now be saved; deleting a key from a large JSON file survives
+              saving; and edits are no longer lost while browsing.</li>
+          <li><b>Jumping to a search match in a large file</b> showed the row
+              without its values.</li>
+        </ul>
+      ]]></description>
+      <pubDate>Mon, 26 Oct 2026 21:07:00 +0000</pubDate>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <sparkle:version>9</sparkle:version>
+      <sparkle:shortVersionString>2.2.0</sparkle:shortVersionString>
+      <enclosure
+        url="https://github.com/lustech/MachStruct/releases/download/v2.2.0/MachStruct.dmg"
+        sparkle:edSignature="oSEIyvYa5TjGp3Lq7aro6+zBNDc21oSS2nPVT5FyF0HGyAYbClKeFazwB052D00x166j/57oQy74PjGIo4OOBg=="
+        length="3616907"
+        type="application/octet-stream"/>
+    </item>
+
     <!-- ── v2.1.3 ───────────────────────────────────────────────── -->
     <item>
       <title>MachStruct 2.1.3</title>
