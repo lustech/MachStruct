@@ -15,8 +15,9 @@ struct FindReplaceBar: View {
     @Binding var caseSensitive: Bool
     @Binding var scope: SearchEngine.FindOptions.Scope
 
-    /// Current match count for the find field (computed by `ContentView`).
-    let matchCount: Int
+    /// Current match count for the find field (computed by `ContentView`),
+    /// or `nil` while it is being counted.
+    let matchCount: Int?
 
     let onReplaceAll: () -> Void
     let onClose: () -> Void
@@ -32,7 +33,7 @@ struct FindReplaceBar: View {
                     .textFieldStyle(.roundedBorder)
                     .focused($focused)
 
-                Text(find.isEmpty ? "" : "\(matchCount) match\(matchCount == 1 ? "" : "es")")
+                Text(matchLabel)
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
                     .frame(width: 80, alignment: .leading)
@@ -52,13 +53,19 @@ struct FindReplaceBar: View {
                     .textFieldStyle(.roundedBorder)
 
                 Button("Replace All", action: onReplaceAll)
-                    .disabled(find.isEmpty || matchCount == 0)
+                    .disabled(find.isEmpty || (matchCount ?? 0) == 0)
                     .help("Replace every match in one undoable step")
             }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .onAppear { focused = true }
+    }
+
+    private var matchLabel: String {
+        guard !find.isEmpty else { return "" }
+        guard let matchCount else { return "Counting…" }
+        return "\(matchCount) match\(matchCount == 1 ? "" : "es")"
     }
 
     private var optionToggles: some View {

@@ -162,6 +162,8 @@ struct ContentView: View {
     @State private var queryResults: [JQValue]? = nil
     /// Source node IDs for a path-only query, aligned with `queryResults`.
     @State private var querySourceIDs: [NodeID]? = nil
+    /// The document the last query ran on; its source IDs refer to it.
+    @State private var queryDocument: StructDocument.WholeDocument? = nil
     /// In-flight query task, cancelled when a new query runs.
     @State private var queryTask: Task<Void, Never>? = nil
 
@@ -172,13 +174,21 @@ struct ContentView: View {
     @State private var findUseRegex: Bool = false
     @State private var findCaseSensitive: Bool = false
     @State private var findScope: SearchEngine.FindOptions.Scope = .both
-    @State private var findMatchCount: Int = 0
+    /// `nil` while counting, which can take a moment in a large file.
+    @State private var findMatchCount: Int? = 0
+    /// In-flight count or Replace All, cancelled when the find text changes.
+    @State private var findTask: Task<Void, Never>? = nil
 
     @Environment(\.undoManager) private var undoManager
 
     var body: some View {
         mainContent
         .frame(minWidth: 400, minHeight: 300)
+        // A large file's whole document is built for these bars; free it
+        // once none of them needs it.
+        .onChange(of: showFindReplace || showQueryBar || queryResults != nil) { _, inUse in
+            if !inUse { document.releaseWholeDocument() }
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             workbenchPanel
         }
@@ -388,6 +398,7 @@ struct ContentView: View {
                     .onChange(of: findUseRegex) { _, _ in updateFindCount() }
                     .onChange(of: findCaseSensitive) { _, _ in updateFindCount() }
                     .onChange(of: findScope) { _, _ in updateFindCount() }
+                    .onChange(of: document.editCount) { _, _ in updateFindCount() }
                     Divider()
                 }
 
@@ -428,22 +439,26 @@ struct ContentView: View {
     private func clearResults() {
         queryResults = nil
         querySourceIDs = nil
+        queryDocument = nil
     }
 
     /// Run the current jq query through `QueryEngine` on a background actor.
     private func runQuery() {
         queryTask?.cancel()
         let q = queryText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let index = document.nodeIndex, !q.isEmpty else { return }
+        guard document.nodeIndex != nil, !q.isEmpty else { return }
         isQuerying = true
         queryError = nil
 
         queryTask = Task {   // inherits the view's MainActor context
             let engine = QueryEngine()
             do {
-                let result = try await engine.run(q, on: index)
+                guard let whole = await document.wholeDocument() else { return }
+                try Task.checkCancellation()
+                let result = try await engine.run(q, on: whole.index)
                 queryResults = result.values
                 querySourceIDs = result.sourceNodeIDs
+                queryDocument = whole
                 queryError = nil
                 QueryStore.addRecent(q)
             } catch QueryEngine.QueryError.parse(let e) {
@@ -464,7 +479,8 @@ struct ContentView: View {
     /// For object members the enclosing key-value pair is removed (so the key
     /// disappears), not just its value.
     private func applyDelete() {
-        guard let index = document.nodeIndex, let ids = querySourceIDs else { return }
+        guard let whole = queryDocument, let ids = querySourceIDs else { return }
+        let index = whole.index
         let targets: [NodeID] = ids.map { id in
             if let node = index.node(for: id), let pid = node.parentID,
                index.node(for: pid)?.type == .keyValue {
@@ -473,21 +489,28 @@ struct ContentView: View {
             return id
         }
         if let tx = EditTransaction.batchRemove(targets, in: index) {
-            document.commitEdit(tx, undoManager: undoManager)
+            commitQueryEdit(tx, over: whole)
         }
         clearResults()
     }
 
     /// Set every matched scalar to the given value (type inferred from the text).
     private func applySetValue(_ text: String) {
-        guard let index = document.nodeIndex, let ids = querySourceIDs else { return }
+        guard let whole = queryDocument, let ids = querySourceIDs else { return }
         let value = parseScalarValue(text)
         if let tx = EditTransaction.batchSetValue(ofScalars: ids, to: value,
                                                   description: "Set value via query",
-                                                  in: index) {
-            document.commitEdit(tx, undoManager: undoManager)
+                                                  in: whole.index) {
+            commitQueryEdit(tx, over: whole)
         }
         clearResults()
+    }
+
+    private func commitQueryEdit(_ tx: EditTransaction, over whole: StructDocument.WholeDocument) {
+        if !document.commitEdit(tx, over: whole, undoManager: undoManager,
+                                expandedIDs: expandedIDs, selectedID: selectedNodeID) {
+            queryError = "The document changed after this query ran. Run it again."
+        }
     }
 
     private func currentFindOptions() -> SearchEngine.FindOptions {
@@ -496,25 +519,52 @@ struct ContentView: View {
                                  scope: findScope)
     }
 
+    /// Count matches across the whole document. A large file's is built and
+    /// searched in the background; a small one's is counted straight away.
     private func updateFindCount() {
-        guard let index = document.nodeIndex, !findText.isEmpty else {
+        findTask?.cancel()
+        guard !findText.isEmpty else {
             findMatchCount = 0
             return
         }
-        findMatchCount = SearchEngine.matches(pattern: findText,
-                                              options: currentFindOptions(),
-                                              in: index).count
+        let pattern = findText
+        let options = currentFindOptions()
+        if document.structuralIndex == nil, let index = document.nodeIndex {
+            findMatchCount = SearchEngine.matches(pattern: pattern, options: options, in: index).count
+            return
+        }
+        findMatchCount = nil
+        findTask = Task {
+            try? await Task.sleep(for: .milliseconds(150))   // let typing settle
+            guard !Task.isCancelled, let whole = await document.wholeDocument() else { return }
+            let count = await Task.detached(priority: .userInitiated) {
+                SearchEngine.matches(pattern: pattern, options: options, in: whole.index).count
+            }.value
+            guard !Task.isCancelled else { return }
+            findMatchCount = count
+        }
     }
 
     private func replaceAllAction() {
-        guard let index = document.nodeIndex else { return }
-        if let tx = SearchEngine.replaceAll(pattern: findText,
-                                            replacement: replaceText,
-                                            options: currentFindOptions(),
-                                            in: index) {
-            document.commitEdit(tx, undoManager: undoManager)
+        findTask?.cancel()
+        let pattern = findText
+        let replacement = replaceText
+        let options = currentFindOptions()
+        findMatchCount = nil
+        findTask = Task {
+            guard let whole = await document.wholeDocument() else { return }
+            let tx = await Task.detached(priority: .userInitiated) {
+                SearchEngine.replaceAll(pattern: pattern, replacement: replacement,
+                                        options: options, in: whole.index)
+            }.value
+            if let tx {
+                // Refused if the document was edited meanwhile; the fresh
+                // count below then shows what is left to replace.
+                document.commitEdit(tx, over: whole, undoManager: undoManager,
+                                    expandedIDs: expandedIDs, selectedID: selectedNodeID)
+            }
+            updateFindCount()   // also clears "Counting…" when nothing changed
         }
-        updateFindCount()
     }
 
     // MARK: - Toolbar
