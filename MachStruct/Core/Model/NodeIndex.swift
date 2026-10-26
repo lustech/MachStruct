@@ -209,6 +209,19 @@ public struct NodeIndex: Sendable {
         generation &+= 1
     }
 
+    /// Insert or overwrite every node of `other`.
+    public mutating func overlay(_ other: NodeIndex) {
+        for node in other.storage {
+            if let idx = positions[node.id] {
+                storage[idx] = node
+            } else {
+                positions[node.id] = storage.count
+                storage.append(node)
+            }
+        }
+        generation &+= 1
+    }
+
     /// Apply a transform to the node with the given ID. No-op if the ID is unknown.
     public mutating func updateNode(_ id: NodeID,
                                     transform: (inout DocumentNode) -> Void) {
@@ -301,8 +314,9 @@ public struct NodeIndex: Sendable {
     /// their parents' `childIDs` arrays.  `materializeChildrenIfNeeded` uses this
     /// to detect "not yet materialised" and re-builds them on demand.
     ///
-    /// Used exclusively by `StructDocument.evictIfNeeded` — call sites must ensure
-    /// the evicted IDs are not currently visible in the tree.
+    /// Used by `StructDocument.evictIfNeeded`, which must ensure the evicted IDs
+    /// are not currently visible in the tree, and to prune nodes cut out of the
+    /// tree by edits (`StructuralIndex.buildNodeIndex(overlaying:)`).
     public mutating func evictNodes(_ ids: Set<NodeID>) {
         guard !ids.isEmpty else { return }
         for id in ids { swapRemove(id) }

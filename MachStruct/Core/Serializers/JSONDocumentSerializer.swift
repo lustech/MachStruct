@@ -100,8 +100,11 @@ public struct JSONDocumentSerializer {
         // `childIDs` is populated: `buildShallowNodeIndex` fills `childIDs`
         // from the structural index without materialising the nodes they
         // point at, so a node can claim children the index cannot produce.
+        // Nor may it compare against the parse-time child count: deleting a
+        // child leaves fewer children than that, and copying the original
+        // bytes brought the deleted child back on save.
         let children = index.children(of: node.id)
-        if children.count < expectedChildCount(of: node), let raw = rawSource(of: node) {
+        if children.count < node.childIDs.count, let raw = rawSource(of: node) {
             out += raw
             return
         }
@@ -147,15 +150,6 @@ public struct JSONDocumentSerializer {
     }
 
     // MARK: - Node helpers
-
-    /// How many children the document says this container has.
-    ///
-    /// `.container(childCount:)` is recorded at parse time and is accurate even
-    /// when none of those children have been materialised.
-    private func expectedChildCount(of node: DocumentNode) -> Int {
-        guard case .container(let expected) = node.value else { return 0 }
-        return expected
-    }
 
     /// The node's key, falling back to the source bytes when the lazy path
     /// left it unresolved.

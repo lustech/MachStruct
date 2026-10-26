@@ -297,6 +297,31 @@ public struct StructuralIndex: Sendable {
         return NodeIndex(rootID: first.id, storage: storage, positions: positions)
     }
 
+    /// Build the full tree, then lay `current` — a lazily materialised index
+    /// that may hold edits — over it.
+    ///
+    /// Use this, not `buildNodeIndex()`, whenever the whole document is needed
+    /// while the user may have edited it: a fresh build alone discards every
+    /// edit. Nodes in `current` win, so edited values and parents whose
+    /// `childIDs` changed (deletions, insertions, moves) carry over. Nodes the
+    /// edits cut out of the tree are dropped, so nothing that scans the index
+    /// rather than walking it finds deleted content.
+    public func buildNodeIndex(overlaying current: NodeIndex) -> NodeIndex {
+        var full = buildNodeIndex()
+        full.overlay(current)
+
+        var reachable = Set<NodeID>(minimumCapacity: full.count)
+        var stack = [full.rootID]
+        while let id = stack.popLast() {
+            guard reachable.insert(id).inserted, let node = full.node(for: id) else { continue }
+            stack.append(contentsOf: node.childIDs)
+        }
+        if reachable.count < full.count {
+            full.evictNodes(Set(full.allNodeIDs).subtracting(reachable))
+        }
+        return full
+    }
+
     // MARK: - Shallow (lazy) build
 
     /// Build a `NodeIndex` containing only the root and its immediate visible children.
