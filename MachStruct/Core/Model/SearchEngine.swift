@@ -203,6 +203,82 @@ public enum SearchEngine {
         return results
     }
 
+    /// Search a lazily loaded document as it is now, edits included.
+    ///
+    /// Walks the tree in document order. A node that `index` holds is read
+    /// from there — its key, value and current children — since it may have
+    /// been edited; any other node is read from `si`. That is sound because
+    /// edited nodes and their ancestors are never evicted, and a deleted node
+    /// is no longer among its parent's children, so it is never reached (#63).
+    public static func search(query: String,
+                              in index: NodeIndex,
+                              structuralIndex si: StructuralIndex,
+                              file: MappedFile?) -> [SearchMatch] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        let q = trimmed.lowercased()
+
+        var results: [SearchMatch] = []
+        // A row is listed once even if both its key and its value match.
+        struct MatchKey: Hashable {
+            let id: NodeID
+            let field: SearchMatch.Field
+        }
+        var seen = Set<MatchKey>()
+
+        // Each node with whether its parent is a keyValue, whose row shows it.
+        var stack: [(id: NodeID, parentIsKeyValue: Bool)] = [(index.rootID, false)]
+        while let (id, parentIsKeyValue) = stack.popLast() {
+            let node = index.node(for: id)
+            let entry = node == nil ? si.entry(for: id) : nil
+            guard let type = node?.type ?? entry?.nodeType else { continue }
+
+            switch type {
+            case .keyValue:
+                var key = node?.key
+                if key == nil, let e = entry ?? si.entry(for: id) {
+                    key = e.key ?? parseKeyBytes(entry: e, from: file)
+                }
+                if let key, key.lowercased().contains(q),
+                   seen.insert(MatchKey(id: id, field: .key)).inserted {
+                    results.append(SearchMatch(rowNodeID: id, field: .key, matchedText: key))
+                }
+
+            case .scalar:
+                var sv: ScalarValue?
+                if case .scalar(let v)? = node?.value {
+                    sv = v
+                } else if let e = entry ?? si.entry(for: id) {
+                    sv = e.parsedValue ?? parseScalarBytes(entry: e, from: file)
+                }
+                if let sv {
+                    let text = sv.searchableText
+                    let rowID = parentIsKeyValue ? (node?.parentID ?? entry?.parentID ?? id) : id
+                    if text.lowercased().contains(q),
+                       seen.insert(MatchKey(id: rowID, field: .value)).inserted {
+                        results.append(SearchMatch(rowNodeID: rowID, field: .value,
+                                                   matchedText: text))
+                    }
+                }
+
+            case .object, .array:
+                break   // containers have no searchable content
+            }
+
+            // Reversed so the first child is visited first.
+            if let node {
+                for child in node.childIDs.reversed() {
+                    stack.append((child, type == .keyValue))
+                }
+            } else if let childIdxs = si.childIndices[id] {
+                for i in childIdxs.reversed() {
+                    stack.append((si.entries[i].id, type == .keyValue))
+                }
+            }
+        }
+        return results
+    }
+
     // MARK: - Byte-level parse helpers
 
     private static func parseKeyBytes(entry: IndexEntry, from file: MappedFile?) -> String? {
