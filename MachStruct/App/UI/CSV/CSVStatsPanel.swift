@@ -36,7 +36,9 @@ struct ColumnStats: Identifiable {
 /// Sheet view showing per-column statistics for a tabular (CSV) document.
 struct CSVStatsPanel: View {
 
-    let nodeIndex: NodeIndex
+    /// The whole document. A large file's rows aren't all loaded in the
+    /// view's index, so this may build the rest in the background.
+    let load: () async -> NodeIndex?
 
     @State private var stats:     [ColumnStats] = []
     @State private var isLoading: Bool          = true
@@ -93,9 +95,11 @@ struct CSVStatsPanel: View {
     @MainActor
     private func computeStats() async {
         isLoading = true
-        stats = await Task.detached(priority: .userInitiated) {
-            Self.compute(nodeIndex: nodeIndex)
-        }.value
+        if let nodeIndex = await load() {
+            stats = await Task.detached(priority: .userInitiated) {
+                Self.compute(nodeIndex: nodeIndex)
+            }.value
+        }
         isLoading = false
     }
 

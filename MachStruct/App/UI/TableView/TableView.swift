@@ -1,185 +1,218 @@
 import SwiftUI
+import AppKit
 import MachStructCore
 
 // MARK: - TableView
 
 /// Spreadsheet-style table for documents whose root is a uniform array of objects.
 ///
-/// ## Layout
-/// ```
-/// ┌─────────────────────────────────────┐  ← ScrollView(.horizontal)
-/// │  name    │  age  │  city           │  ← header row (scrolls horizontally,
-/// ├──────────┼───────┼─────────────────┤     pinned above the vertical scroll)
-/// │ "Alice"  │  30   │ "NYC"           │  ← ScrollView(.vertical)
-/// │ "Bob"    │  25   │ "LA"            │     LazyVStack — only visible rows render
-/// │  …                                 │
-/// └─────────────────────────────────────┘
-/// ```
+/// Backed by `NSTableView`, which asks only for the rows on screen: a SwiftUI
+/// stack built a view per row up front, so a 400 000-row CSV froze the window
+/// for 18 seconds and used 1.8 GB before showing anything (#56).
 ///
-/// Columns come from `NodeIndex.tabularColumns`.  Cell values are resolved
-/// lazily — only rows scrolled into view call `nodeIndex.children(of:)`.
+/// Columns come from `NodeIndex.tabularColumns`. In a large file a row's cells
+/// exist only once loaded, so the table reports the rows it shows through
+/// `loadRows` and fills them in when they arrive.
 ///
 /// ## Selection
 /// Clicking a row sets `selection` to the row's object `NodeID`, keeping it
 /// in sync with the tree view's selection binding.
-struct TableView: View {
+struct TableView: NSViewRepresentable {
 
     let nodeIndex: NodeIndex
     @Binding var selection: NodeID?
+    /// Loads the cells of the given rows, if they aren't loaded yet. The set
+    /// is every row on screen, so loading can keep them all in memory.
+    var loadRows: ((Set<NodeID>) async -> Void)? = nil
 
-    // MARK: - Geometry constants (Phase 3: fixed widths; adaptive sizing is P4)
+    func makeCoordinator() -> Coordinator { Coordinator() }
 
-    private let colWidth   : CGFloat = 160
-    private let rowHeight  : CGFloat = 26
-    private let headerHeight: CGFloat = 32
+    func makeNSView(context: Context) -> NSScrollView {
+        let table = NSTableView()
+        table.style = .plain
+        table.rowHeight = 22
+        table.intercellSpacing = NSSize(width: 0, height: 0)
+        table.gridStyleMask = [.solidVerticalGridLineMask]
+        table.usesAlternatingRowBackgroundColors = true
+        table.allowsMultipleSelection = false
+        table.allowsColumnReordering = false
+        table.columnAutoresizingStyle = .noColumnAutoresizing
+        table.setAccessibilityLabel("Table")
+        table.dataSource = context.coordinator
+        table.delegate = context.coordinator
 
-    // MARK: - Derived data
+        let scroll = NSScrollView()
+        scroll.documentView = table
+        scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = true
+        scroll.autohidesScrollers = true
 
-    /// Column names from the first row's key order.
-    private var columns: [String] { nodeIndex.tabularColumns }
-
-    /// Width of the `Divider()` that follows each column in the header and in
-    /// every data row.
-    private let dividerWidth: CGFloat = 1
-
-    /// Minimum total content width — ensures the scroll area is never narrower
-    /// than the window.
-    ///
-    /// Must include the per-column dividers. Counting only the columns made the
-    /// declared frame narrower than the row content, and `.frame(width:)`
-    /// centres content it cannot fit — so roughly half a divider per column was
-    /// clipped off each side, cutting the first character of the leftmost
-    /// column at every window width (#32).
-    private var totalWidth: CGFloat {
-        max(CGFloat(columns.count) * (colWidth + dividerWidth), 600)
+        context.coordinator.table = table
+        context.coordinator.observeScrolling(of: scroll.contentView)
+        return scroll
     }
 
-    /// Light-weight row identifiers; children are looked up lazily per-row.
-    private struct TableRow: Identifiable { let id: NodeID }
-
-    private var tableRows: [TableRow] {
-        guard let root = nodeIndex.root else { return [] }
-        return nodeIndex.children(of: root.id).map { TableRow(id: $0.id) }
+    func updateNSView(_ scroll: NSScrollView, context: Context) {
+        context.coordinator.update(nodeIndex: nodeIndex, selection: $selection,
+                                   loadRows: loadRows)
     }
 
-    // MARK: - Body
+    // MARK: - Coordinator
 
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: true) {
-            VStack(alignment: .leading, spacing: 0) {
+    @MainActor
+    final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
 
-                // ── Header ──────────────────────────────────────────────────
-                // Placed outside the vertical ScrollView so it stays pinned at
-                // the top while rows scroll underneath.
-                headerRowView
-                    .frame(width: totalWidth, height: headerHeight)
-                    .background(Color(NSColor.windowBackgroundColor))
+        weak var table: NSTableView?
+        private var nodeIndex = NodeIndex(root: DocumentNode(type: .array))
+        private var rowIDs: [NodeID] = []
+        private var columns: [String] = []
+        private var generation: UInt64?
+        private var selection: Binding<NodeID?> = .constant(nil)
+        private var loadRows: ((Set<NodeID>) async -> Void)?
+        private var loadTask: Task<Void, Never>?
+        /// Set while the table's selection is changed to match `selection`,
+        /// so the change isn't reported back.
+        private var isSyncingSelection = false
 
-                Divider()
+        private static let columnWidth: CGFloat = 160
 
-                // ── Data rows ───────────────────────────────────────────────
-                ScrollView(.vertical, showsIndicators: true) {
-                    LazyVStack(spacing: 0) {
-                        ForEach(Array(tableRows.enumerated()), id: \.element.id) { position, row in
-                            dataRowView(row, position: position)
-                            Divider().opacity(0.35)
-                        }
-                    }
-                    .frame(width: totalWidth)
+        func update(nodeIndex: NodeIndex, selection: Binding<NodeID?>,
+                    loadRows: ((Set<NodeID>) async -> Void)?) {
+            self.selection = selection
+            self.loadRows = loadRows
+            guard let table else { return }
+
+            if generation != nodeIndex.generation {
+                generation = nodeIndex.generation
+                self.nodeIndex = nodeIndex
+                rowIDs = nodeIndex.root?.childIDs ?? []
+                let newColumns = nodeIndex.tabularColumns
+                if newColumns != columns {
+                    columns = newColumns
+                    rebuildColumns(of: table)
                 }
-                .frame(maxHeight: .infinity)
+                table.reloadData()
+                scheduleLoad()
             }
-            .frame(width: totalWidth)
+            syncSelection(of: table)
         }
-        .background(Color(NSColor.controlBackgroundColor))
-    }
 
-    // MARK: - Header row
-
-    private var headerRowView: some View {
-        HStack(spacing: 0) {
-            ForEach(columns, id: \.self) { col in
-                Text(col)
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .padding(.horizontal, 8)
-                    .frame(width: colWidth, alignment: .leading)
-
-                Divider().opacity(0.4)
+        private func rebuildColumns(of table: NSTableView) {
+            for column in table.tableColumns { table.removeTableColumn(column) }
+            for (i, name) in columns.enumerated() {
+                let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("\(i)"))
+                column.title = name
+                column.width = Self.columnWidth
+                column.minWidth = 40
+                column.headerCell.font = .monospacedSystemFont(ofSize: 11, weight: .semibold)
+                table.addTableColumn(column)
             }
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Columns: \(columns.joined(separator: ", "))")
-        .accessibilityAddTraits(.isHeader)
-    }
 
-    // MARK: - Data row
+        private func syncSelection(of table: NSTableView) {
+            let wanted = selection.wrappedValue.flatMap { id in rowIDs.firstIndex(of: id) }
+            guard table.selectedRow != (wanted ?? -1) else { return }
+            isSyncingSelection = true
+            if let wanted {
+                table.selectRowIndexes([wanted], byExtendingSelection: false)
+                table.scrollRowToVisible(wanted)
+            } else {
+                table.deselectAll(nil)
+            }
+            isSyncingSelection = false
+        }
 
-    @ViewBuilder
-    private func dataRowView(_ row: TableRow, position: Int) -> some View {
-        let kvs = nodeIndex.children(of: row.id)
-        let isSelected = selection == row.id
+        // MARK: Loading rows as they scroll into view
 
-        HStack(spacing: 0) {
-            ForEach(columns, id: \.self) { col in
-                cellView(kvs: kvs, column: col)
-                Divider().opacity(0.25)
+        func observeScrolling(of clip: NSClipView) {
+            clip.postsBoundsChangedNotifications = true
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(boundsDidChange),
+                name: NSView.boundsDidChangeNotification, object: clip)
+        }
+
+        @objc private func boundsDidChange(_ note: Notification) { scheduleLoad() }
+
+        /// Ask for the rows on screen once scrolling pauses. The first row is
+        /// always included: the column names come from it.
+        private func scheduleLoad() {
+            guard let loadRows, let table, !rowIDs.isEmpty else { return }
+            loadTask?.cancel()
+            loadTask = Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(30))
+                guard let self, !Task.isCancelled else { return }
+                let visible = table.rows(in: table.visibleRect)
+                var ids: Set<NodeID> = [self.rowIDs[0]]
+                let upper = min(visible.location + visible.length, self.rowIDs.count)
+                if visible.location < upper {
+                    ids.formUnion(self.rowIDs[visible.location..<upper])
+                }
+                await loadRows(ids)
             }
         }
-        .frame(height: rowHeight)
-        .background(isSelected ? Color.accentColor.opacity(0.18) : Color.clear)
-        .contentShape(Rectangle())
-        .onTapGesture { selection = row.id }
-        // One element per row that reads each cell with its column name;
-        // the cells alone would read as an unlabelled run of values.
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Row \(position + 1)")
-        .accessibilityValue(columns.map { col in
-            "\(col): \(scalarValue(in: kvs, forKey: col).map(spokenText) ?? "empty")"
-        }.joined(separator: ", "))
-        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
-        .accessibilityAction { selection = row.id }
-    }
 
-    // MARK: - Individual cell
+        // MARK: Data source
 
-    @ViewBuilder
-    private func cellView(kvs: [DocumentNode], column: String) -> some View {
-        let sv = scalarValue(in: kvs, forKey: column)
-        Text(sv?.displayText ?? "")
-            .font(.system(.body, design: .monospaced))
-            .foregroundStyle(sv.map { typeColor($0) } ?? Color.secondary)
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .padding(.horizontal, 8)
-            .frame(width: colWidth, alignment: .leading)
-    }
+        func numberOfRows(in tableView: NSTableView) -> Int { rowIDs.count }
 
-    // MARK: - Helpers
+        // MARK: Delegate
 
-    /// Resolve the scalar value for a given column from a row's keyValue children.
-    private func scalarValue(in kvs: [DocumentNode], forKey key: String) -> ScalarValue? {
-        guard let kv = kvs.first(where: { $0.key == key }),
-              let scalar = nodeIndex.children(of: kv.id).first,
-              case .scalar(let sv) = scalar.value else { return nil }
-        return sv
-    }
+        func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?,
+                       row: Int) -> NSView? {
+            guard let tableColumn, let col = Int(tableColumn.identifier.rawValue),
+                  columns.indices.contains(col), rowIDs.indices.contains(row) else { return nil }
 
-    /// A cell as VoiceOver should read it: strings without their quotes.
-    private func spokenText(_ sv: ScalarValue) -> String {
-        if case .string(let s) = sv { return s }
-        return sv.displayText
-    }
+            let id = NSUserInterfaceItemIdentifier("cell")
+            let cell = tableView.makeView(withIdentifier: id, owner: nil) as? NSTableCellView
+                ?? Self.makeCell(identifier: id)
+            let value = scalarValue(row: rowIDs[row], column: columns[col])
+            cell.textField?.stringValue = value?.displayText ?? ""
+            cell.textField?.textColor = value.map(Self.color) ?? .secondaryLabelColor
+            return cell
+        }
 
-    /// Per-type text colors matching the palette used in `NodeRow`.
-    private func typeColor(_ sv: ScalarValue) -> Color {
-        switch sv {
-        case .string:          return Color(red: 0.8, green: 0.3, blue: 0.1)
-        case .integer, .float: return .blue
-        case .boolean:         return .orange
-        case .null:            return .secondary
+        func tableViewSelectionDidChange(_ notification: Notification) {
+            guard !isSyncingSelection, let table else { return }
+            let row = table.selectedRow
+            selection.wrappedValue = rowIDs.indices.contains(row) ? rowIDs[row] : nil
+        }
+
+        // MARK: Cells
+
+        private static func makeCell(identifier: NSUserInterfaceItemIdentifier) -> NSTableCellView {
+            let cell = NSTableCellView()
+            cell.identifier = identifier
+            let field = NSTextField(labelWithString: "")
+            field.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+            field.lineBreakMode = .byTruncatingTail
+            field.translatesAutoresizingMaskIntoConstraints = false
+            cell.addSubview(field)
+            cell.textField = field
+            NSLayoutConstraint.activate([
+                field.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 8),
+                field.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -8),
+                field.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+            ])
+            return cell
+        }
+
+        /// The scalar under `column` in the row, or `nil` when the row has no
+        /// such cell or hasn't been loaded yet.
+        private func scalarValue(row: NodeID, column: String) -> ScalarValue? {
+            guard let kv = nodeIndex.children(of: row).first(where: { $0.key == column }),
+                  let scalar = nodeIndex.children(of: kv.id).first,
+                  case .scalar(let sv) = scalar.value else { return nil }
+            return sv
+        }
+
+        /// Per-type text colors matching the palette used in `NodeRow`.
+        private static func color(_ sv: ScalarValue) -> NSColor {
+            switch sv {
+            case .string:          return NSColor(red: 0.8, green: 0.3, blue: 0.1, alpha: 1)
+            case .integer, .float: return .systemBlue
+            case .boolean:         return .systemOrange
+            case .null:            return .secondaryLabelColor
+            }
         }
     }
 }

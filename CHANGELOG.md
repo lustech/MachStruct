@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Table view and Column Stats were empty for CSV files of 5 MB or more.**
+  The table showed no columns and blank rows, and Column Stats reported "No
+  Columns". The table now loads rows as they scroll into view, and Column
+  Stats covers every row. The table is also built on the native macOS table,
+  so a 400,000-row CSV switches to table view in a few seconds instead of
+  freezing the window for 18 seconds, and VoiceOver reads it as a table with
+  rows, cells and column headers. (#56)
 - **Array items kept their old index after a delete or move.** Deleting
   `[0]` from `["a","b","c"]` left the rest labelled `[1]` and `[2]`, and
   moving an item kept its label, so the status-bar path and bookmarks could

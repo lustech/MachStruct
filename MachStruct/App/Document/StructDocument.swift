@@ -451,23 +451,40 @@ final class StructDocument: ReferenceFileDocument {
     func materializeChildrenIfNeeded(of nodeID: NodeID,
                                       expandedIDs: Set<NodeID> = [],
                                       selectedID: NodeID? = nil) async {
+        await materializeChildrenIfNeeded(of: [nodeID], expandedIDs: expandedIDs,
+                                          selectedID: selectedID)
+    }
+
+    /// Materialise the children of each of `nodeIDs` in one background pass,
+    /// for the rows the table view shows.
+    @MainActor
+    func materializeChildrenIfNeeded(of nodeIDs: [NodeID],
+                                      expandedIDs: Set<NodeID> = [],
+                                      selectedID: NodeID? = nil) async {
         guard let si = structuralIndex,
-              let file = mappedFile else { return }
+              let file = mappedFile,
+              let current = nodeIndex else { return }
         // Rows drill through `.keyValue` nodes to their value, so the nodes a row
         // needs are the value's children — not the keyValue's direct child, which
         // `buildShallowNodeIndex` has already materialised. Probing that value
         // node made this method bail out every time (issue #23).
-        let childIdxs = si.expansionTargets(for: nodeID)
-        guard !childIdxs.isEmpty else { return }
-
-        // Skip only if the nodes this row needs are already present.
-        let firstChildID = si.entries[childIdxs[0]].id
-        guard nodeIndex?.node(for: firstChildID) == nil else { return }
+        // Skip only the nodes whose rows are already present.
+        let pending: [(id: NodeID, childIdxs: [Int])] = nodeIDs.compactMap { id in
+            let childIdxs = si.expansionTargets(for: id)
+            guard let first = childIdxs.first,
+                  current.node(for: si.entries[first].id) == nil else { return nil }
+            return (id, childIdxs)
+        }
+        guard !pending.isEmpty else { return }
 
         // Build DocumentNode updates on a background thread.
         let updates = await Task.detached(priority: .userInitiated) { [si, file] in
-            StructDocument.buildChildUpdates(for: nodeID, childIdxs: childIdxs,
-                                              structuralIndex: si, file: file)
+            var all = [NodeID: DocumentNode]()
+            for (id, childIdxs) in pending {
+                all.merge(StructDocument.buildChildUpdates(for: id, childIdxs: childIdxs,
+                                                           structuralIndex: si, file: file)) { a, _ in a }
+            }
+            return all
         }.value
 
         // Read the index only now: an edit committed during the build would
