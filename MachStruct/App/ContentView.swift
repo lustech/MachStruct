@@ -312,7 +312,11 @@ struct ContentView: View {
                         if viewMode == .raw { refreshRawText() }
                     }
                     .onChange(of: searchQuery) { _, query in
-                        scheduleSearch(query: query, in: index)
+                        scheduleSearch(query: query)
+                    }
+                    // Edits change what matches; refresh without moving.
+                    .onChange(of: document.editCount) { _, _ in
+                        scheduleSearch(query: searchQuery, navigate: false)
                     }
                     .onAppear { restorePersistedBookmarks(in: index) }
                     .onChange(of: index.count) { _, _ in
@@ -895,9 +899,11 @@ struct ContentView: View {
     /// Results are returned in DFS document order so ↑↓ navigation feels
     /// natural.  The task is cheap to cancel because `SearchEngine.search`
     /// is a synchronous, non-blocking scan.
-    private func scheduleSearch(query: String, in _: NodeIndex) {
+    /// - Parameter navigate: select and reveal the first match. Off when an
+    ///   edit refreshes the results, so the view stays where it is.
+    private func scheduleSearch(query: String, navigate: Bool = true) {
         searchTask?.cancel()
-        activeMatchIndex = 0
+        if navigate { activeMatchIndex = 0 }
 
         guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             searchMatches = []
@@ -914,19 +920,18 @@ struct ContentView: View {
             // Run the O(n) scan on a background thread to keep the UI fluid
             // on very large documents (100 k+ nodes).
             //
-            // For lazily-loaded files (structuralIndex is non-nil) we search
-            // StructuralIndex.entries directly — no full materialisation required.
-            // For small files (structuralIndex is nil) the NodeIndex is already
-            // fully built, so we search that instead.
+            // For lazily-loaded files (structuralIndex is non-nil) the search
+            // reads loaded nodes from the NodeIndex, which holds the edits,
+            // and the rest from the structural index — no full
+            // materialisation required (#63). For small files the NodeIndex
+            // is already fully built, so we search that alone.
+            guard let index = document.nodeIndex else { return }
             let results: [SearchMatch]
             if let si = document.structuralIndex, let file = document.mappedFile {
-                let siSnap   = si
-                let fileSnap = file
                 results = await Task.detached(priority: .userInitiated) {
-                    SearchEngine.search(query: query, in: siSnap, file: fileSnap)
+                    SearchEngine.search(query: query, in: index, structuralIndex: si, file: file)
                 }.value
             } else {
-                guard let index = document.nodeIndex else { return }
                 results = await Task.detached(priority: .userInitiated) {
                     SearchEngine.search(query: query, in: index)
                 }.value
@@ -934,7 +939,11 @@ struct ContentView: View {
 
             guard !Task.isCancelled else { return }
 
-            searchMatches    = results
+            searchMatches = results
+            guard navigate else {
+                activeMatchIndex = min(activeMatchIndex, max(results.count - 1, 0))
+                return
+            }
             activeMatchIndex = 0
 
             if let first = results.first {

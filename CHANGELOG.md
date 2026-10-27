@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **The toolbar search ignored edits in files of 5 MB or more.** It searched
+  the file as it was opened, so an edited value couldn't be found by its new
+  text, its old text still matched, and deleted entries could still be found.
+  It now searches the document as edited. In files of any size, the results
+  also refresh after an edit, undo or redo, without moving the selection.
+  (#63)
 - **Table view and Column Stats were empty for CSV files of 5 MB or more.**
   The table showed no columns and blank rows, and Column Stats reported "No
   Columns". The table now loads rows as they scroll into view, and Column
