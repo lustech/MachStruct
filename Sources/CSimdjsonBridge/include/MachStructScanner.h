@@ -83,12 +83,62 @@ typedef int (*MSJSONVisitor)(void* context, const MSJSONToken* token);
 /// that may contain `needle`. A scalar under an object member is shown on the
 /// member's row; any other is its own row.
 ///
-/// `needle` must be lowercase ASCII; a token is skipped only when its bytes
-/// show for certain that its text doesn't contain it. Pass a zero length to
-/// visit every token.
+/// `needle` is the lowercased query in UTF-8; a token is skipped only when
+/// its bytes show for certain that its text doesn't contain it. Pass a zero
+/// length to visit every token.
 void ms_json_search(const char* data, uint64_t length, uint64_t offset, int is_member,
                     const char* needle, uint64_t needle_length,
                     MSJSONVisitor visit, void* context);
+
+// ---------------------------------------------------------------------------
+// CSV (RFC 4180, as CSVParser reads it)
+// ---------------------------------------------------------------------------
+
+typedef struct {
+    uint64_t rows;       ///< Rows, not counting blank lines.
+    uint64_t fields;     ///< Fields in those rows.
+    uint64_t widest;     ///< Most fields in one row.
+    int      is_utf8;    ///< 1 when the whole file is valid UTF-8.
+} MSCSVInfo;
+
+/// Scan `data` for rows separated by `delimiter`. Writes the start of up to
+/// `max` rows to `row_offsets`, skipping lines that hold a single empty
+/// field, and fills `info`.
+void ms_csv_scan(const char* data, uint64_t length, char delimiter,
+                 uint64_t* row_offsets, uint64_t max, MSCSVInfo* info);
+
+/// The fields of the row starting at `row_offset`: writes the raw extent of
+/// up to `max` fields (a quoted field includes its quotes) and returns how
+/// many there are. `row_end`, if not NULL, is set to one past the row's last
+/// field, before its line ending.
+uint64_t ms_csv_fields(const char* data, uint64_t length, char delimiter, uint64_t row_offset,
+                       uint64_t* starts, uint64_t* ends, uint64_t max, uint64_t* row_end);
+
+/// A field the CSV search scan found.
+typedef struct {
+    uint64_t row;        ///< Where its row starts.
+    uint64_t start;      ///< First byte of the field (its opening quote, if quoted).
+    uint64_t end;        ///< One past its last byte.
+    uint64_t column;     ///< Its position in the row.
+} MSCSVField;
+
+/// Return 0 to stop the scan.
+typedef int (*MSCSVVisitor)(void* context, const MSCSVField* field);
+
+/// Visit each field of the rows from `row_offset` that may contain `needle`
+/// (the lowercased query in UTF-8) once read as CSVParser reads it, and every field in a
+/// column marked in `columns` (one byte per column, nonzero to visit). A
+/// field is skipped only when its bytes are its text for certain: unquoted
+/// ASCII that isn't a number needing reformatting. Pass a zero-length needle
+/// to visit every field.
+///
+/// Scans `row_count` rows from the one at `row_offset`, skipping blank lines
+/// as ms_csv_scan does.
+void ms_csv_search_rows(const char* data, uint64_t length, char delimiter,
+                        uint64_t row_offset, uint64_t row_count,
+                        const char* needle, uint64_t needle_length,
+                        const uint8_t* columns, uint64_t column_count,
+                        MSCSVVisitor visit, void* context);
 
 #ifdef __cplusplus
 } // extern "C"

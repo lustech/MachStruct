@@ -152,51 +152,33 @@ public enum SearchEngine {
         }
         var seen = Set<MatchKey>()
 
-        // A JSON subtree that isn't loaded is unedited: scan its bytes, which
-        // skips what can't match without building any nodes.
-        let json = source as? JSONSource
-        let needle = Array(q.utf8)
-        let scanBytes: ((NodeID, DocumentNode) -> Bool)? = json.map { json in
-            { id, _ in
-                var scanned = 0
-                json.searchCandidates(in: id, needle: needle) { row, field, token in
-                    let text: String?
-                    if field == .key {
-                        text = JSONParser.decodeStringToken(token)
-                    } else {
-                        text = JSONParser.decodeScalarBytes(token)?.searchableText
-                    }
-                    if let text, text.lowercased().contains(q),
-                       seen.insert(MatchKey(id: row, field: field)).inserted {
-                        results.append(SearchMatch(rowNodeID: row, field: field, matchedText: text))
-                    }
-                    scanned += 1
-                    return scanned & 0xFFF != 0 || !Task.isCancelled
+        // A subtree that isn't loaded is unedited, so the source can search
+        // it from its bytes, skipping what can't match without building nodes.
+        var scanned = 0
+        let searchBytes: (ArraySlice<NodeID>, DocumentNode) -> Int = { ids, _ in
+            source.searchUnloaded(ids, query: q) { row, field, text in
+                if seen.insert(MatchKey(id: row, field: field)).inserted {
+                    results.append(SearchMatch(rowNodeID: row, field: field, matchedText: text))
                 }
-                return true
+                scanned += 1
+                return scanned & 0xFFF != 0 || !Task.isCancelled
             }
         }
 
-        source.traverse(overlaying: index, unloaded: scanBytes) { node, parent in
-            switch node.type {
-            case .keyValue:
-                if let key = node.key, key.lowercased().contains(q),
-                   seen.insert(MatchKey(id: node.id, field: .key)).inserted {
-                    results.append(SearchMatch(rowNodeID: node.id, field: .key, matchedText: key))
+        source.traverse(overlaying: index, unloaded: searchBytes) { node, parent in
+            // As in the small-file search: any key, and scalar values. A
+            // scalar under a keyValue is shown on its key's row.
+            let rowID = node.type == .scalar && parent?.type == .keyValue ? parent!.id : node.id
+            if let key = node.key, key.lowercased().contains(q),
+               seen.insert(MatchKey(id: rowID, field: .key)).inserted {
+                results.append(SearchMatch(rowNodeID: rowID, field: .key, matchedText: key))
+            }
+            if case .scalar(let sv) = node.value {
+                let text = sv.searchableText
+                if text.lowercased().contains(q),
+                   seen.insert(MatchKey(id: rowID, field: .value)).inserted {
+                    results.append(SearchMatch(rowNodeID: rowID, field: .value, matchedText: text))
                 }
-            case .scalar:
-                if case .scalar(let sv) = node.value {
-                    let text = sv.searchableText
-                    // A scalar under a keyValue is shown on its key's row.
-                    let rowID = parent?.type == .keyValue ? parent!.id : node.id
-                    if text.lowercased().contains(q),
-                       seen.insert(MatchKey(id: rowID, field: .value)).inserted {
-                        results.append(SearchMatch(rowNodeID: rowID, field: .value,
-                                                   matchedText: text))
-                    }
-                }
-            case .object, .array:
-                break   // containers have no searchable content
             }
             return true
         }

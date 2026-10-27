@@ -381,6 +381,20 @@ final class StructDocument: ReferenceFileDocument {
                 nodeIndex = NodeIndex(root: root)
                 indexedNodeCount = source.nodeCount
 
+            } else if useLazy, setup.detected == .csv {
+                // Step 3a — Large CSV: scan the rows once and keep where each
+                // starts; cells are read from the bytes when shown.
+                let source = await Task.detached(priority: .userInitiated) {
+                    CSVSource(file: file)
+                }.value
+                file.adviseRandom()
+                guard let root = source.node(for: source.rootID, parent: nil) else {
+                    throw StructDocumentError.noContent
+                }
+                self.source = source
+                nodeIndex = NodeIndex(root: root)
+                indexedNodeCount = source.nodeCount
+
             } else if useLazy {
                 // Step 3a — Other large files: index node by node, consuming
                 // the progressive stream so the loading UI can show a count.

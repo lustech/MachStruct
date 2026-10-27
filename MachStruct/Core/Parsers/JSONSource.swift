@@ -190,6 +190,26 @@ public final class JSONSource: DocumentSource, @unchecked Sendable {
 
     // MARK: Search
 
+    public func searchUnloaded(_ ids: ArraySlice<NodeID>, query: String,
+                               _ match: (NodeID, SearchMatch.Field, String) -> Bool) -> Int {
+        let needle = Array(query.utf8)
+        var stopped = false
+        for (n, id) in ids.enumerated() {
+            // Stopping means the search was cancelled: nothing left matters.
+            guard !stopped else { return ids.count }
+            guard locate(id) != nil else { return n }
+            searchCandidates(in: id, needle: needle) { row, field, token in
+                let text = field == .key
+                    ? JSONParser.decodeStringToken(token)
+                    : JSONParser.decodeScalarBytes(token)?.searchableText
+                guard let text, text.lowercased().contains(query) else { return true }
+                stopped = !match(row, field, text)
+                return !stopped
+            }
+        }
+        return ids.count
+    }
+
     /// Each key and scalar in the subtree at `id` whose text may contain
     /// `needle` (lowercase UTF-8), in document order, with the row that shows
     /// it. Skipping the rest without decoding them is what makes searching a
@@ -199,8 +219,6 @@ public final class JSONSource: DocumentSource, @unchecked Sendable {
         _ visit: (_ row: NodeID, _ field: SearchMatch.Field, _ token: UnsafeRawBufferPointer) -> Bool
     ) {
         guard let (offset, kind) = locate(id) else { return }
-        // The C scan only rules tokens out by ASCII bytes.
-        let asciiNeedle = needle.allSatisfy { $0 < 0x80 } ? needle : []
         typealias Visit = (MSJSONToken) -> Bool
         withoutActuallyEscaping({ (token: MSJSONToken) -> Bool in
             let row = self.id(token.row_offset, token.row_is_member == 1 ? .member : .value)
@@ -209,7 +227,7 @@ public final class JSONSource: DocumentSource, @unchecked Sendable {
         } as Visit) { body in
             var box = body
             withUnsafeMutablePointer(to: &box) { context in
-                asciiNeedle.withUnsafeBufferPointer { needleBytes in
+                needle.withUnsafeBufferPointer { needleBytes in
                     needleBytes.withMemoryRebound(to: CChar.self) { n in
                         ms_json_search(bytes, file.fileSize, offset, kind == .member ? 1 : 0,
                                        n.baseAddress, UInt64(n.count),

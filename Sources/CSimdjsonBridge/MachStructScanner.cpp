@@ -31,6 +31,43 @@ inline bool is_ws(unsigned char c) {
 
 inline bool is_digit(unsigned char c) { return c >= '0' && c <= '9'; }
 
+inline bool is_ascii(const unsigned char* s, uint64_t n) {
+    for (uint64_t i = 0; i < n; ++i) if (s[i] >= 0x80) return false;
+    return true;
+}
+
+// True when [s, e) is a number whose displayed text (ScalarValue's
+// searchableText) is exactly these bytes: an Int64 written without a plus
+// sign or leading zero, or a decimal Swift prints back unchanged, i.e. at most 15
+// digits, no trailing zero unless it is a lone ".0", at least 1e-4, and no
+// exponent.
+bool displays_as_written(const unsigned char* d, uint64_t s, uint64_t e) {
+    uint64_t i = s;
+    if (i < e && d[i] == '-') ++i;
+    uint64_t int_start = i;
+    while (i < e && is_digit(d[i])) ++i;
+    uint64_t int_digits = i - int_start;
+    if (int_digits == 0 || (d[int_start] == '0' && int_digits > 1)) return false;
+    if (i == e) {
+        // An integer: displayed as Int64 prints it, which drops the sign of -0.
+        if (d[s] == '-' && int_digits == 1 && d[int_start] == '0') return false;
+        return int_digits <= 18;
+    }
+    if (d[i] != '.') return false;
+    uint64_t frac_start = ++i;
+    while (i < e && is_digit(d[i])) ++i;
+    uint64_t frac_digits = i - frac_start;
+    if (i != e || frac_digits == 0 || int_digits + frac_digits > 15) return false;
+    bool lone_zero = frac_digits == 1 && d[frac_start] == '0';
+    if (!lone_zero && d[e - 1] == '0') return false;
+    if (d[int_start] == '0' && !lone_zero) {
+        uint64_t zeros = 0;
+        while (zeros < frac_digits && d[frac_start + zeros] == '0') ++zeros;
+        if (zeros >= 4) return false;   // below 1e-4: printed with an exponent
+    }
+    return true;
+}
+
 inline int hex_value(unsigned char c) {
     if (c >= '0' && c <= '9') return c - '0';
     if (c >= 'a' && c <= 'f') return c - 'a' + 10;
@@ -349,6 +386,14 @@ uint8_t type_at(const unsigned char* d, uint64_t offset) {
 bool cannot_contain(const unsigned char* d, uint64_t start, uint64_t end,
                     const unsigned char* needle, uint64_t needle_length) {
     if (needle_length == 0) return false;
+    if (!is_ascii(needle, needle_length)) {
+        // ASCII text can't hold a non-ASCII needle; only \u escapes and
+        // non-ASCII bytes make non-ASCII text.
+        for (uint64_t i = start; i < end; ++i) {
+            if (d[i] >= 0x80 || d[i] == '\\') return false;
+        }
+        return true;
+    }
     uint64_t from = start, to = end;
     unsigned char first = d[start];
     if (first == '"') {
@@ -357,14 +402,148 @@ bool cannot_contain(const unsigned char* d, uint64_t start, uint64_t end,
             if (d[i] == '\\' || d[i] >= 0x80) return false;
         }
     } else if (first == '-' || is_digit(first)) {
-        if (to - from > 18) return false;              // may not fit Int64
-        if (first == '-' && to - from > 1 && d[from + 1] == '0') return false;   // -0
-        for (uint64_t i = from; i < to; ++i) {
-            if (!is_digit(d[i]) && !(i == from && d[i] == '-')) return false;  // float
-        }
+        if (!displays_as_written(d, from, to)) return false;
     }
     if (to - from < needle_length) return true;
     for (uint64_t i = from; i + needle_length <= to; ++i) {
+        uint64_t j = 0;
+        while (j < needle_length) {
+            unsigned char c = d[i + j];
+            if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
+            if (c != needle[j]) break;
+            ++j;
+        }
+        if (j == needle_length) return false;
+    }
+    return true;
+}
+
+// --- CSV --------------------------------------------------------------------
+
+// One past the end of the field starting at `pos`. A quoted field ends after
+// its closing quote ("" is an escaped quote); an unquoted one at the
+// delimiter or a line break.
+uint64_t csv_field_end(const unsigned char* d, uint64_t n, uint64_t pos, unsigned char delim) {
+    if (pos < n && d[pos] == '"') {
+        ++pos;
+        while (pos < n) {
+            if (d[pos] == '"') {
+                if (pos + 1 < n && d[pos + 1] == '"') { pos += 2; continue; }
+                return pos + 1;
+            }
+            ++pos;
+        }
+        return n;
+    }
+    while (pos < n && d[pos] != delim && d[pos] != '\n' && d[pos] != '\r') ++pos;
+    return pos;
+}
+
+// Reads the row at `pos` the way CSVParser's tokenizer does, calling
+// `field(start, end)` for each field. Returns where the next row starts and
+// sets `row_end` to one past the last field.
+template <typename Field>
+uint64_t csv_row(const unsigned char* d, uint64_t n, uint64_t pos, unsigned char delim,
+                 uint64_t* row_end, Field field) {
+    for (;;) {
+        uint64_t end = csv_field_end(d, n, pos, delim);
+        field(pos, end);
+        pos = end;
+        if (pos >= n) { *row_end = pos; return pos; }
+        if (d[pos] == delim) { ++pos; continue; }
+        *row_end = pos;
+        // A line ending ends the row; anything else after a closing quote
+        // starts the next one.
+        if (d[pos] == '\r') {
+            ++pos;
+            if (pos < n && d[pos] == '\n') ++pos;
+        } else if (d[pos] == '\n') {
+            ++pos;
+        }
+        return pos;
+    }
+}
+
+// True when the field's text is empty: nothing, `""`, or a lone `"` that
+// opens a quoted field the file ends in.
+inline bool csv_field_is_empty(const unsigned char* d, uint64_t start, uint64_t end) {
+    if (end == start) return true;
+    if (d[start] != '"') return false;
+    return end - start == 1 || (end - start == 2 && d[start + 1] == '"');
+}
+
+bool utf8_valid(const unsigned char* d, uint64_t n) {
+    uint64_t pos = 0;
+    while (pos < n) {
+        if (d[pos] < 0x80) { ++pos; continue; }
+        unsigned char c = d[pos];
+        int extra;
+        unsigned char lo = 0x80, hi = 0xBF;
+        if (c >= 0xC2 && c <= 0xDF) { extra = 1; }
+        else if (c == 0xE0)         { extra = 2; lo = 0xA0; }
+        else if (c >= 0xE1 && c <= 0xEC) { extra = 2; }
+        else if (c == 0xED)         { extra = 2; hi = 0x9F; }
+        else if (c >= 0xEE && c <= 0xEF) { extra = 2; }
+        else if (c == 0xF0)         { extra = 3; lo = 0x90; }
+        else if (c >= 0xF1 && c <= 0xF3) { extra = 3; }
+        else if (c == 0xF4)         { extra = 3; hi = 0x8F; }
+        else return false;
+        if (pos + extra >= n) return false;
+        if (d[pos + 1] < lo || d[pos + 1] > hi) return false;
+        for (int i = 2; i <= extra; ++i) {
+            if (d[pos + i] < 0x80 || d[pos + i] > 0xBF) return false;
+        }
+        pos += extra + 1;
+    }
+    return true;
+}
+
+// True when a CSV field's text, as CSVParser reads and displays it, can't
+// contain `needle`. Judged only for unquoted ASCII fields whose displayed
+// text is exactly their bytes up to case: anything Swift's `Double` might
+// parse (digits other than a plain integer, inf, nan) is reformatted, and a
+// quoted field is unescaped, so those are left to the caller.
+bool csv_cannot_contain(const unsigned char* d, uint64_t start, uint64_t end,
+                        const unsigned char* needle, uint64_t needle_length) {
+    if (needle_length == 0) return false;
+    if (!is_ascii(needle, needle_length)) {
+        // ASCII text, quoted or not, can't hold a non-ASCII needle.
+        for (uint64_t i = start; i < end; ++i) {
+            if (d[i] >= 0x80) return false;
+        }
+        return true;
+    }
+    for (uint64_t i = start; i < end; ++i) {
+        if (d[i] == '"' || d[i] >= 0x80) return false;
+    }
+    uint64_t s = start, e = end;
+    while (s < e && (d[s] == ' ' || d[s] == '\t')) ++s;
+    while (e > s && (d[e - 1] == ' ' || d[e - 1] == '\t')) --e;
+    // Anything Swift could read as a number is displayed as that number. A
+    // number needs a digit and only number characters (decimal, exponent,
+    // hex float); plain Int64 digits without a leading zero display as is.
+    bool has_digit = false, all_digits = s < e, number_chars = true;
+    for (uint64_t i = s; i < e; ++i) {
+        unsigned char c = d[i];
+        if (is_digit(c)) { has_digit = true; continue; }
+        all_digits = false;
+        if (!std::strchr("+-.eExXpPaAbBcCdDfF", c)) number_chars = false;
+    }
+    if (has_digit && number_chars) {
+        (void)all_digits;
+        if (s != start || e != end || !displays_as_written(d, s, e)) return false;
+    }
+    // inf, infinity and nan, with sign and spaces, parse as floats.
+    if (s < e && (d[s] == '+' || d[s] == '-')) ++s;
+    for (const char* word : {"inf", "infinity", "nan", "snan"}) {
+        size_t len = std::strlen(word);
+        if (e - s != len) continue;
+        size_t k = 0;
+        while (k < len && (d[s + k] | 0x20) == static_cast<unsigned char>(word[k])) ++k;
+        if (k == len) return false;
+    }
+    if (end - start < needle_length) return true;
+    for (uint64_t i = start; i + needle_length <= end; ++i) {
         uint64_t j = 0;
         while (j < needle_length) {
             unsigned char c = d[i + j];
@@ -506,5 +685,79 @@ extern "C" void ms_json_search(const char* data, uint64_t length, uint64_t offse
             ++pos;   // '}' or ']'
             stack.pop_back();
         }
+    }
+}
+
+extern "C" void ms_csv_scan(const char* data, uint64_t length, char delimiter,
+                            uint64_t* row_offsets, uint64_t max, MSCSVInfo* info)
+{
+    auto d = reinterpret_cast<const unsigned char*>(data);
+    auto delim = static_cast<unsigned char>(delimiter);
+    *info = MSCSVInfo{};
+    info->is_utf8 = utf8_valid(d, length) ? 1 : 0;
+    uint64_t pos = 0;
+    while (pos < length) {
+        uint64_t start = pos, row_end = 0, count = 0;
+        bool empty = true;
+        pos = csv_row(d, length, pos, delim, &row_end, [&](uint64_t s, uint64_t e) {
+            ++count;
+            empty = empty && csv_field_is_empty(d, s, e);
+        });
+        if (count == 1 && empty) continue;   // a blank line
+        if (info->rows < max) row_offsets[info->rows] = start;
+        ++info->rows;
+        info->fields += count;
+        if (count > info->widest) info->widest = count;
+    }
+}
+
+extern "C" uint64_t ms_csv_fields(const char* data, uint64_t length, char delimiter,
+                                  uint64_t row_offset, uint64_t* starts, uint64_t* ends,
+                                  uint64_t max, uint64_t* row_end)
+{
+    auto d = reinterpret_cast<const unsigned char*>(data);
+    uint64_t count = 0, end = 0;
+    csv_row(d, length, row_offset, static_cast<unsigned char>(delimiter), &end,
+            [&](uint64_t s, uint64_t e) {
+        if (count < max) { starts[count] = s; ends[count] = e; }
+        ++count;
+    });
+    if (row_end) *row_end = end;
+    return count;
+}
+
+extern "C" void ms_csv_search_rows(const char* data, uint64_t length, char delimiter,
+                                   uint64_t row_offset, uint64_t row_count,
+                                   const char* needle, uint64_t needle_length,
+                                   const uint8_t* columns, uint64_t column_count,
+                                   MSCSVVisitor visit, void* context)
+{
+    auto d = reinterpret_cast<const unsigned char*>(data);
+    auto nd = reinterpret_cast<const unsigned char*>(needle);
+    auto delim = static_cast<unsigned char>(delimiter);
+    uint64_t pos = row_offset, done = 0;
+    bool stopped = false;
+    while (pos < length && done < row_count && !stopped) {
+        // A blank line isn't a row: check before visiting anything in it.
+        uint64_t row_end = 0, count = 0;
+        bool empty = true;
+        uint64_t next = csv_row(d, length, pos, delim, &row_end, [&](uint64_t s, uint64_t e) {
+            ++count;
+            empty = empty && csv_field_is_empty(d, s, e);
+        });
+        if (count == 1 && empty) { pos = next; continue; }
+        uint64_t row = pos, column = 0;
+        csv_row(d, length, pos, delim, &row_end, [&](uint64_t s, uint64_t e) {
+            if (!stopped) {
+                bool marked = column < column_count && columns[column];
+                if (marked || !csv_cannot_contain(d, s, e, nd, needle_length)) {
+                    MSCSVField f{row, s, e, column};
+                    if (!visit(context, &f)) stopped = true;
+                }
+            }
+            ++column;
+        });
+        pos = next;
+        ++done;
     }
 }
