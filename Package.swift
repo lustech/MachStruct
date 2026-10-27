@@ -25,7 +25,7 @@ let package = Package(
             name: "CSimdjsonBridge",
             dependencies: [],
             path: "Sources/CSimdjsonBridge",
-            sources: ["MachStructBridge.cpp", "vendor/simdjson.cpp"],
+            sources: ["MachStructBridge.cpp", "MachStructScanner.cpp", "vendor/simdjson.cpp"],
             publicHeadersPath: "include",
             cxxSettings: [
                 .headerSearchPath("include"),

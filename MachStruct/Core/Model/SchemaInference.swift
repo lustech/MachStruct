@@ -296,126 +296,17 @@ public enum SchemaInferenceEngine {
         }
     }
 
-    // MARK: - StructuralIndex path (large / lazily-loaded files)
+    // MARK: - Large files
 
-    /// Infer from a `StructuralIndex` without materialising a `NodeIndex`.
-    ///
-    /// - Parameters:
-    ///   - rootID: restrict inference to this subtree (nil = whole document).
-    ///   - maxDepth: schema-tree depth cap; deeper nodes are counted on their
-    ///     capped ancestor but not descended into (`isDepthTruncated`).
-    public static func infer(from si: StructuralIndex,
-                             file: MappedFile?,
+    /// Infer from a large document: nodes in `index` (which may be edited)
+    /// are read from there, everything else is built from `source`.
+    public static func infer(from source: any DocumentSource,
+                             overlaying index: NodeIndex,
                              rootID: NodeID? = nil,
                              maxDepth: Int = 100) -> InferredSchema {
-        let empty = InferredSchema(
-            root: NodeBuilder(depth: 0).build(), nodesScanned: 0)
-        guard !si.entries.isEmpty else { return empty }
-
-        let startIdx: Int
-        if let rootID {
-            guard rootID.rawValue >= si.entryIDBase else { return empty }
-            let i = Int(rootID.rawValue - si.entryIDBase)
-            guard i < si.entries.count else { return empty }
-            // Confirm the slot really holds the requested node — a stale ID
-            // would otherwise infer a schema for an unrelated subtree (#14).
-            guard si.entries[i].id == rootID else { return empty }
-            startIdx = i
-        } else {
-            startIdx = 0
+        infer(startID: rootID ?? index.rootID, file: nil, maxDepth: maxDepth) { id in
+            index.node(for: id) ?? source.node(for: id, parent: nil, internKeys: false)
         }
-
-        let rootDepth = si.entries[startIdx].depth
-        let rootBuilder = NodeBuilder(depth: 0)
-        var scanned = 0
-
-        // Entry index (relative to startIdx) → the schema builder its children
-        // aggregate into. nil = skipped subtree (past the depth cap).
-        var builderFor = ContiguousArray<NodeBuilder?>()
-        builderFor.reserveCapacity(si.entries.count - startIdx)
-
-        var i = startIdx
-        while i < si.entries.count {
-            // Cooperative cancellation — a dismissed X-Ray sheet must not
-            // keep a full-document scan running to completion.
-            if (i - startIdx) & 0x3FFF == 0, Task.isCancelled { break }
-            let entry = si.entries[i]
-            if i > startIdx && entry.depth <= rootDepth { break }   // left the subtree
-
-            var slot: NodeBuilder? = nil
-            defer {
-                builderFor.append(slot)
-                i += 1
-            }
-
-            // Resolve the builder this entry contributes to.
-            let target: NodeBuilder?
-            if i == startIdx {
-                target = rootBuilder
-            } else {
-                guard let pid = entry.parentID, pid.rawValue >= si.entryIDBase else {
-                    continue
-                }
-                let parentIdx = Int(pid.rawValue - si.entryIDBase) - startIdx
-                guard parentIdx >= 0, parentIdx < builderFor.count,
-                      let parentBuilder = builderFor[parentIdx] else {
-                    continue   // parent skipped (depth cap) — skip whole subtree
-                }
-                // The bounds guard above proves parentIdx + startIdx is a valid
-                // entries index (NodeIDs are contiguous per entryIDBase).
-                let parentEntry = si.entries[parentIdx + startIdx]
-
-                switch parentEntry.nodeType {
-                case .keyValue:
-                    // keyValue folds into its field builder — the value child
-                    // contributes directly to it.
-                    target = parentBuilder
-                case .object:
-                    if entry.nodeType == .keyValue {
-                        // Field wrapper: resolve/create the field builder, no
-                        // value observation.
-                        guard let key = resolveKey(entry: entry, si: si, file: file)
-                        else { continue }
-                        slot = parentBuilder.fieldBuilder(for: key, maxDepth: maxDepth)
-                        continue
-                    }
-                    // Non-keyValue child of an object (XML-style): use its key
-                    // as a field if present, else treat as an element.
-                    if let key = entry.key {
-                        target = parentBuilder.fieldBuilder(for: key, maxDepth: maxDepth)
-                    } else {
-                        target = parentBuilder.elementBuilder(maxDepth: maxDepth)
-                    }
-                case .array:
-                    target = parentBuilder.elementBuilder(maxDepth: maxDepth)
-                case .scalar:
-                    continue   // scalars have no children
-                }
-            }
-
-            guard let target else { continue }
-
-            switch entry.nodeType {
-            case .object:
-                target.observe(.object)
-            case .array:
-                target.observe(.array)
-            case .scalar:
-                if let kind = scalarKind(entry: entry, file: file) {
-                    target.observe(kind)
-                } else {
-                    continue   // undecodable — don't record a slot either
-                }
-            case .keyValue:
-                // Root-of-subtree keyValue: children fold into the root builder.
-                slot = target
-                continue
-            }
-            scanned += 1
-            slot = target
-        }
-
-        return InferredSchema(root: rootBuilder.build(), nodesScanned: scanned)
     }
 
     // MARK: - NodeIndex path (small files)
@@ -427,9 +318,17 @@ public enum SchemaInferenceEngine {
                              file: MappedFile? = nil,
                              rootID: NodeID? = nil,
                              maxDepth: Int = 100) -> InferredSchema {
+        infer(startID: rootID ?? index.rootID, file: file, maxDepth: maxDepth) {
+            index.node(for: $0)
+        }
+    }
+
+    private static func infer(startID: NodeID,
+                              file: MappedFile?,
+                              maxDepth: Int,
+                              node lookup: (NodeID) -> DocumentNode?) -> InferredSchema {
         let rootBuilder = NodeBuilder(depth: 0)
-        let startID = rootID ?? index.rootID
-        guard index.node(for: startID) != nil else {
+        guard lookup(startID) != nil else {
             return InferredSchema(root: rootBuilder.build(), nodesScanned: 0)
         }
 
@@ -442,7 +341,7 @@ public enum SchemaInferenceEngine {
         while let (nodeID, builder) = stack.popLast() {
             visited += 1
             if visited & 0x3FFF == 0, Task.isCancelled { break }
-            guard let node = index.node(for: nodeID) else { continue }
+            guard let node = lookup(nodeID) else { continue }
 
             switch node.type {
             case .keyValue:
@@ -459,7 +358,7 @@ public enum SchemaInferenceEngine {
                 // pop in document order.
                 var pushes: [(NodeID, NodeBuilder?)] = []
                 for childID in node.childIDs {
-                    guard let child = index.node(for: childID) else { continue }
+                    guard let child = lookup(childID) else { continue }
                     if child.type == .keyValue {
                         guard let key = child.key else { continue }
                         let fieldBuilder = builder?.fieldBuilder(for: key,
@@ -481,7 +380,9 @@ public enum SchemaInferenceEngine {
             case .array:
                 builder?.observe(.array)
                 if builder != nil { scanned += 1 }
-                let elementBuilder = builder?.elementBuilder(maxDepth: maxDepth)
+                // An empty array has no element schema.
+                let elementBuilder = node.childIDs.isEmpty
+                    ? nil : builder?.elementBuilder(maxDepth: maxDepth)
                 for childID in node.childIDs.reversed() {
                     stack.append((childID, elementBuilder))
                 }
@@ -510,25 +411,6 @@ public enum SchemaInferenceEngine {
     }
 
     // MARK: - Key / scalar-kind resolution
-
-    private static func resolveKey(entry: IndexEntry,
-                                   si: StructuralIndex,
-                                   file: MappedFile?) -> String? {
-        if let key = entry.key { return key }
-        guard let file, entry.byteLength > 0,
-              let bytes = try? file.slice(offset: entry.byteOffset,
-                                          length: entry.byteLength),
-              let decoded = JSONParser.decodeStringToken(bytes)
-        else { return nil }
-        return si.keyTable.intern(decoded)
-    }
-
-    private static func scalarKind(entry: IndexEntry,
-                                   file: MappedFile?) -> SchemaTypeKind? {
-        if let parsed = entry.parsedValue { return scalarKind(of: parsed) }
-        return sniffScalarKind(offset: entry.byteOffset,
-                               length: entry.byteLength, file: file)
-    }
 
     private static func scalarKind(of value: ScalarValue) -> SchemaTypeKind {
         switch value {

@@ -330,8 +330,7 @@ public struct NodeIndex: Sendable {
     /// to detect "not yet materialised" and re-builds them on demand.
     ///
     /// Used by `StructDocument.evictIfNeeded`, which must ensure the evicted IDs
-    /// are not currently visible in the tree, and to prune nodes cut out of the
-    /// tree by edits (`StructuralIndex.buildNodeIndex(overlaying:)`).
+    /// are not currently visible in the tree.
     public mutating func evictNodes(_ ids: Set<NodeID>) {
         guard !ids.isEmpty else { return }
         for id in ids { swapRemove(id) }
