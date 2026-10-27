@@ -208,7 +208,7 @@ struct ContentView: View {
             CSVStatsPanel { await document.wholeDocument()?.index }
         }
         .sheet(isPresented: $showXRay) {
-            XRaySchemaPanel(structuralIndex: document.structuralIndex,
+            XRaySchemaPanel(source: document.source,
                             nodeIndex: document.nodeIndex,
                             mappedFile: document.mappedFile)
         }
@@ -354,11 +354,16 @@ struct ContentView: View {
                     await document?.materializeChildrenIfNeeded(of: id,
                                                                  expandedIDs: postExpand,
                                                                  selectedID: selectedNodeID)
+                },
+                onMissingNodes: { [weak document] missing in
+                    await document?.materialize(missing, expandedIDs: expandedIDs,
+                                                selectedID: selectedNodeID)
                 }
             )
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 StatusBar(
                     nodeIndex:  index,
+                    nodeCount:  document.source == nil ? nil : document.indexedNodeCount,
                     selectedID: selectedNodeID,
                     fileSize:   document.fileSize,
                     formatName: document.formatName
@@ -372,13 +377,14 @@ struct ContentView: View {
                 TableView(nodeIndex: index, selection: $selectedNodeID,
                           loadRows: { [weak document] rows in
                               // Keep the tree's open rows as well as the table's.
-                              await document?.materializeChildrenIfNeeded(
-                                  of: Array(rows),
-                                  expandedIDs: expandedIDs.union(rows),
+                              await document?.materializeRows(
+                                  Array(rows),
+                                  expandedIDs: expandedIDs,
                                   selectedID: selectedNodeID)
                           })
                 StatusBar(
                     nodeIndex: index,
+                    nodeCount: document.source == nil ? nil : document.indexedNodeCount,
                     selectedID: selectedNodeID,
                     fileSize: document.fileSize,
                     formatName: document.formatName
@@ -546,7 +552,7 @@ struct ContentView: View {
         }
         let pattern = findText
         let options = currentFindOptions()
-        if document.structuralIndex == nil, let index = document.nodeIndex {
+        if document.source == nil, let index = document.nodeIndex {
             findMatchCount = SearchEngine.matches(pattern: pattern, options: options, in: index).count
             return
         }
@@ -872,12 +878,11 @@ struct ContentView: View {
             guard response == .OK, let url = panel.url else { return }
             isExporting = true
             let mappedFile = document?.mappedFile
-            let structuralIndex = document?.structuralIndex
+            let source = document?.source
             Task.detached(priority: .userInitiated) {
                 do {
                     // A large file's index holds only what has been expanded.
-                    let complete = StructDocument.completeIndex(
-                        index, structuralIndex: structuralIndex, file: mappedFile)
+                    let complete = StructDocument.completeIndex(index, source: source)
                     let data = try FormatConverter().convert(
                         index: complete,
                         mappedFile: mappedFile,
@@ -922,16 +927,15 @@ struct ContentView: View {
             // Run the O(n) scan on a background thread to keep the UI fluid
             // on very large documents (100 k+ nodes).
             //
-            // For lazily-loaded files (structuralIndex is non-nil) the search
-            // reads loaded nodes from the NodeIndex, which holds the edits,
-            // and the rest from the structural index — no full
-            // materialisation required (#63). For small files the NodeIndex
-            // is already fully built, so we search that alone.
+            // For large files the search reads loaded nodes from the
+            // NodeIndex, which holds the edits, and builds the rest from the
+            // source as it goes, keeping none of them (#63, ADR-002). For
+            // small files the NodeIndex is already complete.
             guard let index = document.nodeIndex else { return }
             let results: [SearchMatch]
-            if let si = document.structuralIndex, let file = document.mappedFile {
+            if let source = document.source {
                 results = await Task.detached(priority: .userInitiated) {
-                    SearchEngine.search(query: query, in: index, structuralIndex: si, file: file)
+                    SearchEngine.search(query: query, in: index, source: source)
                 }.value
             } else {
                 results = await Task.detached(priority: .userInitiated) {
@@ -975,7 +979,7 @@ struct ContentView: View {
         let match = searchMatches[activeMatchIndex]
         selectedNodeID = match.rowNodeID
 
-        if document.structuralIndex != nil {
+        if document.source != nil {
             // Lazy file: ancestors may not be materialised yet.
             // Run the async materialise + expand path in a detached task;
             // the scroll trigger is set inside materializeAndExpand once done.
@@ -993,27 +997,22 @@ struct ContentView: View {
     /// the document was loaded lazily), then expand those ancestors in the tree
     /// and scroll the target row into view.
     ///
-    /// For fully-materialised documents (`structuralIndex == nil`) this is a
-    /// no-op — the caller should use the synchronous `expandPath` path instead.
+    /// For fully-materialised documents (`source == nil`) the path is already
+    /// in the index.
     @MainActor
     private func materializeAndExpand(to nodeID: NodeID) async {
-        // Determine the ancestor path.  Prefer the structural index when present
-        // (covers nodes that haven't been materialised yet); fall back to the
-        // NodeIndex path-walk for small files.
-        let pathIDs: [NodeID]
-        if let si = document.structuralIndex {
-            pathIDs = si.path(to: nodeID)
-            // Materialise each ancestor level so the target node appears in the
-            // tree. Eviction must count the path as expanded already, or in a
-            // large file it drops the rows just built before they are shown.
+        // A node already loaded has its path in the index, edits included;
+        // otherwise the source finds it from the root.
+        if let source = document.source, document.nodeIndex?.node(for: nodeID) == nil {
+            let pathIDs = source.path(to: nodeID)
+            // Load each step of the path under the one before it. Eviction
+            // must count the path as expanded already, or in a large file it
+            // drops the rows just built before they are shown.
             let postExpand = expandedIDs.union(pathIDs)
-            for ancestorID in pathIDs.dropLast() {
-                await document.materializeChildrenIfNeeded(of: ancestorID,
-                                                            expandedIDs: postExpand,
-                                                            selectedID: selectedNodeID)
+            for (parent, child) in zip(pathIDs, pathIDs.dropFirst()) {
+                await document.materialize([parent: [child]], expandedIDs: postExpand,
+                                           selectedID: selectedNodeID)
             }
-        } else {
-            pathIDs = document.nodeIndex?.path(to: nodeID) ?? []
         }
 
         // Now that all ancestors are in the NodeIndex, expand the path normally.

@@ -4,8 +4,8 @@ import XCTest
 /// Tests for X-Ray Mode schema inference (FEATURE-IDEAS #1).
 ///
 /// Covers both engine paths:
-///  - `infer(from: StructuralIndex, file:)` — linear entry scan (lazy/large files)
-///  - `infer(from: NodeIndex, file:)`       — DocumentNode walk (small files)
+///  - `infer(from: DocumentSource, overlaying:)` — large files, read from the bytes
+///  - `infer(from: NodeIndex, file:)`            — DocumentNode walk (small files)
 final class SchemaInferenceTests: XCTestCase {
 
     // MARK: - Helpers
@@ -17,13 +17,22 @@ final class SchemaInferenceTests: XCTestCase {
         return try MappedFile(url: url)
     }
 
-    /// Foundation-path structural index (eager keys + values) for a JSON string.
+    /// The large-file path: nodes built from the file's bytes.
     private func inferFromIndex(json: String,
                                 rootID: NodeID? = nil,
                                 maxDepth: Int = 100) async throws -> InferredSchema {
-        let file = try makeFile(json: json)
-        let si = try await JSONParser().buildIndex(from: file)
-        return SchemaInferenceEngine.infer(from: si, file: file,
+        try inferFromSource(makeFile(json: json), rootID: rootID, maxDepth: maxDepth)
+    }
+
+    private func inferFromSource(_ file: MappedFile, rootID: NodeID? = nil,
+                                 maxDepth: Int = 100) throws -> InferredSchema {
+        try inferFromSource(JSONSource(file: file), rootID: rootID, maxDepth: maxDepth)
+    }
+
+    private func inferFromSource(_ source: JSONSource, rootID: NodeID? = nil,
+                                 maxDepth: Int = 100) throws -> InferredSchema {
+        let index = NodeIndex(root: try XCTUnwrap(source.node(for: source.rootID, parent: nil)))
+        return SchemaInferenceEngine.infer(from: source, overlaying: index,
                                            rootID: rootID, maxDepth: maxDepth)
     }
 
@@ -204,16 +213,15 @@ final class SchemaInferenceTests: XCTestCase {
     func testSubtreeInference() async throws {
         let json = #"{"meta":{"v":1},"items":[{"id":1},{"id":2}]}"#
         let file = try makeFile(json: json)
-        let si = try await JSONParser().buildIndex(from: file)
+        let source = try JSONSource(file: file)
+        let root = try XCTUnwrap(source.node(for: source.rootID, parent: nil))
+        let full = source.completeNodeIndex(overlaying: NodeIndex(root: root))
 
-        // Find the array node (value child of the "items" keyValue entry).
-        let itemsKV = try XCTUnwrap(si.entries.first { $0.key == "items" })
-        let arrayEntry = try XCTUnwrap(si.entries.first {
-            $0.parentID == itemsKV.id && $0.nodeType == .array
-        })
+        // Find the array node (value child of the "items" keyValue).
+        let itemsKV = try XCTUnwrap(full.children(of: root.id).first { $0.key == "items" })
+        let array = try XCTUnwrap(full.children(of: itemsKV.id).first)
 
-        let schema = SchemaInferenceEngine.infer(from: si, file: file,
-                                                 rootID: arrayEntry.id)
+        let schema = try inferFromSource(source, rootID: array.id)
         XCTAssertEqual(schema.root.typeSignature, "object[]")
         let element = try XCTUnwrap(schema.root.element)
         XCTAssertEqual(element.occurrences, 2)
@@ -285,12 +293,7 @@ final class SchemaInferenceTests: XCTestCase {
         XCTAssertGreaterThan(UInt64(json.utf8.count), JSONParser.eagerResolveThreshold,
                              "test must exercise the simdjson path")
 
-        let file = try makeFile(json: json)
-        let si = try await JSONParser().buildIndex(from: file)
-        // Confirm we're on the lazy path (keys not eagerly parsed).
-        XCTAssertNil(si.entries.first(where: { $0.nodeType == .keyValue })?.key)
-
-        let schema = SchemaInferenceEngine.infer(from: si, file: file)
+        let schema = try inferFromSource(makeFile(json: json))
         XCTAssertEqual(schema.root.typeSignature, "object[]")
 
         let element = try XCTUnwrap(schema.root.element)
@@ -324,9 +327,7 @@ final class SchemaInferenceTests: XCTestCase {
         let json = "[" + rows.joined(separator: ",") + "]"
         XCTAssertGreaterThan(UInt64(json.utf8.count), JSONParser.eagerResolveThreshold)
 
-        let file = try makeFile(json: json)
-        let si = try await JSONParser().buildIndex(from: file)
-        let schema = SchemaInferenceEngine.infer(from: si, file: file)
+        let schema = try inferFromSource(makeFile(json: json))
         let element = try XCTUnwrap(schema.root.element)
 
         let escaped = try XCTUnwrap(field(#"a"b"#, in: element))

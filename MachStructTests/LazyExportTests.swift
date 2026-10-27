@@ -18,6 +18,19 @@ final class LazyExportTests: XCTestCase {
         return (try await CSVParser().buildIndex(from: file), file)
     }
 
+    /// A large file's index when it opens: only the root.
+    private func rootOnly(_ source: any DocumentSource) throws -> NodeIndex {
+        NodeIndex(root: try XCTUnwrap(source.node(for: source.rootID, parent: nil)))
+    }
+
+    /// The root and its children with their values, as the tree loads them.
+    private func shallow(_ source: any DocumentSource) throws -> NodeIndex {
+        var index = try rootOnly(source)
+        let root = try XCTUnwrap(index.root)
+        index.applySnapshot(source.build([root.id: root.childIDs], in: index))
+        return index
+    }
+
     private func rows(_ index: NodeIndex) throws -> [[String: Any]] {
         let data = try FormatConverter().convert(index: index, to: .json)
         return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
@@ -33,7 +46,7 @@ final class LazyExportTests: XCTestCase {
     func testOverlayMaterialisesRowsThatWereNeverExpanded() async throws {
         let (si, _) = try await csvIndex("id,name\n1,Alice\n2,Bob\n")
 
-        let full = si.buildNodeIndex(overlaying: si.buildShallowNodeIndex())
+        let full = si.completeNodeIndex(overlaying: try rootOnly(si))
 
         let out = try rows(full)
         XCTAssertEqual(out.count, 2)
@@ -46,7 +59,7 @@ final class LazyExportTests: XCTestCase {
         let bob = try cell(current, row: 1, key: "name")
         current.updateNode(bob.id) { $0.value = .scalar(.string("Robert")) }
 
-        let out = try rows(si.buildNodeIndex(overlaying: current))
+        let out = try rows(si.completeNodeIndex(overlaying: current))
 
         XCTAssertEqual(out.map { $0["name"] as? String }, ["Alice", "Robert"])
     }
@@ -57,7 +70,7 @@ final class LazyExportTests: XCTestCase {
         let firstRow = try XCTUnwrap(current.root.map { current.children(of: $0.id) }?.first)
         current.removeNode(firstRow.id)
 
-        let out = try rows(si.buildNodeIndex(overlaying: current))
+        let out = try rows(si.completeNodeIndex(overlaying: current))
 
         XCTAssertEqual(out.map { $0["name"] as? String }, ["Bob"])
     }
@@ -66,12 +79,12 @@ final class LazyExportTests: XCTestCase {
     /// unreachable orphan.
     func testOverlayDropsNodesNoLongerInTheTree() async throws {
         let (si, _) = try await csvIndex("id,name\n1,Alice\n2,Bob\n")
-        var current = si.buildShallowNodeIndex()
+        var current = try shallow(si)
         let firstRow = try XCTUnwrap(current.root.map { current.children(of: $0.id) }?.first)
         let alice = si.buildNodeIndex().children(of: firstRow.id).map(\.id)
         current.removeNode(firstRow.id)
 
-        let full = si.buildNodeIndex(overlaying: current)
+        let full = si.completeNodeIndex(overlaying: current)
 
         XCTAssertNil(full.node(for: firstRow.id))
         XCTAssertTrue(alice.allSatisfy { full.node(for: $0) == nil })
@@ -85,7 +98,7 @@ final class LazyExportTests: XCTestCase {
                                value: .container(childCount: 0))
         current.insertChild(row, in: root.id, at: 1)
 
-        let out = try rows(si.buildNodeIndex(overlaying: current))
+        let out = try rows(si.completeNodeIndex(overlaying: current))
 
         XCTAssertEqual(out.count, 2)
     }
@@ -94,7 +107,7 @@ final class LazyExportTests: XCTestCase {
         let file = try MappedFile(url: write("people:\n  - name: Alice\n  - name: Bob\n", ext: "yaml"))
         let si = try await YAMLParser().buildIndex(from: file)
 
-        let full = si.buildNodeIndex(overlaying: si.buildShallowNodeIndex())
+        let full = si.completeNodeIndex(overlaying: try rootOnly(si))
 
         let data = try FormatConverter().convert(index: full, to: .json)
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
@@ -104,13 +117,16 @@ final class LazyExportTests: XCTestCase {
 
     // MARK: - JSON save of a lazily loaded file
 
-    private func lazyJSON(_ json: String) async throws -> (NodeIndex, MappedFile) {
+    private func lazyJSON(_ json: String) throws -> (NodeIndex, MappedFile, JSONSource) {
         let file = try MappedFile(url: write(json, ext: "json"))
-        return (try await JSONParser().buildIndex(from: file).buildShallowNodeIndex(), file)
+        let source = try JSONSource(file: file)
+        return (try shallow(source), file, source)
     }
 
-    private func saveJSON(_ index: NodeIndex, _ file: MappedFile) throws -> [String: Any] {
-        let data = try JSONDocumentSerializer(index: index, mappedFile: file).serialize()
+    private func saveJSON(_ index: NodeIndex, _ file: MappedFile,
+                          _ source: JSONSource) throws -> [String: Any] {
+        let data = try JSONDocumentSerializer(index: index, mappedFile: file, source: source)
+            .serialize()
         return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
 
@@ -118,11 +134,10 @@ final class LazyExportTests: XCTestCase {
 
     private let peopleJSON = #"{"people":[{"name":"Alice"},{"name":"Bob"}]}"#
 
-    func testCompleteIndexParsesKeysAndValuesOfALazyJSONFile() async throws {
-        let file = try MappedFile(url: write(peopleJSON, ext: "json"))
-        let si = try await JSONParser().buildIndex(from: file)
+    func testCompleteIndexParsesKeysAndValuesOfALazyJSONFile() throws {
+        let (_, _, source) = try lazyJSON(peopleJSON)
 
-        let full = si.completeNodeIndex(overlaying: si.buildShallowNodeIndex(), file: file)
+        let full = source.completeNodeIndex(overlaying: try rootOnly(source))
 
         let names = full.nodesMatching { $0.key == "name" }.compactMap { kv -> String? in
             guard case .scalar(.string(let s))? = full.children(of: kv.id).first?.value else { return nil }
@@ -131,10 +146,8 @@ final class LazyExportTests: XCTestCase {
         XCTAssertEqual(names.sorted(), ["Alice", "Bob"])
     }
 
-    func testReplaceAllReachesRowsThatWereNeverExpandedAndSaves() async throws {
-        let file = try MappedFile(url: write(peopleJSON, ext: "json"))
-        let si = try await JSONParser().buildIndex(from: file)
-        var current = si.buildShallowNodeIndex()
+    func testReplaceAllReachesRowsThatWereNeverExpandedAndSaves() throws {
+        var (current, file, source) = try lazyJSON(peopleJSON)
         // An earlier edit to a node that is loaded must survive too.
         let people = try XCTUnwrap(current.root.map { current.children(of: $0.id) }?.first)
         current.updateNode(people.id) { $0.key = "folks" }
@@ -142,21 +155,21 @@ final class LazyExportTests: XCTestCase {
         XCTAssertNil(SearchEngine.replaceAll(pattern: "o", replacement: "0", options: opts, in: current),
                      "the loaded rows alone hold no match")
 
-        let full = si.completeNodeIndex(overlaying: current, file: file)
+        let full = source.completeNodeIndex(overlaying: current)
         let tx = try XCTUnwrap(SearchEngine.replaceAll(pattern: "o", replacement: "0",
                                                        options: opts, in: full))
 
-        let saved = try saveJSON(tx.applying(to: full), file)
+        let saved = try saveJSON(tx.applying(to: full), file, source)
         let folks = try XCTUnwrap(saved["folks"] as? [[String: Any]])
         XCTAssertEqual(folks.map { $0["name"] as? String }, ["Alice", "B0b"])
     }
 
-    func testDeletingAKeyFromALazyJSONFileSurvivesSave() async throws {
-        let (index, file) = try await lazyJSON(#"{"a":1,"b":2}"#)
+    func testDeletingAKeyFromALazyJSONFileSurvivesSave() throws {
+        let (index, file, source) = try lazyJSON(#"{"a":1,"b":2}"#)
         let b = try XCTUnwrap(index.root.map { index.children(of: $0.id) }?.first { $0.key == "b" })
         let tx = try XCTUnwrap(EditTransaction.removeNode(b.id, in: index))
 
-        let saved = try saveJSON(tx.applying(to: index), file)
+        let saved = try saveJSON(tx.applying(to: index), file, source)
 
         XCTAssertEqual(saved.keys.sorted(), ["a"])
     }

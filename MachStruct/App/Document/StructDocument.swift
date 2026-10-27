@@ -12,9 +12,8 @@ struct DocumentSnapshot: Sendable {
     let index: NodeIndex
     let mappedFile: MappedFile?
     /// Set for large files, whose `index` holds only the nodes materialised so
-    /// far. JSON copies the rest from `mappedFile`; other formats rebuild the
-    /// whole document from it (`StructDocument.completeIndex`).
-    let structuralIndex: StructuralIndex?
+    /// far; the rest are built from it when saving.
+    let source: (any DocumentSource)?
 }
 
 // MARK: - StructDocument
@@ -84,16 +83,23 @@ final class StructDocument: ReferenceFileDocument {
     /// Kept alive so unparsed scalar nodes can be re-read for save / raw view.
     var mappedFile: MappedFile?
 
-    /// Retained for files ≥ `lazyThreshold` so children can be materialised
-    /// on demand without a full `buildNodeIndex()` at open time.
-    /// Set to `nil` once the document is fully materialised.
-    var structuralIndex: StructuralIndex?
+    /// For files ≥ `lazyThreshold`: builds the nodes `nodeIndex` doesn't hold
+    /// (ADR-002). `nil` for small files, whose `nodeIndex` is complete.
+    var source: (any DocumentSource)?
 
     /// Files ≥ this size use lazy NodeIndex materialisation.
     private static let lazyThreshold: UInt64 = 5 * 1024 * 1024  // 5 MB
 
     /// When materialised node count exceeds this, evict cold nodes.
     private static let evictionThreshold: Int = 50_000
+
+    /// Containers with at most this many children have them all loaded when
+    /// opened. Larger ones are shown as ranges, which load what they show.
+    static let loadAllChildrenLimit = 1_000
+
+    /// The nodes of the last few loads, kept by eviction: they are what the
+    /// tree's open ranges and the table are showing.
+    private var recentLoads: [[NodeID]] = []
 
     /// Every node an edit has touched. Eviction must keep them: an evicted
     /// node is rebuilt from the source file, which no longer matches.
@@ -110,7 +116,7 @@ final class StructDocument: ReferenceFileDocument {
 
     /// True when the document looks tabular. Works for both lazy and fully-built indexes.
     var isTabular: Bool {
-        if let si = structuralIndex { return si.looksTabular() }
+        if let source { return source.looksTabular() }
         return nodeIndex?.isTabular() ?? false
     }
 
@@ -140,8 +146,7 @@ final class StructDocument: ReferenceFileDocument {
         guard let idx = nodeIndex else {
             throw StructDocumentError.noContent
         }
-        return DocumentSnapshot(index: idx, mappedFile: mappedFile,
-                                structuralIndex: structuralIndex)
+        return DocumentSnapshot(index: idx, mappedFile: mappedFile, source: source)
     }
 
     func fileWrapper(snapshot: DocumentSnapshot,
@@ -153,7 +158,8 @@ final class StructDocument: ReferenceFileDocument {
         let data: Data
         if type.conforms(to: .json) {
             data = try JSONDocumentSerializer(index: snapshot.index,
-                                              mappedFile: snapshot.mappedFile)
+                                              mappedFile: snapshot.mappedFile,
+                                              source: snapshot.source)
                 .serialize(pretty: true)
         } else if type.conforms(to: .commaSeparatedText) {
             data = try CSVDocumentSerializer(index: Self.completeIndex(of: snapshot))
@@ -177,12 +183,11 @@ final class StructDocument: ReferenceFileDocument {
     /// The whole document with the user's edits applied.
     ///
     /// A large file's index holds only what has been expanded, and only the
-    /// JSON serializer can fill the gaps from the source bytes. The others
-    /// would write the unexpanded parts as empty.
+    /// JSON serializer can fill the gaps from the source. The others would
+    /// write the unexpanded parts as empty.
     static func completeIndex(_ current: NodeIndex,
-                              structuralIndex si: StructuralIndex?,
-                              file: MappedFile?) -> NodeIndex {
-        si?.completeNodeIndex(overlaying: current, file: file) ?? current
+                              source: (any DocumentSource)?) -> NodeIndex {
+        source?.completeNodeIndex(overlaying: current) ?? current
     }
 
     /// The file as it was opened, as UTF-8 text.
@@ -193,8 +198,7 @@ final class StructDocument: ReferenceFileDocument {
     }
 
     private static func completeIndex(of snapshot: DocumentSnapshot) -> NodeIndex {
-        completeIndex(snapshot.index, structuralIndex: snapshot.structuralIndex,
-                      file: snapshot.mappedFile)
+        completeIndex(snapshot.index, source: snapshot.source)
     }
 
     // MARK: - Edit API (P2-05)
@@ -239,14 +243,13 @@ final class StructDocument: ReferenceFileDocument {
     func wholeDocument() async -> WholeDocument? {
         while true {
             guard let current = nodeIndex else { return nil }
-            guard let si = structuralIndex else {
+            guard let source else {
                 return WholeDocument(index: current, editCount: editCount)
             }
             if let cached = wholeDocumentCache, cached.editCount == editCount { return cached }
             let edits = editCount
-            let file = mappedFile
-            let full = await Task.detached(priority: .userInitiated) { [si, current, file] in
-                si.completeNodeIndex(overlaying: current, file: file)
+            let full = await Task.detached(priority: .userInitiated) { [current] in
+                source.completeNodeIndex(overlaying: current)
             }.value
             // An edit made meanwhile isn't in `full`: build again.
             guard edits == editCount else { continue }
@@ -274,7 +277,7 @@ final class StructDocument: ReferenceFileDocument {
                     undoManager: UndoManager?,
                     expandedIDs: Set<NodeID>, selectedID: NodeID?) -> Bool {
         guard base.editCount == editCount else { return false }
-        guard structuralIndex != nil else {
+        guard source != nil else {
             commitEdit(tx, undoManager: undoManager)
             return true
         }
@@ -294,7 +297,7 @@ final class StructDocument: ReferenceFileDocument {
     /// Returns `nil` if the node is not found or serialization fails.
     func serializeNode(_ nodeID: NodeID, pretty: Bool = true) -> Data? {
         guard let idx = nodeIndex else { return nil }
-        return try? JSONDocumentSerializer(index: idx, mappedFile: mappedFile)
+        return try? JSONDocumentSerializer(index: idx, mappedFile: mappedFile, source: source)
             .serialize(nodeID: nodeID, pretty: pretty)
     }
 
@@ -305,8 +308,9 @@ final class StructDocument: ReferenceFileDocument {
     func serializeDocument(pretty: Bool = true) async throws -> String {
         guard let idx = nodeIndex else { return "{}" }
         let file = mappedFile
+        let source = source
         return try await Task.detached(priority: .userInitiated) {
-            let data = try JSONDocumentSerializer(index: idx, mappedFile: file)
+            let data = try JSONDocumentSerializer(index: idx, mappedFile: file, source: source)
                 .serialize(pretty: pretty)
             return String(data: data, encoding: .utf8) ?? "{}"
         }.value
@@ -362,14 +366,24 @@ final class StructDocument: ReferenceFileDocument {
 
             let useLazy = file.fileSize >= StructDocument.lazyThreshold
 
-            if useLazy {
-                // Step 3a — Large file: consume the progressive stream so the loading
-                // UI can show a live node count while the parse runs in the background.
-                //
-                // Each `.nodesIndexed` batch bumps `indexedNodeCount` on the main actor,
-                // giving the user animated feedback ("N nodes indexed") instead of a
-                // static spinner.  On `.complete` we build the shallow NodeIndex so the
-                // tree becomes visible as quickly as possible.
+            if useLazy, setup.detected == .json || setup.detected == .unknown {
+                // Step 3a — Large JSON: validate in one pass and keep only
+                // the root; every other node is read from the bytes when it
+                // is shown (ADR-002).
+                let source = try await Task.detached(priority: .userInitiated) {
+                    try JSONSource(file: file)
+                }.value
+                file.adviseRandom()
+                guard let root = source.node(for: source.rootID, parent: nil) else {
+                    throw StructDocumentError.noContent
+                }
+                self.source = source
+                nodeIndex = NodeIndex(root: root)
+                indexedNodeCount = source.nodeCount
+
+            } else if useLazy {
+                // Step 3a — Other large files: index node by node, consuming
+                // the progressive stream so the loading UI can show a count.
                 for await progress in parser.parseProgressively(file: file) {
                     switch progress {
                     case .nodesIndexed(let count):
@@ -378,17 +392,11 @@ final class StructDocument: ReferenceFileDocument {
                     case .complete(let si):
                         // Phase 1 done — switch mmap advice to random-access for Phase 2.
                         file.adviseRandom()
-
-                        // Build the shallow NodeIndex on a background thread (fast, O(visible)).
-                        let (idx, retainedSI) = await Task.detached(priority: .userInitiated) {
-                            [si, file] in
-                            var idx = si.buildShallowNodeIndex()
-                            si.parseUnparsedEntries(in: &idx, file: file)
-                            return (idx, si)
-                        }.value
-
-                        nodeIndex       = idx
-                        structuralIndex = retainedSI
+                        guard let root = si.node(for: si.rootID, parent: nil) else {
+                            throw StructDocumentError.noContent
+                        }
+                        source = si
+                        nodeIndex = NodeIndex(root: root)
                         indexedNodeCount = si.count   // snap to exact final count
 
                     case .warning:
@@ -407,7 +415,7 @@ final class StructDocument: ReferenceFileDocument {
                     si.buildNodeIndex()
                 }.value
                 nodeIndex        = idx
-                structuralIndex  = nil
+                source           = nil
                 indexedNodeCount = idx.count
             }
 
@@ -438,15 +446,25 @@ final class StructDocument: ReferenceFileDocument {
 
     // MARK: - Lazy materialisation
 
-    /// Materialise the children of `nodeID` into `nodeIndex` if they are not yet present.
-    ///
-    /// Runs the heavy work (DocumentNode creation + Phase-2 key/value parsing) on a
-    /// background thread so the main actor stays responsive even when expanding nodes
-    /// with thousands of children.
-    ///
-    /// After materialising, evicts cold nodes if the index has grown past
-    /// `evictionThreshold`.  Pass the current `expandedIDs` and `selectedID` so
-    /// the eviction knows which nodes to keep.
+    /// Load the children of each of `nodeIDs` that the tree shows when it is
+    /// opened: a key's value's children, or a container's own. Containers too
+    /// large to list are shown as ranges, which load what they show through
+    /// `materialize(_:)`.
+    @MainActor
+    func materializeChildrenIfNeeded(of nodeIDs: [NodeID],
+                                      expandedIDs: Set<NodeID> = [],
+                                      selectedID: NodeID? = nil) async {
+        guard let current = nodeIndex else { return }
+        let request = current.childrenToLoad(opening: nodeIDs, limit: Self.loadAllChildrenLimit)
+        await materialize(request, expandedIDs: expandedIDs, selectedID: selectedID)
+        // A key whose value was missing can list its children only now.
+        guard let current = nodeIndex else { return }
+        let next = current.childrenToLoad(opening: nodeIDs, limit: Self.loadAllChildrenLimit)
+        if !next.isEmpty {
+            await materialize(next, expandedIDs: expandedIDs, selectedID: selectedID)
+        }
+    }
+
     @MainActor
     func materializeChildrenIfNeeded(of nodeID: NodeID,
                                       expandedIDs: Set<NodeID> = [],
@@ -455,104 +473,78 @@ final class StructDocument: ReferenceFileDocument {
                                           selectedID: selectedID)
     }
 
-    /// Materialise the children of each of `nodeIDs` in one background pass,
-    /// for the rows the table view shows.
+    /// Load the rows the table shows: each row, its cells, and their values.
     @MainActor
-    func materializeChildrenIfNeeded(of nodeIDs: [NodeID],
-                                      expandedIDs: Set<NodeID> = [],
-                                      selectedID: NodeID? = nil) async {
-        guard let si = structuralIndex,
-              let file = mappedFile,
-              let current = nodeIndex else { return }
-        // Rows drill through `.keyValue` nodes to their value, so the nodes a row
-        // needs are the value's children — not the keyValue's direct child, which
-        // `buildShallowNodeIndex` has already materialised. Probing that value
-        // node made this method bail out every time (issue #23).
-        // Skip only the nodes whose rows are already present.
-        let pending: [(id: NodeID, childIdxs: [Int])] = nodeIDs.compactMap { id in
-            let childIdxs = si.expansionTargets(for: id)
-            guard let first = childIdxs.first,
-                  current.node(for: si.entries[first].id) == nil else { return nil }
-            return (id, childIdxs)
-        }
-        guard !pending.isEmpty else { return }
+    func materializeRows(_ rowIDs: [NodeID], expandedIDs: Set<NodeID>,
+                         selectedID: NodeID?) async {
+        guard let rootID = nodeIndex?.rootID else { return }
+        await materialize([rootID: rowIDs], expandedIDs: expandedIDs, selectedID: selectedID)
+        await materializeChildrenIfNeeded(of: rowIDs, expandedIDs: expandedIDs,
+                                          selectedID: selectedID)
+    }
 
-        // Build DocumentNode updates on a background thread.
-        let updates = await Task.detached(priority: .userInitiated) { [si, file] in
-            var all = [NodeID: DocumentNode]()
-            for (id, childIdxs) in pending {
-                all.merge(StructDocument.buildChildUpdates(for: id, childIdxs: childIdxs,
-                                                           structuralIndex: si, file: file)) { a, _ in a }
-            }
-            return all
+    /// Build the nodes listed under each parent that the index doesn't hold,
+    /// with the value of each key, so the rows showing them can draw.
+    ///
+    /// Parents must be in the index. Nodes already present are kept as they
+    /// are: some may hold edits.
+    @MainActor
+    func materialize(_ request: [NodeID: [NodeID]],
+                     expandedIDs: Set<NodeID> = [],
+                     selectedID: NodeID? = nil) async {
+        guard let source, let current = nodeIndex, !request.isEmpty else { return }
+        let built = await Task.detached(priority: .userInitiated) {
+            source.build(request, in: current)
         }.value
 
         // Read the index only now: an edit committed during the build would
-        // otherwise be overwritten. Nodes already present are kept as they
-        // are — some of the siblings may hold edits.
+        // otherwise be overwritten.
         guard var idx = nodeIndex else { return }
-        let missing = updates.filter { idx.node(for: $0.key) == nil }
+        let missing = built.filter { idx.node(for: $0.key) == nil }
         guard !missing.isEmpty else { return }
         idx.applySnapshot(missing)
         nodeIndex = idx
+        recentLoads.append(Array(missing.keys))
+        if recentLoads.count > 4 { recentLoads.removeFirst() }
 
-        // Evict cold nodes if we've grown past the threshold.
         evictIfNeeded(expandedIDs: expandedIDs, selectedID: selectedID)
     }
 
     /// Evict materialised nodes that are not part of the currently visible tree.
     ///
-    /// Only runs when `nodeIndex.count > evictionThreshold` and a `structuralIndex`
-    /// is present (so evicted nodes can be re-materialised on demand).
+    /// Only runs when `nodeIndex.count > evictionThreshold` and the document
+    /// has a source to rebuild evicted nodes from, with the same IDs.
     ///
     /// Hot set (always kept):
-    /// - Root node and its direct children (always rendered)
-    /// - Every node in `expandedIDs` (rendered as rows)
-    /// - Direct children of every expanded node (rendered as sub-rows)
+    /// - The root, every node in `expandedIDs`, and the children (with their
+    ///   values) of each that is small enough to list in full
+    /// - The nodes of the last few loads: what open ranges and the table show
     /// - `selectedID` if set (keeps details panel from going stale)
-    /// - Edited nodes, their ancestors and those ancestors' rows
+    /// - Edited nodes and their ancestors
     ///
-    /// Everything else is removed from `nodeIndex`; it will be rebuilt lazily
-    /// the next time the user expands that branch.
+    /// Everything else is removed from `nodeIndex`; it is rebuilt the next
+    /// time something shows it.
     @MainActor
     func evictIfNeeded(expandedIDs: Set<NodeID>, selectedID: NodeID?) {
         guard var idx = nodeIndex,
               idx.count > StructDocument.evictionThreshold,
-              let si = structuralIndex else { return }
+              source != nil else { return }
 
         var hot = Set<NodeID>()
-        hot.reserveCapacity(expandedIDs.count * 20)
-
-        // The hot set must follow what the tree actually renders, which drills
-        // through `.keyValue` nodes. Deriving it from `childIDs` kept the value
-        // node but neither the rows beneath it nor the value nodes those rows
-        // need, so materialised children were evicted immediately and visible
-        // rows lost their values (issue #23).
-
-        // Root is always hot, along with the rows rendered directly beneath it.
-        hot.insert(idx.rootID)
-        hot.formUnion(si.visibleDescendantIDs(for: idx.rootID))
-
-        // Expanded rows and the rows they reveal.
-        for id in expandedIDs {
-            hot.insert(id)
-            hot.formUnion(si.visibleDescendantIDs(for: id))
-        }
+        // Rows shown under the root and under each open row (#23).
+        hot.formUnion(idx.rowsShown(expandedIDs: expandedIDs, limit: Self.loadAllChildrenLimit))
+        for load in recentLoads { hot.formUnion(load) }
 
         // Keep the selected node (details panel / editing needs it).
         if let sel = selectedID { hot.insert(sel) }
 
-        // Keep edits, and everything around them a save needs: the JSON
-        // serializer copies a container's original bytes when any of its
-        // children is missing, which would undo the edit.
-        var keptAncestors: Set<NodeID> = [idx.rootID]
+        // Keep edits and their ancestors, whose child lists hold the edits.
+        var kept = Set<NodeID>()
         for id in editedIDs where idx.node(for: id) != nil {
-            hot.insert(id)
-            var parent = idx.node(for: id)?.parentID
-            while let p = parent, keptAncestors.insert(p).inserted {
-                hot.insert(p)
-                hot.formUnion(si.visibleDescendantIDs(for: p))
-                parent = idx.node(for: p)?.parentID ?? si.entry(for: p)?.parentID
+            var current: NodeID? = id
+            while let c = current, kept.insert(c).inserted {
+                hot.insert(c)
+                current = idx.node(for: c)?.parentID
             }
         }
 
@@ -561,75 +553,6 @@ final class StructDocument: ReferenceFileDocument {
 
         idx.evictNodes(toEvict)
         nodeIndex = idx
-    }
-
-    // MARK: - Phase-2 parse helpers (static, called from background tasks)
-
-    /// Node value for a lazily-materialised entry.
-    ///
-    /// Mirrors `StructuralIndex.makeDocumentNode`, which is the canonical
-    /// version: containers carry their child count, scalars are parsed from the
-    /// mapped bytes, and keyValue nodes hold nothing themselves. Computing this
-    /// as `parsedValue ?? parsedValue(of:in:)` silently produced `.unparsed`
-    /// for objects and arrays, so every lazily-materialised container rendered
-    /// as "{0 keys}" (issue #23).
-    private static func nodeValue(for entry: IndexEntry,
-                                   from file: MappedFile) -> NodeValue {
-        switch entry.nodeType {
-        case .object, .array:
-            return .container(childCount: Int(entry.childCount))
-        case .scalar:
-            return entry.parsedValue.map { NodeValue.scalar($0) }
-                   ?? StructuralIndex.parsedValue(of: entry, in: file)
-        case .keyValue:
-            return .unparsed
-        }
-    }
-
-    /// Build `DocumentNode` updates for the children of `nodeID` and, for keyValue
-    /// children, their value grandchildren too (needed for correct display).
-    private static func buildChildUpdates(for nodeID: NodeID,
-                                           childIdxs: [Int],
-                                           structuralIndex si: StructuralIndex,
-                                           file: MappedFile) -> [NodeID: DocumentNode] {
-        var result = [NodeID: DocumentNode]()
-        result.reserveCapacity(childIdxs.count * 2)
-
-        for idx in childIdxs {
-            let entry = si.entries[idx]
-            let childIDs = (si.childIndices[entry.id] ?? []).map { si.entries[$0].id }
-            // Intern the key through the shared table so that repeated keys across
-            // sibling objects share the same String backing storage.
-            let key   = si.keyTable.intern(entry.key ?? StructuralIndex.parsedKey(of: entry, in: file))
-            let value = StructDocument.nodeValue(for: entry, from: file)
-            result[entry.id] = DocumentNode(
-                id: entry.id, type: entry.nodeType, depth: entry.depth,
-                parentID: entry.parentID, childIDs: childIDs,
-                key: key, value: value,
-                sourceRange: SourceRange(byteOffset: entry.byteOffset,
-                                         byteLength: entry.byteLength),
-                metadata: entry.metadata
-            )
-
-            // For keyValue nodes, also materialise the value child so display works.
-            if entry.nodeType == .keyValue,
-               let valIdxs = si.childIndices[entry.id] {
-                for vi in valIdxs {
-                    let ve = si.entries[vi]
-                    let gcChildIDs = (si.childIndices[ve.id] ?? []).map { si.entries[$0].id }
-                    let veValue = StructDocument.nodeValue(for: ve, from: file)
-                    result[ve.id] = DocumentNode(
-                        id: ve.id, type: ve.nodeType, depth: ve.depth,
-                        parentID: ve.parentID, childIDs: gcChildIDs,
-                        key: ve.key, value: veValue,
-                        sourceRange: SourceRange(byteOffset: ve.byteOffset,
-                                                 byteLength: ve.byteLength),
-                        metadata: ve.metadata
-                    )
-                }
-            }
-        }
-        return result
     }
 
 }

@@ -187,12 +187,14 @@ final class JSONSerializerFidelityTests: XCTestCase {
         let file = try MappedFile(url: url)
         XCTAssertGreaterThan(file.fileSize, JSONParser.eagerResolveThreshold)
 
-        let si = try await JSONParser().buildIndex(from: file)
-        let shallow = si.buildShallowNodeIndex()
+        let source = try JSONSource(file: file)
+        var shallow = NodeIndex(root: try XCTUnwrap(source.node(for: source.rootID, parent: nil)))
+        let root = try XCTUnwrap(shallow.root)
+        shallow.applySnapshot(source.build([root.id: root.childIDs], in: shallow))
         XCTAssertLessThan(shallow.count, 100, "index should still be shallow")
 
-        let data = try JSONDocumentSerializer(index: shallow,
-                                              mappedFile: file).serialize(pretty: false)
+        let data = try JSONDocumentSerializer(index: shallow, mappedFile: file, source: source)
+            .serialize(pretty: false)
         let out = String(decoding: data, as: UTF8.self)
             .trimmingCharacters(in: .whitespacesAndNewlines)
 

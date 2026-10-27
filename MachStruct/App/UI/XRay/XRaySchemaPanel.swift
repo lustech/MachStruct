@@ -22,8 +22,9 @@ struct SchemaRow: Identifiable, Sendable {
 /// 3 of 10,000 records).
 struct XRaySchemaPanel: View {
 
-    /// Retained for lazy/large files; `nil` for small eagerly-built files.
-    let structuralIndex: StructuralIndex?
+    /// Builds the nodes of a large file that `nodeIndex` doesn't hold; `nil`
+    /// for small files, whose `nodeIndex` is complete.
+    let source: (any DocumentSource)?
     let nodeIndex: NodeIndex?
     let mappedFile: MappedFile?
 
@@ -114,13 +115,6 @@ struct XRaySchemaPanel: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                if !isLoading && structuralIndex != nil {
-                    // Large files infer from the parse-time index, which
-                    // EditTransaction does not update.
-                    Text("Reflects the file as loaded — unsaved edits not included")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
             }
             .padding(.horizontal)
             .padding(.vertical, 6)
@@ -138,7 +132,7 @@ struct XRaySchemaPanel: View {
     @MainActor
     private func inferSchema() async {
         isLoading = true
-        let si = structuralIndex
+        let source = source
         let idx = nodeIndex
         let file = mappedFile
 
@@ -152,8 +146,8 @@ struct XRaySchemaPanel: View {
         // forward it explicitly — dismissing the sheet stops the scan.
         let handle = Task.detached(priority: .userInitiated) { () -> Display? in
             let schema: InferredSchema
-            if let si {
-                schema = SchemaInferenceEngine.infer(from: si, file: file)
+            if let source, let idx {
+                schema = SchemaInferenceEngine.infer(from: source, overlaying: idx)
             } else if let idx {
                 schema = SchemaInferenceEngine.infer(from: idx, file: file)
             } else {

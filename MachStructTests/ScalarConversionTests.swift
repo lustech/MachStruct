@@ -89,23 +89,11 @@ final class ScalarConversionTests: XCTestCase {
         let json = #"{"a":1}"#
         let file = try makeFile(json: json)
 
-        // Hand-build simdjson-shaped entries (nil key/parsedValue, real byte
-        // ranges): root object, kv "a" (bytes 1..3 = "a" quoted), scalar 1 at
-        // byte 5.
-        let rootID = NodeID.generate()
-        let kvID = NodeID.generate()
-        let valID = NodeID.generate()
-        let entries = [
-            IndexEntry(id: rootID, byteOffset: 0, byteLength: 7,
-                       nodeType: .object, depth: 0, parentID: nil, childCount: 1),
-            IndexEntry(id: kvID, byteOffset: 1, byteLength: 3,
-                       nodeType: .keyValue, depth: 1, parentID: rootID, childCount: 1),
-            IndexEntry(id: valID, byteOffset: 5, byteLength: 1,
-                       nodeType: .scalar, depth: 2, parentID: kvID, childCount: 0),
-        ]
-        let si = StructuralIndex(entries: entries)
+        // Large files read scalars from their bytes.
+        let source = try JSONSource(file: file)
+        let index = NodeIndex(root: try XCTUnwrap(source.node(for: source.rootID, parent: nil)))
 
-        let matches = SearchEngine.search(query: "1", in: si, file: file)
+        let matches = SearchEngine.search(query: "1", in: index, source: source)
         XCTAssertEqual(matches.count, 1)
         XCTAssertEqual(matches.first?.matchedText, "1",
                        "scalar byte '1' must parse as integer, not boolean")

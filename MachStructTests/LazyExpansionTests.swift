@@ -5,190 +5,108 @@ import XCTest
 /// nothing.
 ///
 /// Tree rows drill *through* `.keyValue` nodes: the row for `"events": [...]`
-/// displays the children of the array, not the array itself. The lazy
-/// materialisation path materialised only the keyValue's direct child (the
-/// array), which `buildShallowNodeIndex` had already placed in the index — so
-/// its "is it already there?" probe always succeeded and the grandchildren the
-/// row actually needed were never built.
+/// displays the children of the array, not the array itself. The lazy path
+/// used to load only the keyValue's direct child (the array), which was
+/// already loaded — so the grandchildren the row actually needed were never
+/// built. Eviction made the same mistake about what a row needs.
 final class LazyExpansionTests: XCTestCase {
 
-    private func makeFile(json: String) throws -> MappedFile {
+    private let json = #"{"events":[{"id":1},{"id":2},{"id":3},{"id":4}],"meta":{"a":1,"b":2,"c":3,"d":4},"name":"x"}"#
+
+    /// A large file's index as the tree first shows it: the root's keys and
+    /// their values, nothing deeper.
+    private func open(_ json: String) throws -> (JSONSource, NodeIndex) {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("lazyexp-\(UUID().uuidString).json")
-        try json.data(using: .utf8)!.write(to: url)
-        return try MappedFile(url: url)
+        try Data(json.utf8).write(to: url)
+        let source = try JSONSource(file: MappedFile(url: url))
+        var index = NodeIndex(root: try XCTUnwrap(source.node(for: source.rootID, parent: nil)))
+        let root = try XCTUnwrap(index.root)
+        index.applySnapshot(source.build([root.id: root.childIDs], in: index))
+        return (source, index)
     }
 
-    private func index(_ json: String) async throws -> (StructuralIndex, MappedFile) {
-        let file = try makeFile(json: json)
-        return (try await JSONParser().buildIndex(from: file), file)
+    private func keyValue(_ key: String, in index: NodeIndex) throws -> DocumentNode {
+        try XCTUnwrap(index.root.flatMap { index.children(of: $0.id).first { $0.key == key } })
     }
 
-    /// Entry for the `.keyValue` node carrying `key`.
-    private func keyValueEntry(_ si: StructuralIndex,
-                               key: String,
-                               file: MappedFile) -> IndexEntry? {
-        si.entries.first { entry in
-            guard entry.nodeType == .keyValue else { return false }
-            if let k = entry.key { return k == key }
-            guard entry.byteLength > 0,
-                  let bytes = try? file.slice(offset: entry.byteOffset,
-                                              length: entry.byteLength)
-            else { return false }
-            return JSONParser.decodeStringToken(bytes) == key
+    // MARK: - What opening a row loads
+
+    /// Opening a key whose value is an array loads the array's elements — the
+    /// rows the user expects to see.
+    func testOpeningAKeyLoadsItsValuesChildren() throws {
+        let (_, index) = try open(json)
+        let events = try keyValue("events", in: index)
+        let array = try XCTUnwrap(index.children(of: events.id).first)
+
+        let request = index.childrenToLoad(opening: [events.id], limit: 1_000)
+
+        XCTAssertEqual(request, [array.id: array.childIDs])
+        XCTAssertEqual(array.childIDs.count, 4)
+    }
+
+    func testOpeningAKeyWithAScalarValueLoadsNothing() throws {
+        let (_, index) = try open(json)
+        XCTAssertTrue(index.childrenToLoad(opening: [try keyValue("name", in: index).id],
+                                           limit: 1_000).isEmpty)
+    }
+
+    func testContainersWithTooManyChildrenAreLeftToTheirRanges() throws {
+        let (_, index) = try open(json)
+        XCTAssertTrue(index.childrenToLoad(opening: [try keyValue("events", in: index).id],
+                                           limit: 3).isEmpty)
+    }
+
+    func testOpeningUnknownIDsLoadsNothing() throws {
+        let (_, index) = try open(json)
+        XCTAssertTrue(index.childrenToLoad(opening: [NodeID.generate()], limit: 1_000).isEmpty)
+    }
+
+    /// End to end: after loading, every row the tree lists for the opened key
+    /// resolves, and each key's row has the value it shows.
+    func testLoadingMakesEveryListedRowResolvable() throws {
+        let (source, loaded) = try open(json)
+        var index = loaded
+        let meta = try keyValue("meta", in: index)
+
+        index.applySnapshot(source.build(index.childrenToLoad(opening: [meta.id], limit: 1_000),
+                                         in: index))
+
+        let object = try XCTUnwrap(index.listedContainer(for: meta.id))
+        let rows = object.childIDs.compactMap { index.node(for: $0) }
+        XCTAssertEqual(rows.compactMap(\.key), ["a", "b", "c", "d"])
+        for row in rows {
+            XCTAssertNotNil(row.childIDs.first.flatMap { index.node(for: $0) }, "value of \(row.key!)")
         }
     }
 
-    // MARK: - The expansion contract
+    // MARK: - What eviction keeps
 
-    /// Expanding a keyValue row whose value is an array must yield that array's
-    /// elements — the rows the user expects to see.
-    func testExpansionTargetsForKeyValueAreTheValuesChildren() async throws {
-        let (si, file) = try await index(#"{"events":[{"a":1},{"a":2},{"a":3}],"n":7}"#)
-        let kv = try XCTUnwrap(keyValueEntry(si, key: "events", file: file))
+    /// The rows under the root, with the value each key's row shows.
+    func testRowsShownUnderTheRootIncludeTheirValues() throws {
+        let (_, index) = try open(json)
+        let root = try XCTUnwrap(index.root)
 
-        let targets = si.expansionTargets(for: kv.id)
-        XCTAssertEqual(targets.count, 3,
-                       "expanding \"events\" should materialise the 3 array elements")
+        let shown = index.rowsShown(expandedIDs: [], limit: 1_000)
 
-        // Every target must be an element of the array, not the array itself.
-        let arrayID = try XCTUnwrap(si.childIndices[kv.id]?.first.map { si.entries[$0].id })
-        for t in targets {
-            XCTAssertEqual(si.entries[t].parentID, arrayID,
-                           "target should be a child of the array")
-            XCTAssertNotEqual(si.entries[t].id, arrayID,
-                              "target must not be the array node itself")
+        for id in root.childIDs {
+            XCTAssertTrue(shown.contains(id))
+            let kv = try XCTUnwrap(index.node(for: id))
+            XCTAssertTrue(shown.contains(kv.childIDs[0]), "value of \(kv.key!)")
         }
     }
 
-    /// Same contract for an object value.
-    func testExpansionTargetsForKeyValueWrappingObject() async throws {
-        let (si, file) = try await index(#"{"summary":{"a":1,"b":2,"c":3,"d":4}}"#)
-        let kv = try XCTUnwrap(keyValueEntry(si, key: "summary", file: file))
-        XCTAssertEqual(si.expansionTargets(for: kv.id).count, 4,
-                       "expanding \"summary\" should materialise its 4 keys")
+    /// An open key wrapping an array shows the array's elements.
+    func testRowsShownUnderAnOpenKeyAreItsValuesChildren() throws {
+        let (source, loaded) = try open(json)
+        var index = loaded
+        let events = try keyValue("events", in: index)
+        index.applySnapshot(source.build(index.childrenToLoad(opening: [events.id], limit: 1_000),
+                                         in: index))
+        let array = try XCTUnwrap(index.listedContainer(for: events.id))
+
+        let shown = index.rowsShown(expandedIDs: [events.id], limit: 1_000)
+
+        XCTAssertTrue(Set(array.childIDs).isSubset(of: shown))
     }
-
-    /// A keyValue wrapping a scalar has no sub-rows, so nothing to materialise.
-    func testExpansionTargetsForScalarKeyValueIsEmpty() async throws {
-        let (si, file) = try await index(#"{"n":7}"#)
-        let kv = try XCTUnwrap(keyValueEntry(si, key: "n", file: file))
-        XCTAssertTrue(si.expansionTargets(for: kv.id).isEmpty)
-    }
-
-    /// Containers that are not behind a keyValue expand to their own children.
-    func testExpansionTargetsForContainerAreItsOwnChildren() async throws {
-        let (si, _) = try await index(#"[{"a":1},{"a":2}]"#)
-        let root = try XCTUnwrap(si.entries.first)
-        XCTAssertEqual(root.nodeType, .array)
-        XCTAssertEqual(si.expansionTargets(for: root.id).count, 2)
-    }
-
-    func testExpansionTargetsForUnknownIDIsEmpty() async throws {
-        let (si, _) = try await index(#"{"a":1}"#)
-        XCTAssertTrue(si.expansionTargets(for: NodeID(rawValue: 999_999_999)).isEmpty)
-    }
-
-    // MARK: - The actual bug
-
-    /// The shallow index already contains the value node of every root-level
-    /// keyValue. Probing *that* node to decide "already materialised?" always
-    /// succeeded, so expansion bailed out. The probe must instead be a node the
-    /// row actually needs — one of the expansion targets.
-    func testShallowIndexLacksGrandchildrenThatExpansionMustSupply() async throws {
-        let (si, file) = try await index(
-            #"{"events":[{"a":1},{"a":2},{"a":3}],"other":{"x":1}}"#)
-        let shallow = si.buildShallowNodeIndex()
-        let kv = try XCTUnwrap(keyValueEntry(si, key: "events", file: file))
-
-        // The array node itself IS present — this is what the old probe checked.
-        let arrayID = try XCTUnwrap(si.childIndices[kv.id]?.first.map { si.entries[$0].id })
-        XCTAssertNotNil(shallow.node(for: arrayID),
-                        "shallow build materialises the value node")
-
-        // Its children are NOT — these are what the row needs.
-        let targets = si.expansionTargets(for: kv.id)
-        XCTAssertFalse(targets.isEmpty)
-        for t in targets {
-            XCTAssertNil(shallow.node(for: si.entries[t].id),
-                         "array elements must still need materialising")
-        }
-    }
-
-    /// End-to-end: after materialising the expansion targets, every row the UI
-    /// would render for that node is resolvable in the index.
-    func testMaterialisingTargetsMakesRowsResolvable() async throws {
-        let (si, file) = try await index(
-            #"{"events":[{"a":1},{"a":2},{"a":3}],"n":7}"#)
-        var idx = si.buildShallowNodeIndex()
-        let kv = try XCTUnwrap(keyValueEntry(si, key: "events", file: file))
-
-        let targets = si.expansionTargets(for: kv.id)
-        var updates = [NodeID: DocumentNode]()
-        for t in targets {
-            let e = si.entries[t]
-            updates[e.id] = DocumentNode(
-                id: e.id, type: e.nodeType, depth: e.depth,
-                parentID: e.parentID,
-                childIDs: (si.childIndices[e.id] ?? []).map { si.entries[$0].id },
-                key: e.key, value: e.parsedValue.map { NodeValue.scalar($0) } ?? .unparsed)
-        }
-        idx.applySnapshot(updates)
-
-        let arrayID = try XCTUnwrap(si.childIndices[kv.id]?.first.map { si.entries[$0].id })
-        let rendered = idx.children(of: arrayID)
-        XCTAssertEqual(rendered.count, 3,
-                       "the expanded row should now render all 3 elements")
-    }
-
-    // MARK: - Eviction hot set
-
-    /// Eviction must keep the nodes a rendered row depends on. Those follow the
-    /// same drill-through as expansion: the row's children, plus — for keyValue
-    /// rows — the value node each needs to display its value.
-    func testVisibleDescendantsIncludeRowsAndTheirValueNodes() async throws {
-        let (si, _) = try await index(#"{"a":1,"b":{"c":2},"d":[3,4]}"#)
-        let root = try XCTUnwrap(si.entries.first)
-
-        let visible = si.visibleDescendantIDs(for: root.id)
-
-        // Root's own keyValue rows are present. (Nested ones, like "c" inside
-        // "b", are not rows of root — they appear only when "b" is expanded.)
-        let kvIDs = si.entries
-            .filter { $0.nodeType == .keyValue && $0.parentID == root.id }
-            .map(\.id)
-        XCTAssertEqual(kvIDs.count, 3)
-        for kv in kvIDs {
-            XCTAssertTrue(visible.contains(kv), "keyValue row must stay hot")
-        }
-        // And each keyValue's value node, so the row can render its value.
-        for kv in kvIDs {
-            let valueID = try XCTUnwrap(si.childIndices[kv]?.first.map { si.entries[$0].id })
-            XCTAssertTrue(visible.contains(valueID),
-                          "value node must stay hot or the row loses its value")
-        }
-    }
-
-    /// For an expanded keyValue wrapping an array, the elements are what render.
-    func testVisibleDescendantsOfKeyValueAreTheArrayElements() async throws {
-        let (si, file) = try await index(#"{"events":[{"a":1},{"a":2},{"a":3}]}"#)
-        let kv = try XCTUnwrap(keyValueEntry(si, key: "events", file: file))
-
-        let visible = si.visibleDescendantIDs(for: kv.id)
-        let arrayID = try XCTUnwrap(si.childIndices[kv.id]?.first.map { si.entries[$0].id })
-        let elementIDs = (si.childIndices[arrayID] ?? []).map { si.entries[$0].id }
-
-        XCTAssertEqual(elementIDs.count, 3)
-        for e in elementIDs {
-            XCTAssertTrue(visible.contains(e),
-                          "array elements must stay hot after being materialised")
-        }
-    }
-
-    func testVisibleDescendantsOfScalarKeyValueIsEmpty() async throws {
-        let (si, file) = try await index(#"{"n":7}"#)
-        let kv = try XCTUnwrap(keyValueEntry(si, key: "n", file: file))
-        XCTAssertTrue(si.visibleDescendantIDs(for: kv.id).isEmpty)
-    }
-
 }
