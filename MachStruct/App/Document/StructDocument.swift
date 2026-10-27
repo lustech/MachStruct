@@ -263,6 +263,41 @@ final class StructDocument: ReferenceFileDocument {
         wholeDocumentCache = nil
     }
 
+    /// Column Stats of the document as edited. A large file's is computed in
+    /// one pass over its source, without building the whole document.
+    @MainActor
+    func columnStats() async -> [ColumnStats] {
+        guard let current = nodeIndex else { return [] }
+        let source = source
+        return await Self.inBackground {
+            if let source { return ColumnStats.compute(in: current, source: source) }
+            return ColumnStats.compute(in: current)
+        }
+    }
+
+    /// How many Find & Replace matches the document as edited has, or `nil`
+    /// if cancelled. A large file's are counted in one pass over its source.
+    @MainActor
+    func findMatchCount(pattern: String, options: SearchEngine.FindOptions) async -> Int? {
+        guard let current = nodeIndex else { return nil }
+        let source = source
+        let count = await Self.inBackground {
+            if let source {
+                return SearchEngine.matchCount(pattern: pattern, options: options,
+                                               in: current, source: source)
+            }
+            return SearchEngine.matches(pattern: pattern, options: options, in: current).count
+        }
+        return Task.isCancelled ? nil : count
+    }
+
+    /// Runs `work` off the main actor, cancelling it if the caller is
+    /// cancelled: the source walks stop early when their task is.
+    private static func inBackground<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
+        let task = Task.detached(priority: .userInitiated, operation: work)
+        return await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
+    }
+
     /// Commit an edit computed on `base`, which may touch nodes that were
     /// never expanded. Returns `false`, changing nothing, if the document has
     /// been edited since `base` was built.

@@ -198,14 +198,8 @@ struct ContentView: View {
             }
         }
         .toolbar { toolbarContent }
-        .sheet(isPresented: $showCSVStats, onDismiss: {
-            if !(showFindReplace || showQueryBar || queryResults != nil) {
-                document.releaseWholeDocument()
-            }
-        }) {
-            // A large file's rows aren't all loaded, so the statistics are
-            // computed from the whole document.
-            CSVStatsPanel { await document.wholeDocument()?.index }
+        .sheet(isPresented: $showCSVStats) {
+            CSVStatsPanel { await document.columnStats() }
         }
         .sheet(isPresented: $showXRay) {
             XRaySchemaPanel(source: document.source,
@@ -542,8 +536,8 @@ struct ContentView: View {
                                  scope: findScope)
     }
 
-    /// Count matches across the whole document. A large file's is built and
-    /// searched in the background; a small one's is counted straight away.
+    /// Count matches across the whole document. A large file's is walked in
+    /// the background; a small one's is counted straight away.
     private func updateFindCount() {
         findTask?.cancel()
         guard !findText.isEmpty else {
@@ -559,11 +553,9 @@ struct ContentView: View {
         findMatchCount = nil
         findTask = Task {
             try? await Task.sleep(for: .milliseconds(150))   // let typing settle
-            guard !Task.isCancelled, let whole = await document.wholeDocument() else { return }
-            let count = await Task.detached(priority: .userInitiated) {
-                SearchEngine.matches(pattern: pattern, options: options, in: whole.index).count
-            }.value
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled,
+                  let count = await document.findMatchCount(pattern: pattern, options: options),
+                  !Task.isCancelled else { return }
             findMatchCount = count
         }
     }

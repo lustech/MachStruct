@@ -1,44 +1,13 @@
 import SwiftUI
 import MachStructCore
 
-// MARK: - ColumnStats
-
-/// Per-column statistics computed from a tabular `NodeIndex`.
-struct ColumnStats: Identifiable {
-    let id:          String   // column name
-    var totalRows:   Int      = 0
-    var emptyCount:  Int      = 0
-    var intCount:    Int      = 0
-    var floatCount:  Int      = 0
-    var stringCount: Int      = 0
-    var uniqueValues: Set<String> = []
-    var numMin:      Double   = .greatestFiniteMagnitude
-    var numMax:      Double   = -.greatestFiniteMagnitude
-
-    var nonEmpty:    Int    { totalRows - emptyCount }
-    var uniqueCount: Int    { uniqueValues.count }
-
-    var detectedType: String {
-        guard nonEmpty > 0 else { return "Empty" }
-        if intCount   == nonEmpty { return "Integer" }
-        if intCount + floatCount == nonEmpty { return "Decimal" }
-        if stringCount == nonEmpty { return "String" }
-        return "Mixed"
-    }
-
-    var hasNumericRange: Bool {
-        numMin <= numMax
-    }
-}
-
 // MARK: - CSVStatsPanel
 
 /// Sheet view showing per-column statistics for a tabular (CSV) document.
 struct CSVStatsPanel: View {
 
-    /// The whole document. A large file's rows aren't all loaded in the
-    /// view's index, so this may build the rest in the background.
-    let load: () async -> NodeIndex?
+    /// The statistics, computed in the background from the whole document.
+    let load: () async -> [ColumnStats]
 
     @State private var stats:     [ColumnStats] = []
     @State private var isLoading: Bool          = true
@@ -95,78 +64,8 @@ struct CSVStatsPanel: View {
     @MainActor
     private func computeStats() async {
         isLoading = true
-        if let nodeIndex = await load() {
-            stats = await Task.detached(priority: .userInitiated) {
-                Self.compute(nodeIndex: nodeIndex)
-            }.value
-        }
+        stats = await load()
         isLoading = false
-    }
-
-    nonisolated private static func compute(nodeIndex: NodeIndex) -> [ColumnStats] {
-        let columns = nodeIndex.tabularColumns
-        guard !columns.isEmpty, let root = nodeIndex.root else { return [] }
-
-        var result = columns.map { ColumnStats(id: $0) }
-
-        for rowNode in nodeIndex.children(of: root.id) {
-            let kvs = nodeIndex.children(of: rowNode.id)
-
-            for (i, col) in columns.enumerated() {
-                result[i].totalRows += 1
-
-                guard let kv = kvs.first(where: { $0.key == col }),
-                      let child = nodeIndex.children(of: kv.id).first else {
-                    result[i].emptyCount += 1
-                    continue
-                }
-
-                guard case .scalar(let sv) = child.value else {
-                    result[i].emptyCount += 1
-                    continue
-                }
-
-                switch sv {
-                case .null:
-                    result[i].emptyCount += 1
-
-                case .string(let s):
-                    if s.isEmpty {
-                        result[i].emptyCount += 1
-                    } else {
-                        result[i].stringCount += 1
-                        if result[i].uniqueValues.count < 100 {
-                            result[i].uniqueValues.insert(s)
-                        }
-                    }
-
-                case .integer(let n):
-                    result[i].intCount += 1
-                    let d = Double(n)
-                    result[i].numMin = min(result[i].numMin, d)
-                    result[i].numMax = max(result[i].numMax, d)
-                    if result[i].uniqueValues.count < 100 {
-                        result[i].uniqueValues.insert(String(n))
-                    }
-
-                case .float(let f):
-                    result[i].floatCount += 1
-                    result[i].numMin = min(result[i].numMin, f)
-                    result[i].numMax = max(result[i].numMax, f)
-                    if result[i].uniqueValues.count < 100 {
-                        result[i].uniqueValues.insert(String(f))
-                    }
-
-                case .boolean(let b):
-                    result[i].stringCount += 1
-                    if result[i].uniqueValues.count < 100 {
-                        result[i].uniqueValues.insert(b ? "true" : "false")
-                    }
-                }
-            }
-        }
-
-        return result
     }
 }
 

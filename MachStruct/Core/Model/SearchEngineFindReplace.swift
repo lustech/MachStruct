@@ -78,6 +78,32 @@ public extension SearchEngine {
         return results
     }
 
+    /// How many matches `matches(pattern:options:in:)` would find in a large
+    /// document as edited, in one pass over it: nodes in `index` are read
+    /// from there and the rest built from `source` as they are reached,
+    /// without keeping them.
+    static func matchCount(pattern: String,
+                           options: FindOptions,
+                           in index: NodeIndex,
+                           source: any DocumentSource) -> Int {
+        guard !pattern.isEmpty, let matcher = TextMatcher(pattern: pattern, options: options) else {
+            return 0
+        }
+        var count = 0
+        source.traverse(overlaying: index) { node, _ in
+            if options.matchesKeys, node.type == .keyValue,
+               let key = node.key, matcher.matches(key) {
+                count += 1
+            }
+            if options.matchesValues, node.type == .scalar,
+               case .scalar(let sv) = node.value, matcher.matches(sv.searchableText) {
+                count += 1
+            }
+            return true
+        }
+        return count
+    }
+
     // MARK: Replace
 
     /// Replaces every match of `pattern` with `replacement` across the document,
@@ -133,10 +159,12 @@ public extension SearchEngine {
 // MARK: - TextMatcher
 
 /// Wraps either a literal or regex matcher with consistent case handling.
-private struct TextMatcher {
+struct TextMatcher {
     private let regex: NSRegularExpression?
     private let literal: String?
     private let caseSensitive: Bool
+    /// A printable-ASCII literal's bytes, lowercased unless case-sensitive.
+    private let asciiLiteral: [UInt8]?
 
     init?(pattern: String, options: SearchEngine.FindOptions) {
         self.caseSensitive = options.caseSensitive
@@ -148,9 +176,13 @@ private struct TextMatcher {
             }
             self.regex = re
             self.literal = nil
+            self.asciiLiteral = nil
         } else {
             self.regex = nil
             self.literal = pattern
+            let bytes = Array(pattern.utf8)
+            self.asciiLiteral = !bytes.isEmpty && bytes.allSatisfy(Self.isPrintableASCII)
+                ? (options.caseSensitive ? bytes : bytes.map(Self.lowercased)) : nil
         }
     }
 
@@ -160,8 +192,50 @@ private struct TextMatcher {
             return regex.firstMatch(in: text, range: range) != nil
         }
         guard let literal else { return false }
+        if let asciiLiteral, let found = Self.findASCII(asciiLiteral, in: text,
+                                                       caseSensitive: caseSensitive) {
+            return found
+        }
         let opts: String.CompareOptions = caseSensitive ? [] : [.caseInsensitive]
         return text.range(of: literal, options: opts) != nil
+    }
+
+    // MARK: Printable ASCII
+
+    // Between printable-ASCII strings, Foundation's comparison is plain byte
+    // comparison (case-insensitive: ASCII case folding), so a large file's
+    // match count needn't go through it for each value. Anything else —
+    // control characters, which can join into one grapheme, or any non-ASCII
+    // text, which has Unicode folding — still does.
+
+    private static func isPrintableASCII(_ b: UInt8) -> Bool { b >= 0x20 && b <= 0x7E }
+
+    private static func lowercased(_ b: UInt8) -> UInt8 {
+        b >= UInt8(ascii: "A") && b <= UInt8(ascii: "Z") ? b | 0x20 : b
+    }
+
+    /// Whether `text` contains `needle`, or `nil` when `text` isn't all
+    /// printable ASCII and Foundation must decide.
+    private static func findASCII(_ needle: [UInt8], in text: String,
+                                  caseSensitive: Bool) -> Bool? {
+        var text = text
+        return text.withUTF8 { hay -> Bool? in
+            var found = false
+            let n = needle.count
+            for i in hay.indices {
+                let b = hay[i]
+                guard isPrintableASCII(b) else { return nil }
+                guard !found, i + n <= hay.count else { continue }
+                var j = 0
+                while j < n {
+                    let h = hay[i + j]
+                    if (caseSensitive ? h : lowercased(h)) != needle[j] { break }
+                    j += 1
+                }
+                if j == n { found = true }
+            }
+            return found
+        }
     }
 
     func replacingMatches(in text: String, with replacement: String) -> String {

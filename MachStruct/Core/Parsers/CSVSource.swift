@@ -164,8 +164,19 @@ public final class CSVSource: DocumentSource, @unchecked Sendable {
         return out.withUnsafeBytes(decode)
     }
 
+    /// The fields of the row last read. A row's cells are built right after
+    /// the row, one by one, and each needs the row's fields: without this,
+    /// walking a row of n cells would read it 2n more times.
+    private var lastRow: (offset: UInt64, fields: [Field])?
+    private let lastRowLock = NSLock()
+
     private func fields(ofRowAt offset: UInt64) -> [Field] {
-        Self.fields(ofRowAt: offset, in: file, delimiter: delimiter)
+        if let cached = lastRowLock.withLock({ lastRow }), cached.offset == offset {
+            return cached.fields
+        }
+        let fields = Self.fields(ofRowAt: offset, in: file, delimiter: delimiter)
+        lastRowLock.withLock { lastRow = (offset, fields) }
+        return fields
     }
 
     /// The row holding the byte at `offset`, by binary search.
@@ -180,6 +191,12 @@ public final class CSVSource: DocumentSource, @unchecked Sendable {
 
     /// The cell starting at `offset`: its row, column and field.
     private func cell(at offset: UInt64) -> (row: UInt64, column: Int, field: Field)? {
+        // No two fields start at the same byte, so a field of the row last
+        // read that starts here is the cell.
+        if let cached = lastRowLock.withLock({ lastRow }),
+           let column = cached.fields.firstIndex(where: { $0.start == offset }) {
+            return (cached.offset, column, cached.fields[column])
+        }
         guard let row = row(containing: offset) else { return nil }
         let fields = fields(ofRowAt: row)
         guard let column = fields.firstIndex(where: { $0.start == offset }) else { return nil }
