@@ -132,3 +132,46 @@ extension DocumentSource {
         return NodeIndex(rootID: current.rootID, storage: storage, positions: positions)
     }
 }
+
+// MARK: - OverlaidChildren
+
+/// The children of a node, in order, each taken from `index` when it is
+/// there and otherwise built from `source` as the sequence reaches it, so a
+/// serializer can write a large container without holding its children.
+///
+/// Without a source, a child the index lacks is skipped, as
+/// `NodeIndex.children(of:)` does.
+struct OverlaidChildren: Sequence {
+    let node: DocumentNode
+    let index: NodeIndex
+    let source: (any DocumentSource)?
+
+    var first: DocumentNode? {
+        var iterator = makeIterator()
+        return iterator.next()
+    }
+
+    var isEmpty: Bool { first == nil }
+
+    func makeIterator() -> AnyIterator<DocumentNode> {
+        var ids = node.childIDs.makeIterator()
+        return AnyIterator {
+            while let id = ids.next() {
+                if let child = index.node(for: id)
+                    ?? source?.node(for: id, parent: node, internKeys: false) {
+                    return child
+                }
+            }
+            return nil
+        }
+    }
+}
+
+extension NodeIndex {
+
+    /// `node`'s children from this index, or built from `source` where it
+    /// lacks them.
+    func children(of node: DocumentNode, source: (any DocumentSource)?) -> OverlaidChildren {
+        OverlaidChildren(node: node, index: self, source: source)
+    }
+}
