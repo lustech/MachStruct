@@ -259,56 +259,6 @@ public struct StructuralIndex: Sendable {
         return result.reversed()
     }
 
-    /// Entry indices that must be materialised for the row representing `id` to
-    /// render its children.
-    ///
-    /// Tree rows drill *through* `.keyValue` nodes to their value, so the row for
-    /// `"events": [...]` displays the elements of the array rather than the array
-    /// itself. Expanding such a row must therefore materialise the **value's**
-    /// children, not the value node — `buildShallowNodeIndex` already placed the
-    /// value node in the index, so materialising it again is a no-op and leaves
-    /// the row with nothing to show (issue #23).
-    ///
-    /// Returns `[]` for leaves, scalar-valued keyValues, and unknown IDs.
-    public func expansionTargets(for id: NodeID) -> [Int] {
-        guard let entry = entry(for: id) else { return [] }
-
-        if entry.nodeType == .keyValue {
-            // Drill through to the value node, mirroring `TreeNode.children`.
-            guard let valueIdx = childIndices[id]?.first else { return [] }
-            let value = entries[valueIdx]
-            guard value.nodeType == .object || value.nodeType == .array else {
-                return []   // scalar value renders inline; no sub-rows
-            }
-            return Array(childIndices[value.id] ?? [])
-        }
-
-        return Array(childIndices[id] ?? [])
-    }
-
-    /// NodeIDs that must stay materialised for the row representing `id` to
-    /// render its visible children.
-    ///
-    /// This is `expansionTargets(for:)` resolved to IDs, plus — for keyValue
-    /// rows — the value node each row needs in order to display its value.
-    /// Eviction uses it as the hot set: computing that set from `childIDs`
-    /// instead drops the value nodes and the drilled-through grandchildren, so
-    /// freshly materialised rows were evicted the moment they appeared and
-    /// surviving rows lost their values (issue #23).
-    public func visibleDescendantIDs(for id: NodeID) -> [NodeID] {
-        let targets = expansionTargets(for: id)
-        var out = [NodeID]()
-        out.reserveCapacity(targets.count * 2)
-        for idx in targets {
-            let entry = entries[idx]
-            out.append(entry.id)
-            if entry.nodeType == .keyValue, let valIdxs = childIndices[entry.id] {
-                for vi in valIdxs { out.append(entries[vi].id) }
-            }
-        }
-        return out
-    }
-
     // MARK: - Full (eager) build
 
     /// Build a `NodeIndex` (DocumentNode tree) from this structural index.
@@ -355,120 +305,6 @@ public struct StructuralIndex: Sendable {
             ))
         }
 
-        return NodeIndex(rootID: first.id, storage: storage, positions: positions)
-    }
-
-    /// Build the full tree, then lay `current` — a lazily materialised index
-    /// that may hold edits — over it.
-    ///
-    /// Use this, not `buildNodeIndex()`, whenever the whole document is needed
-    /// while the user may have edited it: a fresh build alone discards every
-    /// edit. Nodes in `current` win, so edited values and parents whose
-    /// `childIDs` changed (deletions, insertions, moves) carry over. Nodes the
-    /// edits cut out of the tree are dropped, so nothing that scans the index
-    /// rather than walking it finds deleted content.
-    public func buildNodeIndex(overlaying current: NodeIndex) -> NodeIndex {
-        var full = buildNodeIndex()
-        full.overlay(current)
-
-        var reachable = Set<NodeID>(minimumCapacity: full.count)
-        var stack = [full.rootID]
-        while let id = stack.popLast() {
-            guard reachable.insert(id).inserted, let node = full.node(for: id) else { continue }
-            stack.append(contentsOf: node.childIDs)
-        }
-        if reachable.count < full.count {
-            full.evictNodes(Set(full.allNodeIDs).subtracting(reachable))
-        }
-        return full
-    }
-
-    /// The whole document with `current`'s edits applied and every key and
-    /// value parsed: what saving, exporting, Find & Replace and queries need
-    /// from a lazily loaded file.
-    public func completeNodeIndex(overlaying current: NodeIndex, file: MappedFile?) -> NodeIndex {
-        var full = buildNodeIndex(overlaying: current)
-        if let file { parseUnparsedEntries(in: &full, file: file) }
-        return full
-    }
-
-    // MARK: - Phase-2 parsing
-
-    /// Parse the key or value of every node in `index` that is still without
-    /// one. The simdjson path leaves both to be read from the file on demand.
-    public func parseUnparsedEntries(in index: inout NodeIndex, file: MappedFile) {
-        var updates = [NodeID: DocumentNode]()
-        for entry in entries {
-            guard var node = index.node(for: entry.id) else { continue }
-            var changed = false
-            if node.key == nil, entry.nodeType == .keyValue {
-                node.key = keyTable.intern(Self.parsedKey(of: entry, in: file))
-                changed = true
-            }
-            if case .unparsed = node.value, entry.nodeType == .scalar {
-                node.value = Self.parsedValue(of: entry, in: file)
-                changed = true
-            }
-            if changed { updates[node.id] = node }
-        }
-        if !updates.isEmpty { index.applySnapshot(updates) }
-    }
-
-    /// The key of a `.keyValue` entry, read from its quoted JSON string.
-    public static func parsedKey(of entry: IndexEntry, in file: MappedFile) -> String? {
-        guard entry.byteLength > 0,
-              let bytes = try? file.slice(offset: entry.byteOffset, length: entry.byteLength)
-        else { return nil }
-        return JSONParser.decodeStringToken(bytes)
-    }
-
-    /// The value of a `.scalar` entry, read from its JSON bytes.
-    public static func parsedValue(of entry: IndexEntry, in file: MappedFile) -> NodeValue {
-        guard entry.nodeType == .scalar, entry.byteLength > 0,
-              let raw = try? file.data(offset: entry.byteOffset, length: entry.byteLength),
-              let any = try? JSONSerialization.jsonObject(with: raw, options: .allowFragments)
-        else { return .unparsed }
-        return .scalar(ScalarValue(jsonAny: any))
-    }
-
-    // MARK: - Shallow (lazy) build
-
-    /// Build a `NodeIndex` containing only the root and its immediate visible children.
-    ///
-    /// For `.keyValue` nodes in the root, their value children are also materialized
-    /// so display properties (`displayValue`, `badgeInfo`) work on the initial render.
-    /// Deeper nodes are added on demand via `StructDocument.materializeChildrenIfNeeded`.
-    ///
-    /// Compared to `buildNodeIndex()`, this is O(visible_nodes) instead of O(all_nodes),
-    /// which reduces memory and startup time dramatically for large files.
-    public func buildShallowNodeIndex() -> NodeIndex {
-        guard let first = entries.first else {
-            let root = DocumentNode(type: .object, value: .container(childCount: 0))
-            return NodeIndex(root: root)
-        }
-
-        // Root, its children, and the value of each keyValue child, so the
-        // row can render its display value and badge without a separate
-        // parse. Built straight into the index's storage: a dictionary of
-        // nodes first, sized for three per child, doubled the memory needed
-        // for a 400 000-row file while it was built (#62).
-        var shown = [0]
-        for childIdx in childIndices[first.id] ?? [] {
-            shown.append(childIdx)
-            if entries[childIdx].nodeType == .keyValue {
-                shown += childIndices[entries[childIdx].id] ?? []
-            }
-        }
-
-        var storage = ContiguousArray<DocumentNode>()
-        var positions = [NodeID: Int](minimumCapacity: shown.count)
-        storage.reserveCapacity(shown.count)
-        for i in shown {
-            let entry = entries[i]
-            let childIDs = (childIndices[entry.id] ?? []).map { entries[$0].id }
-            positions[entry.id] = storage.count
-            storage.append(makeDocumentNode(from: entry, childIDs: childIDs))
-        }
         return NodeIndex(rootID: first.id, storage: storage, positions: positions)
     }
 
@@ -658,4 +494,23 @@ public actor ParserRegistry {
         case .unknown: return fileExtension.flatMap { parsers[$0.lowercased()] }
         }
     }
+}
+
+// MARK: - DocumentSource
+
+/// A large XML, YAML or CSV file is indexed node by node, with keys and
+/// values resolved at parse time, so its index can build any node.
+extension StructuralIndex: DocumentSource {
+
+    public var rootID: NodeID { entries.first?.id ?? NodeID(rawValue: 0) }
+
+    public var nodeCount: Int { count }
+
+    public func node(for id: NodeID, parent: DocumentNode?, internKeys: Bool) -> DocumentNode? {
+        guard let entry = entry(for: id) else { return nil }
+        let childIDs = (childIndices[id] ?? []).map { entries[$0].id }
+        return makeDocumentNode(from: entry, childIDs: childIDs)
+    }
+
+    public func looksTabular() -> Bool { looksTabular(sampleSize: 10) }
 }

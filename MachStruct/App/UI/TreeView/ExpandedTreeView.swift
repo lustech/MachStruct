@@ -85,6 +85,11 @@ struct ExpandedTreeView: View {
     /// children when the document was loaded with a shallow NodeIndex.
     var onExpand: ((NodeID) async -> Void)? = nil
 
+    /// Called with listed nodes the index doesn't hold yet, by the parent they
+    /// are listed under. A large document loads only what is shown, so the
+    /// tree asks for each row as it comes into the list.
+    var onMissingNodes: (([NodeID: [NodeID]]) async -> Void)? = nil
+
     /// User preference (A4): when true, a primary click anywhere on an
     /// expandable row toggles its expansion. The chevron button always works
     /// regardless of this setting.
@@ -177,6 +182,10 @@ struct ExpandedTreeView: View {
             guard !Task.isCancelled else { return }
             cachedFlatRows = built.rows
             expandedRanges.formUnion(built.openedRanges)
+            if !built.missing.isEmpty, let onMissingNodes {
+                // Loading changes the index, which rebuilds the rows.
+                await onMissingNodes(built.missing)
+            }
             if let target = revealTarget,
                built.rows.contains(where: { $0.id == .node(target) }) {
                 revealTarget = nil
@@ -199,6 +208,8 @@ struct ExpandedTreeView: View {
         private(set) var rows: [FlatRow] = []
         /// Ranges opened to reveal the target, to be kept open.
         private(set) var openedRanges: Set<ChildRange> = []
+        /// Listed nodes the index doesn't hold, by the parent listing them.
+        private(set) var missing: [NodeID: [NodeID]] = [:]
 
         init(nodeIndex: NodeIndex, expandedIDs: Set<NodeID>,
              expandedRanges: Set<ChildRange>, reveal: NodeID?) {
@@ -208,55 +219,78 @@ struct ExpandedTreeView: View {
             self.revealPath = reveal.map { Set(nodeIndex.path(to: $0)) } ?? []
         }
 
+        /// Root objects/arrays are unwrapped so users see content immediately
+        /// without having to expand an extra level.
         mutating func build() {
-            let roots = ExpandedTreeView.rootTreeNodes(for: nodeIndex)
-            appendChildren(roots, of: nodeIndex.rootID, in: roots.indices, level: 0)
-        }
-
-        /// DFS pre-order walk: append `treeNode`, then its children if it is
-        /// both expandable and currently open.
-        private mutating func appendRows(treeNode: TreeNode, level: Int) {
-            let kids = treeNode.children   // [TreeNode]?
-            rows.append(FlatRow(id: .node(treeNode.id), content: .node(treeNode),
-                                indentLevel: level, isExpandable: kids != nil))
-            if let kids, expandedIDs.contains(treeNode.id) {
-                appendChildren(kids, of: treeNode.id, in: kids.indices, level: level + 1)
+            guard let root = nodeIndex.root else { return }
+            if root.type == .object || root.type == .array {
+                appendChildren(of: root, row: root.id, in: root.childIDs.indices, level: 0)
+            } else {
+                appendRow(root, arrayIndex: nil, level: 0)
             }
         }
 
-        /// The children at `bounds`, or range rows for them when there are
-        /// too many to list.
-        private mutating func appendChildren(_ kids: [TreeNode], of parent: NodeID,
+        /// The node whose children a row lists: a key's value, or the node
+        /// itself. `nil` for a row with nothing to list.
+        private func listedContainer(for node: DocumentNode) -> DocumentNode? {
+            switch node.type {
+            case .object, .array:
+                return node
+            case .keyValue:
+                guard let value = node.childIDs.first.flatMap({ nodeIndex.node(for: $0) }),
+                      value.type == .object || value.type == .array else { return nil }
+                return value
+            case .scalar:
+                return nil
+            }
+        }
+
+        /// DFS pre-order walk: append the node's row, then its children if it
+        /// is open. A key is listed once its value is loaded.
+        private mutating func appendRow(_ node: DocumentNode, arrayIndex: Int?, level: Int) {
+            if node.type == .keyValue, let valueID = node.childIDs.first,
+               nodeIndex.node(for: valueID) == nil {
+                missing[node.id, default: []].append(valueID)
+                return
+            }
+            let treeNode = TreeNode(documentNode: node, nodeIndex: nodeIndex, arrayIndex: arrayIndex)
+            let container = listedContainer(for: node)
+            rows.append(FlatRow(id: .node(node.id), content: .node(treeNode),
+                                indentLevel: level, isExpandable: container != nil))
+            if let container, expandedIDs.contains(node.id) {
+                appendChildren(of: container, row: node.id, in: container.childIDs.indices,
+                               level: level + 1)
+            }
+        }
+
+        /// The children of `container` at `bounds`, or range rows for them
+        /// when there are too many to list. `row` is the row they appear under.
+        private mutating func appendChildren(of container: DocumentNode, row: NodeID,
                                              in bounds: Range<Int>, level: Int) {
             guard let groups = ChildRanges.groups(of: bounds) else {
-                for kid in kids[bounds] { appendRows(treeNode: kid, level: level) }
+                for i in bounds {
+                    let id = container.childIDs[i]
+                    guard let child = nodeIndex.node(for: id) else {
+                        missing[container.id, default: []].append(id)
+                        continue
+                    }
+                    appendRow(child, arrayIndex: container.type == .array ? i : nil, level: level)
+                }
                 return
             }
             for group in groups {
-                let range = ChildRange(parent: parent, bounds: group)
+                let range = ChildRange(parent: row, bounds: group)
                 rows.append(FlatRow(id: .range(range), content: .range(range),
                                     indentLevel: level, isExpandable: true))
                 var isOpen = expandedRanges.contains(range)
                 if !isOpen, !revealPath.isEmpty,
-                   kids[group].contains(where: { revealPath.contains($0.id) }) {
+                   container.childIDs[group].contains(where: { revealPath.contains($0) }) {
                     isOpen = true
                     openedRanges.insert(range)
                 }
-                if isOpen { appendChildren(kids, of: parent, in: group, level: level + 1) }
+                if isOpen { appendChildren(of: container, row: row, in: group, level: level + 1) }
             }
         }
-    }
-
-    /// Top-level `TreeNode`s to seed the traversal — mirrors `TreeView.rootRows`.
-    ///
-    /// Root objects/arrays are unwrapped so users see content immediately without
-    /// having to expand an extra level.
-    private static func rootTreeNodes(for nodeIndex: NodeIndex) -> [TreeNode] {
-        guard let root = nodeIndex.root else { return [] }
-        if root.type == .object || root.type == .array {
-            return TreeNode.rows(for: root, in: nodeIndex)
-        }
-        return [TreeNode(documentNode: root, nodeIndex: nodeIndex)]
     }
 
     // MARK: - Row view

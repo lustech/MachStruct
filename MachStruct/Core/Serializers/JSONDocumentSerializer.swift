@@ -25,10 +25,14 @@ public struct JSONDocumentSerializer {
 
     private let index: NodeIndex
     private let mappedFile: MappedFile?
+    /// Builds the nodes of a large file that `index` doesn't hold.
+    private let source: (any DocumentSource)?
 
-    public init(index: NodeIndex, mappedFile: MappedFile? = nil) {
+    public init(index: NodeIndex, mappedFile: MappedFile? = nil,
+                source: (any DocumentSource)? = nil) {
         self.index = index
         self.mappedFile = mappedFile
+        self.source = source
     }
 
     // MARK: - Public API
@@ -91,23 +95,27 @@ public struct JSONDocumentSerializer {
         let open = isObject ? "{" : "["
         let close = isObject ? "}" : "]"
 
-        // A container whose children were never materialised (lazy index) has
-        // no subtree to walk. Its original bytes are already valid JSON, so
-        // copy them through — exact, and avoids emitting an empty container
-        // for every unexpanded node of a large file.
+        // A node built from the source is unedited, so its original bytes
+        // are copied: exact, and fast for the unexpanded parts of a large
+        // file. A node the index holds may be edited, so it is written out
+        // child by child, building any child it lacks from the source. That
+        // per-child step is what keeps a deletion deleted: comparing against
+        // the parse-time child count and copying the original bytes brought
+        // a deleted child back on save.
         //
-        // The test must be whether the children *resolve*, not whether
-        // `childIDs` is populated: `buildShallowNodeIndex` fills `childIDs`
-        // from the structural index without materialising the nodes they
-        // point at, so a node can claim children the index cannot produce.
-        // Nor may it compare against the parse-time child count: deleting a
-        // child leaves fewer children than that, and copying the original
-        // bytes brought the deleted child back on save.
-        let children = index.children(of: node.id)
-        if children.count < node.childIDs.count, let raw = rawSource(of: node) {
+        // Without a source, a container whose children don't all resolve has
+        // never been expanded, and its original bytes are the best available.
+        if source != nil {
+            if index.node(for: node.id) == nil, let raw = rawSource(of: node) {
+                out += raw
+                return
+            }
+        } else if index.children(of: node.id).count < node.childIDs.count,
+                  let raw = rawSource(of: node) {
             out += raw
             return
         }
+        let children = node.childIDs.compactMap { resolve($0, parent: node) }
 
         guard !children.isEmpty else {
             out += open + close
@@ -127,7 +135,8 @@ public struct JSONDocumentSerializer {
                 if pretty { out += "\n" + indent(inner) }
                 out += jsonString(key)
                 out += pretty ? " : " : ":"
-                if let valueChild = index.children(of: child.id).first {
+                if let valueID = child.childIDs.first,
+                   let valueChild = resolve(valueID, parent: child) {
                     emit(valueChild, into: &out, depth: inner, pretty: pretty)
                 } else {
                     out += "null"
@@ -151,6 +160,10 @@ public struct JSONDocumentSerializer {
 
     // MARK: - Node helpers
 
+    private func resolve(_ id: NodeID, parent: DocumentNode) -> DocumentNode? {
+        index.node(for: id) ?? source?.node(for: id, parent: parent, internKeys: false)
+    }
+
     /// The node's key, falling back to the source bytes when the lazy path
     /// left it unresolved.
     private func resolvedKey(of node: DocumentNode) -> String? {
@@ -172,6 +185,10 @@ public struct JSONDocumentSerializer {
     }
 
     private func scalarLiteral(_ node: DocumentNode) -> String {
+        // Built from the source, so unedited: keep its spelling.
+        if source != nil, index.node(for: node.id) == nil, let raw = rawSource(of: node) {
+            return raw
+        }
         switch node.value {
         case .scalar(let sv):
             return literal(for: sv)

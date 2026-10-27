@@ -92,6 +92,37 @@ public actor JSONParser: StructParser {
         return ScalarValue(jsonAny: any)
     }
 
+    /// Decode a valid scalar token (`"s"`, `1.0`, `true`, `null`).
+    ///
+    /// Gives the same value as `decodeScalarToken`, which goes through
+    /// `JSONSerialization`, but decodes strings, literals and in-range numbers
+    /// itself: large files decode millions of these.
+    public nonisolated static func decodeScalarBytes(_ bytes: UnsafeRawBufferPointer) -> ScalarValue? {
+        guard let first = bytes.first else { return nil }
+        switch first {
+        case UInt8(ascii: "\""):
+            return decodeStringToken(bytes).map(ScalarValue.string)
+        case UInt8(ascii: "t"): return .boolean(true)
+        case UInt8(ascii: "f"): return .boolean(false)
+        case UInt8(ascii: "n"): return .null
+        default:
+            break
+        }
+        let text = String(decoding: bytes, as: UTF8.self)
+        let isInteger = !bytes.contains { $0 == UInt8(ascii: ".") || $0 == UInt8(ascii: "e")
+                                          || $0 == UInt8(ascii: "E") }
+        if isInteger {
+            if let n = Int64(text) { return .integer(n) }
+        } else if let d = Double(text), d.isFinite {
+            return .float(d)
+        }
+        // Integers beyond Int64 and out-of-range floats: match Foundation.
+        guard let any = try? JSONSerialization.jsonObject(with: Data(bytes),
+                                                          options: .allowFragments)
+        else { return nil }
+        return ScalarValue(jsonAny: any)
+    }
+
     /// Decode a raw JSON string token (including surrounding quotes).
     /// Fast path for the common no-escape case; Foundation fallback otherwise.
     ///

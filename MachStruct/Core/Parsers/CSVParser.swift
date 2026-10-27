@@ -217,6 +217,11 @@ private extension CSVParser {
 
         return StructuralIndex(entries: entries)
     }
+}
+
+// MARK: - Column names
+
+extension CSVParser {
 
     /// Keys for columns past the end of the header: `column_N`, where N is the
     /// 1-based column position, suffixed `_2`, `_3`, … if a header already
@@ -334,7 +339,7 @@ private struct CSVTokenizer {
 
 // MARK: - Delimiter detection
 
-private extension CSVParser {
+extension CSVParser {
 
     /// Scores `,` `;` `\t` `|` on a sample of the first 8 KB.
     ///
@@ -373,7 +378,7 @@ private extension CSVParser {
 
 // MARK: - Header detection
 
-private extension CSVParser {
+extension CSVParser {
 
     /// Returns `true` when every cell in the first row is a pure string
     /// (not parseable as integer, float, boolean, or null).

@@ -10,6 +10,9 @@ import MachStructCore
 struct StatusBar: View {
 
     let nodeIndex: NodeIndex
+    /// Nodes in the document. A large file's index holds only those shown,
+    /// so the count comes from the document rather than the index.
+    var nodeCount: Int? = nil
     let selectedID: NodeID?
     let fileSize: Int64
     let formatName: String
@@ -78,7 +81,7 @@ struct StatusBar: View {
     }
 
     private var nodeCountText: String {
-        let n = nodeIndex.count
+        let n = nodeCount ?? nodeIndex.count
         let suffix = n == 1 ? String(localized: "node") : String(localized: "nodes")
         return "\(n.formatted()) \(suffix)"
     }

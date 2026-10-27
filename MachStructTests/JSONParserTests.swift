@@ -93,8 +93,10 @@ final class JSONParserTests: XCTestCase {
         XCTAssertEqual(root.byteOffset, 0)
         XCTAssertEqual(UInt64(root.byteLength), UInt64(json.utf8.count))
 
-        // 5. Key search works end-to-end on the lazy path.
-        let matches = SearchEngine.search(query: "ratio", in: index, file: file)
+        // 5. Key search works end-to-end on the large-file path.
+        let source = try JSONSource(file: file)
+        let shallow = NodeIndex(root: try XCTUnwrap(source.node(for: source.rootID, parent: nil)))
+        let matches = SearchEngine.search(query: "ratio", in: shallow, source: source)
         XCTAssertEqual(matches.count, 80_000)
     }
 
