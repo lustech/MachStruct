@@ -31,7 +31,9 @@ public struct JSONDocumentSerializer {
     public init(index: NodeIndex, mappedFile: MappedFile? = nil,
                 source: (any DocumentSource)? = nil) {
         self.index = index
-        self.mappedFile = mappedFile
+        // Original bytes are copied only when they are JSON: a CSV source's
+        // rows are CSV text, which would land in the output as-is (#74).
+        self.mappedFile = source == nil || source is JSONSource ? mappedFile : nil
         self.source = source
     }
 

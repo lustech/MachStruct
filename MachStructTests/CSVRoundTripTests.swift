@@ -37,6 +37,15 @@ final class CSVRoundTripTests: XCTestCase {
         XCTAssertEqual(out, csv)
     }
 
+    /// A line break joined into one character with another, or a delimiter
+    /// joined to a combining mark, still needs the field quoted: unquoted, it
+    /// splits the field when the file is read back (#75).
+    func testFieldsWithJoinedLineBreaksOrDelimitersAreQuoted() async throws {
+        let csv = "name,note\nAlice,\"line\r\nbreak\"\nBob,\"x,\u{301}y\"\n"
+        let out = try await roundTrip(csv)
+        XCTAssertEqual(out, csv)
+    }
+
     func testRaggedRowsKeepEveryField() async throws {
         let out = try await roundTrip("a,b,c\n1,2\n3,4,5,6\n")
         XCTAssertEqual(out, "a,b,c,column_4\n1,2,,\n3,4,5,6\n")

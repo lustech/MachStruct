@@ -162,7 +162,7 @@ final class StructDocument: ReferenceFileDocument {
                                               source: snapshot.source)
                 .serialize(pretty: true)
         } else if type.conforms(to: .commaSeparatedText) {
-            data = try CSVDocumentSerializer(index: Self.completeIndex(of: snapshot))
+            data = try CSVDocumentSerializer(index: snapshot.index, source: snapshot.source)
                 .serializeInSourceLayout()
         } else if Self.yamlTypes.contains(where: { type.conforms(to: $0) }) {
             // Patch the original text where possible: regenerating it drops
@@ -180,11 +180,9 @@ final class StructDocument: ReferenceFileDocument {
         return FileWrapper(regularFileWithContents: data)
     }
 
-    /// The whole document with the user's edits applied.
-    ///
-    /// A large file's index holds only what has been expanded, and only the
-    /// JSON serializer can fill the gaps from the source. The others would
-    /// write the unexpanded parts as empty.
+    /// The whole document with the user's edits applied, for YAML saving:
+    /// its source patcher needs every node. The serializers take the source
+    /// instead and build what the index lacks as they write.
     static func completeIndex(_ current: NodeIndex,
                               source: (any DocumentSource)?) -> NodeIndex {
         source?.completeNodeIndex(overlaying: current) ?? current

@@ -14,9 +14,17 @@ import Foundation
 public struct YAMLDocumentSerializer {
 
     private let index: NodeIndex
+    private let source: (any DocumentSource)?
 
-    public init(index: NodeIndex) {
+    /// - Parameter source: where to build what `index` lacks: a large file's
+    ///   index holds only what has been expanded and edited.
+    public init(index: NodeIndex, source: (any DocumentSource)? = nil) {
         self.index = index
+        self.source = source
+    }
+
+    private func children(of node: DocumentNode) -> OverlaidChildren {
+        index.children(of: node, source: source)
     }
 
     // MARK: - Public API
@@ -28,7 +36,7 @@ public struct YAMLDocumentSerializer {
         }
         var out = ""
         if Self.isDocumentStream(root) {
-            for document in index.children(of: root.id) {
+            for document in children(of: root) {
                 out += "---\n"
                 appendNode(document, indent: 0, to: &out)
             }
@@ -52,7 +60,7 @@ public struct YAMLDocumentSerializer {
     private func appendNode(_ node: DocumentNode, indent: Int, to out: inout String) {
         switch node.type {
         case .object:
-            let kvChildren = index.children(of: node.id)
+            let kvChildren = children(of: node)
             if kvChildren.isEmpty {
                 out += String(repeating: " ", count: indent) + "{}\n"
                 return
@@ -62,7 +70,7 @@ public struct YAMLDocumentSerializer {
             }
 
         case .array:
-            let items = index.children(of: node.id)
+            let items = children(of: node)
             if items.isEmpty {
                 out += String(repeating: " ", count: indent) + "[]\n"
                 return
@@ -86,8 +94,7 @@ public struct YAMLDocumentSerializer {
         guard let key = kv.key else { return }
         let spaces = String(repeating: " ", count: indent)
         out += spaces + Self.quoteKeyIfNeeded(key) + ":"
-        let valueChildren = index.children(of: kv.id)
-        if let valueNode = valueChildren.first {
+        if let valueNode = children(of: kv).first {
             appendInlineOrBlock(valueNode, indent: indent + 2, to: &out)
         } else {
             out += " null\n"
@@ -102,7 +109,7 @@ public struct YAMLDocumentSerializer {
             out += " \(scalarText(node))\n"
 
         case .object:
-            let kvChildren = index.children(of: node.id)
+            let kvChildren = children(of: node)
             if kvChildren.isEmpty {
                 out += " {}\n"
             } else {
@@ -113,7 +120,7 @@ public struct YAMLDocumentSerializer {
             }
 
         case .array:
-            let items = index.children(of: node.id)
+            let items = children(of: node)
             if items.isEmpty {
                 out += " []\n"
             } else {

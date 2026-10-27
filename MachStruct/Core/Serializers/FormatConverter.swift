@@ -58,22 +58,25 @@ public struct FormatConverter: Sendable {
     ///                 output when the source was parsed with simdjson (which
     ///                 leaves `.unparsed` scalars in the index).  Not needed for
     ///                 YAML or CSV output.
+    ///   - source:     Where to build the nodes a large file's `index` lacks;
+    ///                 it holds only what has been expanded and edited.
     ///   - format:     The desired output format.
     /// - Throws: `CSVSerializerError.notTabular` when converting to CSV a
     ///   document that is not a uniform array of objects.
     public func convert(
         index: NodeIndex,
         mappedFile: MappedFile? = nil,
+        source: (any DocumentSource)? = nil,
         to format: TargetFormat
     ) throws -> Data {
         switch format {
         case .json:
-            return try JSONDocumentSerializer(index: index, mappedFile: mappedFile)
+            return try JSONDocumentSerializer(index: index, mappedFile: mappedFile, source: source)
                 .serialize(pretty: true)
         case .yaml:
-            return try YAMLDocumentSerializer(index: index).serialize()
+            return try YAMLDocumentSerializer(index: index, source: source).serialize()
         case .csv:
-            return try CSVDocumentSerializer(index: index).serialize()
+            return try CSVDocumentSerializer(index: index, source: source).serialize()
         }
     }
 

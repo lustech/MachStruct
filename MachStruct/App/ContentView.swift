@@ -873,11 +873,12 @@ struct ContentView: View {
             let source = document?.source
             Task.detached(priority: .userInitiated) {
                 do {
-                    // A large file's index holds only what has been expanded.
-                    let complete = StructDocument.completeIndex(index, source: source)
+                    // A large file's index holds only what has been expanded;
+                    // the rest is built from the source as it is written.
                     let data = try FormatConverter().convert(
-                        index: complete,
+                        index: index,
                         mappedFile: mappedFile,
+                        source: source,
                         to: format
                     )
                     try data.write(to: url, options: .atomic)

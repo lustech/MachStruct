@@ -18,9 +18,14 @@ import Foundation
 public struct CSVDocumentSerializer {
 
     private let index: NodeIndex
+    private let source: (any DocumentSource)?
 
-    public init(index: NodeIndex) {
+    /// - Parameter source: where to build what `index` lacks: a large file's
+    ///   index holds only what has been expanded and edited. Rows are then
+    ///   built one at a time as they are written, not all held at once.
+    public init(index: NodeIndex, source: (any DocumentSource)? = nil) {
         self.index = index
+        self.source = source
     }
 
     // MARK: - Public API
@@ -29,26 +34,21 @@ public struct CSVDocumentSerializer {
     ///
     /// - Parameter delimiter: Field delimiter character (default `,`).
     public func serialize(delimiter: Character = ",") throws -> Data {
-        guard index.isTabular() else {
+        guard let root = index.root, isTabular(root) else {
             throw CSVSerializerError.notTabular
         }
-        guard let root = index.root else {
-            throw CSVSerializerError.emptyDocument
-        }
 
-        let rowNodes = index.children(of: root.id)
-        let columns = allColumns(of: rowNodes)
-        var lines: [String] = []
+        let columns = allColumns(under: root)
+        var text = ""
 
         // Header row
-        lines.append(row(cells: columns, delimiter: delimiter))
+        appendRow(columns, delimiter: delimiter, to: &text)
 
         // Data rows
-        for rowNode in rowNodes {
-            lines.append(row(cells: cells(of: rowNode, columns: columns), delimiter: delimiter))
+        for rowNode in children(of: root) {
+            appendRow(cells(of: rowNode, columns: columns), delimiter: delimiter, to: &text)
         }
 
-        let text = lines.joined(separator: "\n") + "\n"
         return Data(text.utf8)
     }
 
@@ -71,56 +71,96 @@ public struct CSVDocumentSerializer {
             delimiter = meta.delimiter
         }
 
-        let rowNodes = index.children(of: root.id)
-        var lines: [String] = []
-
-        if rowNodes.allSatisfy({ $0.type == .array }) {
-            // No header: each row is a positional array of scalars.
-            for rowNode in rowNodes {
-                let cells = index.children(of: rowNode.id).map(cellText)
-                lines.append(row(cells: cells, delimiter: delimiter))
-            }
-        } else if rowNodes.allSatisfy({ $0.type == .object }) {
-            let columns = allColumns(of: rowNodes)
-            lines.append(row(cells: columns, delimiter: delimiter))
-            for rowNode in rowNodes {
-                lines.append(row(cells: cells(of: rowNode, columns: columns), delimiter: delimiter))
-            }
-        } else {
-            throw CSVSerializerError.notTabular
+        // One pass for the layout and the columns, one to write: a large
+        // file's rows are built from its source on each.
+        var allArrays = true
+        var allObjects = true
+        var columns = Columns()
+        for rowNode in children(of: root) {
+            allArrays = allArrays && rowNode.type == .array
+            allObjects = allObjects && rowNode.type == .object
+            if !allArrays && !allObjects { throw CSVSerializerError.notTabular }
+            if allObjects { columns.add(keysOf: rowNode, from: self) }
         }
 
-        let text = lines.map { $0 + "\n" }.joined()
+        var text = ""
+        if allArrays {
+            // No header: each row is a positional array of scalars.
+            for rowNode in children(of: root) {
+                appendRow(children(of: rowNode).map(cellText), delimiter: delimiter, to: &text)
+            }
+        } else {
+            let columns = columns.names
+            appendRow(columns, delimiter: delimiter, to: &text)
+            for rowNode in children(of: root) {
+                appendRow(cells(of: rowNode, columns: columns), delimiter: delimiter, to: &text)
+            }
+        }
+
         return Data(text.utf8)
     }
 
     // MARK: - Private helpers
+
+    private func children(of node: DocumentNode) -> OverlaidChildren {
+        index.children(of: node, source: source)
+    }
+
+    /// `NodeIndex.isTabular()`, reading rows the index lacks from the source.
+    private func isTabular(_ root: DocumentNode, sampleSize: Int = 10) -> Bool {
+        guard source != nil else { return index.isTabular(sampleSize: sampleSize) }
+        guard root.type == .array else { return false }
+        let sample = Array(children(of: root).prefix(sampleSize))
+        guard !sample.isEmpty,
+              sample.allSatisfy({ $0.type == .object }) else { return false }
+        let firstKeys = children(of: sample[0]).compactMap { $0.key }
+        guard !firstKeys.isEmpty else { return false }
+        return sample.allSatisfy { row in
+            children(of: row).compactMap { $0.key } == firstKeys
+        }
+    }
 
     /// Every key used by any row, in order of first appearance.
     ///
     /// `isTabular()` only samples the leading rows, so a later row can carry
     /// keys the first row lacks — e.g. surplus fields of a ragged CSV (#28).
     /// Taking columns from the first row alone would drop them on export.
-    private func allColumns(of rowNodes: [DocumentNode]) -> [String] {
-        var columns: [String] = []
-        var seen = Set<String>()
-        for rowNode in rowNodes {
-            for kv in index.children(of: rowNode.id) {
-                if let key = kv.key, seen.insert(key).inserted { columns.append(key) }
+    private func allColumns(under root: DocumentNode) -> [String] {
+        var columns = Columns()
+        for rowNode in children(of: root) { columns.add(keysOf: rowNode, from: self) }
+        return columns.names
+    }
+
+    private struct Columns {
+        private(set) var names: [String] = []
+        private var seen = Set<String>()
+
+        mutating func add(keysOf rowNode: DocumentNode, from serializer: CSVDocumentSerializer) {
+            for kv in serializer.children(of: rowNode) {
+                if let key = kv.key, seen.insert(key).inserted { names.append(key) }
             }
         }
-        return columns
     }
 
     /// Cell text of an object row for each column, empty where the row lacks it.
     private func cells(of rowNode: DocumentNode, columns: [String]) -> [String] {
-        let kvs = index.children(of: rowNode.id)
-        return columns.map { col -> String in
-            guard let kv = kvs.first(where: { $0.key == col }),
-                  let scalar = index.children(of: kv.id).first
+        let kvs = Array(children(of: rowNode))
+        // A row usually has the columns in order; while it does, its member
+        // at a column's position is the first with that key.
+        var inOrder = true
+        return columns.indices.map { i -> String in
+            let col = columns[i]
+            inOrder = inOrder && i < kvs.count && kvs[i].key == col
+            guard let kv = inOrder ? kvs[i] : kvs.first(where: { $0.key == col }),
+                  let scalar = children(of: kv).first
             else { return "" }
             return cellText(scalar)
         }
+    }
+
+    private func appendRow(_ cells: [String], delimiter: Character, to text: inout String) {
+        text += row(cells: cells, delimiter: delimiter)
+        text += "\n"
     }
 
     private func row(cells: [String], delimiter: Character) -> String {
@@ -150,12 +190,19 @@ public struct CSVDocumentSerializer {
     /// delimiter, a double-quote, LF, or CR.  Interior double-quotes are escaped
     /// by doubling.
     private func quote(_ s: String, delimiter: Character) -> String {
-        let needsQuoting = s.contains(delimiter)
-                        || s.contains("\"")
-                        || s.contains("\n")
-                        || s.contains("\r")
-        guard needsQuoting else { return s }
+        guard needsQuoting(s, delimiter: delimiter) else { return s }
         return "\"" + s.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+    }
+
+    /// Whether `s` holds the delimiter, a double-quote, LF or CR. Checked on
+    /// its bytes: comparing Characters misses a CRLF, which is one Character,
+    /// and a delimiter joined to a combining mark, leaving the field unquoted
+    /// and split in two when read back (#75).
+    private func needsQuoting(_ s: String, delimiter: Character) -> Bool {
+        guard let d = delimiter.asciiValue else {
+            return s.contains(delimiter) || s.utf8.contains { $0 == 0x22 || $0 == 0x0A || $0 == 0x0D }
+        }
+        return s.utf8.contains { $0 == d || $0 == 0x22 || $0 == 0x0A || $0 == 0x0D }
     }
 
     private func csvDouble(_ value: Double) -> String {
