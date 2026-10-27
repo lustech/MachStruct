@@ -48,30 +48,7 @@ public actor CSVParser: StructParser {
     // MARK: - Progressive streaming
 
     public nonisolated func parseProgressively(file: MappedFile) -> AsyncStream<ParseProgress> {
-        AsyncStream { continuation in
-            Task {
-                do {
-                    let parser = CSVParser()
-                    let index = try await parser.buildIndex(from: file)
-                    let batchSize = 1_000
-                    var batch: [IndexEntry] = []
-                    batch.reserveCapacity(batchSize)
-                    for entry in index.entries {
-                        batch.append(entry)
-                        if batch.count == batchSize {
-                            continuation.yield(.nodesIndexed(batch))
-                            batch.removeAll(keepingCapacity: true)
-                        }
-                    }
-                    if !batch.isEmpty { continuation.yield(.nodesIndexed(batch)) }
-                    continuation.yield(.complete(index))
-                    continuation.finish()
-                } catch {
-                    continuation.yield(.error(error))
-                    continuation.finish()
-                }
-            }
-        }
+        ParseProgress.stream { try await CSVParser().buildIndex(from: file) }
     }
 
     // MARK: - Phase 2
@@ -159,13 +136,24 @@ private extension CSVParser {
         }
 
         let colCount = headers.count
-        // Pre-compute capacity: root + Σ(row + colCount × cells_per_col)
-        let cellsPerRow = hasHeader ? 1 + colCount * 2 : 1 + colCount
+        // Exact entry count: root + Σ(row + its cells), where a cell under a
+        // header is a keyValue plus its scalar.
+        let entriesPerCell = hasHeader ? 2 : 1
+        let entryCount = dataRows.reduce(1) { $0 + 1 + $1.count * entriesPerCell }
+        let widest = dataRows.map(\.count).max() ?? 0
         var entries = [IndexEntry]()
-        entries.reserveCapacity(1 + dataRows.count * cellsPerRow)
+        entries.reserveCapacity(entryCount)
+
+        // IDs come from one reserved block, numbered in the order entries are
+        // appended, so the index never needs renumbering (#62).
+        var nextID = NodeID.reserveBlock(count: entryCount)
+        func newID() -> NodeID {
+            defer { nextID += 1 }
+            return NodeID(rawValue: nextID)
+        }
 
         // Root
-        let rootID   = NodeID.generate()
+        let rootID   = newID()
         let rootMeta = CSVMetadata(delimiter: delimiter, hasHeader: hasHeader, columnIndex: 0)
         entries.append(IndexEntry(
             id: rootID, nodeType: .array, depth: 0, parentID: nil,
@@ -176,12 +164,19 @@ private extension CSVParser {
         // Rows longer than the header keep their surplus fields under
         // synthesised keys rather than dropping them (#28).
         var keys = headers
-        if hasHeader, let widest = dataRows.map(\.count).max(), widest > colCount {
+        if hasHeader, widest > colCount {
             keys += synthesisedKeys(for: colCount ..< widest, avoiding: headers)
         }
 
+        // Every cell in a column has the same metadata, so the column shares
+        // one copy instead of each of its cells holding its own (#62).
+        let columnMetadata = (0 ..< widest).map { colIdx in
+            IndexEntry.MetadataBox(.csv(CSVMetadata(delimiter: delimiter, hasHeader: hasHeader,
+                                                    columnIndex: colIdx)))
+        }
+
         for row in dataRows {
-            let rowID   = NodeID.generate()
+            let rowID   = newID()
 
             if hasHeader {
                 // Represent each data row as an object keyed by column name.
@@ -190,9 +185,8 @@ private extension CSVParser {
                     childCount: UInt32(row.count)
                 ))
                 for (colIdx, cell) in row.enumerated() {
-                    let kvID  = NodeID.generate()
-                    let sID   = NodeID.generate()
-                    let meta  = CSVMetadata(delimiter: delimiter, hasHeader: true, columnIndex: colIdx)
+                    let kvID  = newID()
+                    let sID   = newID()
                     entries.append(IndexEntry(
                         id: kvID, nodeType: .keyValue, depth: 2, parentID: rowID,
                         childCount: 1, key: keys[colIdx]
@@ -200,7 +194,7 @@ private extension CSVParser {
                     entries.append(IndexEntry(
                         id: sID, nodeType: .scalar, depth: 3, parentID: kvID,
                         parsedValue: parseScalarValue(cell),
-                        metadata: .csv(meta)
+                        sharedMetadata: columnMetadata[colIdx]
                     ))
                 }
             } else {
@@ -210,13 +204,12 @@ private extension CSVParser {
                     childCount: UInt32(row.count)
                 ))
                 for (colIdx, cell) in row.enumerated() {
-                    let sID  = NodeID.generate()
-                    let meta = CSVMetadata(delimiter: delimiter, hasHeader: false, columnIndex: colIdx)
+                    let sID  = newID()
                     entries.append(IndexEntry(
                         id: sID, nodeType: .scalar, depth: 2, parentID: rowID,
                         key: String(colIdx),
                         parsedValue: parseScalarValue(cell),
-                        metadata: .csv(meta)
+                        sharedMetadata: columnMetadata[colIdx]
                     ))
                 }
             }

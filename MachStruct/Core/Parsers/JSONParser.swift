@@ -50,32 +50,7 @@ public actor JSONParser: StructParser {
     // MARK: - Progressive streaming
 
     public nonisolated func parseProgressively(file: MappedFile) -> AsyncStream<ParseProgress> {
-        AsyncStream { continuation in
-            Task {
-                do {
-                    let parser = JSONParser()
-                    let index = try await parser.buildIndex(from: file)
-                    let batchSize = 1_000
-                    var batch: [IndexEntry] = []
-                    batch.reserveCapacity(batchSize)
-                    for entry in index.entries {
-                        batch.append(entry)
-                        if batch.count == batchSize {
-                            continuation.yield(.nodesIndexed(batch))
-                            batch.removeAll(keepingCapacity: true)
-                        }
-                    }
-                    if !batch.isEmpty {
-                        continuation.yield(.nodesIndexed(batch))
-                    }
-                    continuation.yield(.complete(index))
-                    continuation.finish()
-                } catch {
-                    continuation.yield(.error(error))
-                    continuation.finish()
-                }
-            }
-        }
+        ParseProgress.stream { try await JSONParser().buildIndex(from: file) }
     }
 
     // MARK: - Phase 2
@@ -310,24 +285,15 @@ extension JSONParser {
 private extension JSONParser {
 
     func buildIndexSimdjson(file: MappedFile) throws -> StructuralIndex {
-        // Start with a generous buffer; retry if the bridge signals MS_ERROR_BUFFER_SMALL.
-        var capacity = min(max(1_024, Int(file.fileSize / 64)), 2_000_000)
-        var msEntries = [MSIndexEntry](repeating: MSIndexEntry(), count: capacity)
-        var count: Int64 = 0
+        // The bridge sizes its own output, so the file is parsed once. With a
+        // caller-sized buffer, a large file was parsed up to five times while
+        // the buffer doubled, with a buffer of up to twice the size needed (#62).
+        var raw: UnsafeMutablePointer<MSIndexEntry>?
+        let count = ms_build_structural_index_alloc(
+            file.rawPointer.assumingMemoryBound(to: CChar.self), file.fileSize, &raw)
+        defer { ms_free_entries(raw) }
 
-        while true {
-            msEntries = [MSIndexEntry](repeating: MSIndexEntry(), count: capacity)
-            let ptr = file.rawPointer.assumingMemoryBound(to: CChar.self)
-            count = ms_build_structural_index(ptr, file.fileSize,
-                                              &msEntries, UInt64(capacity))
-            if count == Int64(MS_ERROR_BUFFER_SMALL) {
-                capacity *= 2
-                continue
-            }
-            break
-        }
-
-        guard count >= 0 else {
+        guard count >= 0, let raw else {
             // simdjson refuses some documents that are perfectly valid JSON —
             // most notably integer literals beyond UInt64.max, which it reports
             // as a parse error for the whole file (#25). Before giving up, try
@@ -347,7 +313,7 @@ private extension JSONParser {
 
         // The DOM bridge cannot report token positions, so align source byte
         // ranges to the entries with one linear scan over the raw bytes.
-        let rawEntries = Array(msEntries.prefix(Int(count)))
+        let rawEntries = UnsafeBufferPointer(start: raw, count: Int(count))
         let buffer = UnsafeRawBufferPointer(start: file.rawPointer,
                                             count: Int(file.fileSize))
         guard let ranges = JSONParser.scanTokenRanges(buffer: buffer,
@@ -492,15 +458,15 @@ extension JSONParser {
     ///
     /// Per the bridge contract, STRING nodes whose parent is an OBJECT are key nodes.
     /// These become `.keyValue` entries; their single child holds the actual value.
-    func convertBridgeEntries(_ raw: [MSIndexEntry],
+    func convertBridgeEntries(_ raw: UnsafeBufferPointer<MSIndexEntry>,
                               ranges: [(offset: UInt64, length: UInt32)],
                               resolvingFrom file: MappedFile?) -> [IndexEntry] {
         var entries = [IndexEntry]()
         entries.reserveCapacity(raw.count)
 
-        // Index → NodeID mapping built as we go (entries are in document order).
-        var idMap = [Int: NodeID]()
-        idMap.reserveCapacity(raw.count)
+        // Entry `i` gets ID `base + i`, so a parent index maps to its ID by
+        // arithmetic, without a dictionary the size of the document.
+        let base = NodeID.reserveBlock(count: raw.count)
 
         // Position of each array element among its siblings. The Foundation
         // walk used to store these as the element's key ("0", "1", …), and
@@ -508,11 +474,9 @@ extension JSONParser {
         var arrayOrdinal = [Int: Int]()
 
         for (i, ms) in raw.enumerated() {
-            let nodeID = NodeID.generate()
-            idMap[i] = nodeID
-
+            let nodeID = NodeID(rawValue: base + UInt64(i))
             let parentID: NodeID? = ms.parent_index >= 0
-                ? idMap[Int(ms.parent_index)]
+                ? NodeID(rawValue: base + UInt64(ms.parent_index))
                 : nil
 
             // STRING nodes directly parented to an OBJECT are key nodes (.keyValue).

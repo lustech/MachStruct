@@ -8,18 +8,13 @@ import Foundation
 /// via `StructParser.parseValue(entry:from:)`.
 public struct IndexEntry: Sendable {
 
+    // Stored properties are ordered largest first so they pack without
+    // padding: a 400 000-row file has 2.8 million entries (#62).
+
     public fileprivate(set) var id: NodeID
 
     /// Byte offset of this node's raw source in the file. 0 when not yet extracted.
     public let byteOffset: UInt64
-
-    /// Byte length of this node's raw source. 0 when not yet extracted.
-    public let byteLength: UInt32
-
-    public let nodeType: NodeType
-    public let depth: UInt16
-    public fileprivate(set) var parentID: NodeID?
-    public let childCount: UInt32
 
     /// Object key or string-encoded array index for `.keyValue` / array-element nodes.
     /// Populated eagerly on the Foundation path; `nil` on the simdjson path (lazily parsed).
@@ -29,9 +24,28 @@ public struct IndexEntry: Sendable {
     /// `nil` on the simdjson path — use `StructParser.parseValue` to obtain.
     public let parsedValue: ScalarValue?
 
+    /// Boxed: few entries have metadata, and inline it took 56 bytes of every one.
+    private var metadataBox: MetadataBox?
+
+    public fileprivate(set) var parentID: NodeID?
+
+    /// Byte length of this node's raw source. 0 when not yet extracted.
+    public let byteLength: UInt32
+
+    public let childCount: UInt32
+    public let depth: UInt16
+    public let nodeType: NodeType
+
     /// Format-specific metadata (e.g. `XMLMetadata` for XML nodes). Populated eagerly
     /// by format parsers that have this information at index-build time.
-    public let metadata: FormatMetadata?
+    public var metadata: FormatMetadata? { metadataBox?.value }
+
+    /// Metadata that many entries can share: parsers that give the same
+    /// metadata to many entries pass one box rather than a copy for each.
+    final class MetadataBox: Sendable {
+        let value: FormatMetadata
+        init(_ value: FormatMetadata) { self.value = value }
+    }
 
     public init(
         id: NodeID,
@@ -54,11 +68,77 @@ public struct IndexEntry: Sendable {
         self.childCount = childCount
         self.key = key
         self.parsedValue = parsedValue
-        self.metadata = metadata
+        self.metadataBox = metadata.map(MetadataBox.init)
+    }
+
+    init(
+        id: NodeID,
+        nodeType: NodeType,
+        depth: UInt16,
+        parentID: NodeID?,
+        childCount: UInt32 = 0,
+        key: String? = nil,
+        parsedValue: ScalarValue? = nil,
+        sharedMetadata: MetadataBox
+    ) {
+        self.init(id: id, nodeType: nodeType, depth: depth, parentID: parentID,
+                  childCount: childCount, key: key, parsedValue: parsedValue)
+        self.metadataBox = sharedMetadata
     }
 }
 
 // MARK: - StructuralIndex
+
+/// The children of each entry in a `StructuralIndex`, as indices into its
+/// `entries` in document order.
+///
+/// Stored as one flat list plus an offset per entry. An array per container
+/// took 1.6 million allocations and 170 MB for a 400 000-row CSV (#62).
+public struct ChildIndexTable: Sendable {
+
+    private let base: UInt64
+    /// `flat[starts[i]..<starts[i + 1]]` are the children of `entries[i]`.
+    private let starts: [Int]
+    private let flat: [Int]
+
+    /// `entries` must be numbered contiguously from `base`, which
+    /// `StructuralIndex.init` guarantees.
+    init(entries: [IndexEntry], base: UInt64) {
+        let n = entries.count
+        func parentIndex(_ entry: IndexEntry) -> Int? {
+            guard let pid = entry.parentID, pid.rawValue >= base,
+                  pid.rawValue - base < UInt64(n) else { return nil }
+            return Int(pid.rawValue - base)
+        }
+
+        var starts = [Int](repeating: 0, count: n + 1)
+        for entry in entries {
+            if let p = parentIndex(entry) { starts[p + 1] += 1 }
+        }
+        for i in 0..<n { starts[i + 1] += starts[i] }
+
+        var flat = [Int](repeating: 0, count: starts[n])
+        var next = starts
+        for (i, entry) in entries.enumerated() {
+            if let p = parentIndex(entry) {
+                flat[next[p]] = i
+                next[p] += 1
+            }
+        }
+        self.base = base
+        self.starts = starts
+        self.flat = flat
+    }
+
+    /// The children of the node `id`, or `nil` when it has none or isn't in
+    /// the index.
+    public subscript(id: NodeID) -> ArraySlice<Int>? {
+        guard id.rawValue >= base, id.rawValue - base < UInt64(starts.count - 1) else { return nil }
+        let i = Int(id.rawValue - base)
+        let range = starts[i]..<starts[i + 1]
+        return range.isEmpty ? nil : flat[range]
+    }
+}
 
 /// The output of Phase 1 parsing: a flat array of `IndexEntry`s in document order.
 ///
@@ -72,7 +152,7 @@ public struct StructuralIndex: Sendable {
     /// Maps each NodeID → indices of its immediate children in `entries`.
     /// Precomputed once in O(n); enables O(childCount) lazy expansion without
     /// scanning the full entry list.
-    public let childIndices: [NodeID: [Int]]
+    public let childIndices: ChildIndexTable
 
     /// Base NodeID rawValue for the first entry in `entries`.
     ///
@@ -105,14 +185,7 @@ public struct StructuralIndex: Sendable {
         }
         self.entries = entries
         self.entryIDBase = entries.first?.id.rawValue ?? 0
-        var ci = [NodeID: [Int]]()
-        ci.reserveCapacity(entries.count / 4)
-        for (i, entry) in entries.enumerated() {
-            if let pid = entry.parentID {
-                ci[pid, default: []].append(i)
-            }
-        }
-        self.childIndices = ci
+        self.childIndices = ChildIndexTable(entries: entries, base: entryIDBase)
         // Start empty — keys are interned on demand as nodes are materialised.
         // Preloading (iterating all entries at init time) was measured to add
         // ~95 ms for large files on the simdjson path where every key is nil.
@@ -207,10 +280,10 @@ public struct StructuralIndex: Sendable {
             guard value.nodeType == .object || value.nodeType == .array else {
                 return []   // scalar value renders inline; no sub-rows
             }
-            return childIndices[value.id] ?? []
+            return Array(childIndices[value.id] ?? [])
         }
 
-        return childIndices[id] ?? []
+        return Array(childIndices[id] ?? [])
     }
 
     /// NodeIDs that must stay materialised for the row representing `id` to
@@ -249,14 +322,12 @@ public struct StructuralIndex: Sendable {
             return NodeIndex(root: root)
         }
 
-        // Build the flat storage and positions index in one pass, then wire
-        // childIDs in a second pass — eliminating the extra dict-to-array
-        // conversion that `NodeIndex(rootID:allNodes:)` would require.
+        // Build the flat storage and positions index in one pass, taking each
+        // node's children from `childIndices` rather than collecting them in
+        // a dictionary first.
         var storage   = ContiguousArray<DocumentNode>()
         var positions = [NodeID: Int](minimumCapacity: entries.count)
-        var childIDsByParent = [NodeID: [NodeID]]()
         storage.reserveCapacity(entries.count)
-        childIDsByParent.reserveCapacity(entries.count / 2)
 
         for entry in entries {
             let value: NodeValue
@@ -275,23 +346,13 @@ public struct StructuralIndex: Sendable {
                 type: entry.nodeType,
                 depth: entry.depth,
                 parentID: entry.parentID,
-                childIDs: [],
+                childIDs: (childIndices[entry.id] ?? []).map { entries[$0].id },
                 key: keyTable.intern(entry.key),
                 value: value,
                 sourceRange: SourceRange(byteOffset: entry.byteOffset,
                                          byteLength: entry.byteLength),
                 metadata: entry.metadata
             ))
-
-            if let pid = entry.parentID {
-                childIDsByParent[pid, default: []].append(entry.id)
-            }
-        }
-
-        // Wire up childIDs
-        for (pid, childIDs) in childIDsByParent {
-            guard let idx = positions[pid] else { continue }
-            storage[idx].childIDs = childIDs
         }
 
         return NodeIndex(rootID: first.id, storage: storage, positions: positions)
@@ -386,34 +447,29 @@ public struct StructuralIndex: Sendable {
             return NodeIndex(root: root)
         }
 
-        // Rough capacity: root + root children + their value/kv children.
-        let rootChildIdxs = childIndices[first.id] ?? []
-        var nodes = [NodeID: DocumentNode]()
-        nodes.reserveCapacity(1 + rootChildIdxs.count * 3)
-
-        // Root node
-        let rootChildIDs = rootChildIdxs.map { entries[$0].id }
-        nodes[first.id] = makeDocumentNode(from: first, childIDs: rootChildIDs)
-
-        // Root's immediate children + one extra level (value children of keyValue nodes)
-        for childIdx in rootChildIdxs {
-            let childEntry = entries[childIdx]
-            let grandChildIdxs = childIndices[childEntry.id] ?? []
-            let grandChildIDs = grandChildIdxs.map { entries[$0].id }
-            nodes[childEntry.id] = makeDocumentNode(from: childEntry, childIDs: grandChildIDs)
-
-            // For keyValue nodes, also materialise the value child so the row can
-            // render its display value and badge without needing a separate parse.
-            if childEntry.nodeType == .keyValue {
-                for gcIdx in grandChildIdxs {
-                    let gcEntry = entries[gcIdx]
-                    let ggChildIDs = (childIndices[gcEntry.id] ?? []).map { entries[$0].id }
-                    nodes[gcEntry.id] = makeDocumentNode(from: gcEntry, childIDs: ggChildIDs)
-                }
+        // Root, its children, and the value of each keyValue child, so the
+        // row can render its display value and badge without a separate
+        // parse. Built straight into the index's storage: a dictionary of
+        // nodes first, sized for three per child, doubled the memory needed
+        // for a 400 000-row file while it was built (#62).
+        var shown = [0]
+        for childIdx in childIndices[first.id] ?? [] {
+            shown.append(childIdx)
+            if entries[childIdx].nodeType == .keyValue {
+                shown += childIndices[entries[childIdx].id] ?? []
             }
         }
 
-        return NodeIndex(rootID: first.id, allNodes: nodes)
+        var storage = ContiguousArray<DocumentNode>()
+        var positions = [NodeID: Int](minimumCapacity: shown.count)
+        storage.reserveCapacity(shown.count)
+        for i in shown {
+            let entry = entries[i]
+            let childIDs = (childIndices[entry.id] ?? []).map { entries[$0].id }
+            positions[entry.id] = storage.count
+            storage.append(makeDocumentNode(from: entry, childIDs: childIDs))
+        }
+        return NodeIndex(rootID: first.id, storage: storage, positions: positions)
     }
 
     // MARK: - Tabular heuristic
@@ -431,14 +487,14 @@ public struct StructuralIndex: Sendable {
         guard sample.allSatisfy({ entries[$0].nodeType == .object }) else { return false }
 
         // All sampled objects must have the same child count.
-        let firstCount = childIndices[entries[sample[0]].id]?.count ?? 0
+        let firstCount = childIndices[entries[sample[sample.startIndex]].id]?.count ?? 0
         guard firstCount > 0 else { return false }
         guard sample.allSatisfy({
             (childIndices[entries[$0].id]?.count ?? 0) == firstCount
         }) else { return false }
 
         // If keys are available (Foundation path), also verify they match.
-        if let firstItemChildIdxs = childIndices[entries[sample[0]].id],
+        if let firstItemChildIdxs = childIndices[entries[sample[sample.startIndex]].id],
            firstItemChildIdxs.first.map({ entries[$0].key }) != nil {
             let firstKeys = firstItemChildIdxs.compactMap { entries[$0].key }
             guard firstKeys.count == firstCount else { return false }
@@ -499,14 +555,40 @@ public struct ValidationIssue: Sendable {
 
 /// Emitted by `StructParser.parseProgressively(file:)` as parsing proceeds.
 public enum ParseProgress: Sendable {
-    /// A batch of newly indexed nodes — enough to render the visible portion of the tree.
-    case nodesIndexed([IndexEntry])
+    /// The number of nodes indexed since the last report.
+    case nodesIndexed(Int)
     /// Parsing is complete; the full index is available.
     case complete(StructuralIndex)
     /// A recoverable issue (e.g. trailing comma in JSON).
     case warning(ValidationIssue)
     /// A fatal error; parsing stopped.
     case error(Error)
+
+    /// Runs `build` in the background, then reports the node count in batches
+    /// of 1 000 followed by the finished index.
+    ///
+    /// Batches carry counts, not entries: the index is complete before the
+    /// first report, and the stream buffers every report until the consumer
+    /// reads it, so copies of the entries amounted to a second index (#62).
+    static func stream(
+        _ build: @escaping @Sendable () async throws -> StructuralIndex
+    ) -> AsyncStream<ParseProgress> {
+        AsyncStream { continuation in
+            Task {
+                do {
+                    let index = try await build()
+                    let batchSize = 1_000
+                    for start in stride(from: 0, to: index.count, by: batchSize) {
+                        continuation.yield(.nodesIndexed(min(batchSize, index.count - start)))
+                    }
+                    continuation.yield(.complete(index))
+                } catch {
+                    continuation.yield(.error(error))
+                }
+                continuation.finish()
+            }
+        }
+    }
 }
 
 // MARK: - StructParser

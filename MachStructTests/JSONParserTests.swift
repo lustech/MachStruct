@@ -321,7 +321,7 @@ final class JSONParserTests: XCTestCase {
         var nodeCount = 0
         for await progress in parser.parseProgressively(file: file) {
             switch progress {
-            case .nodesIndexed(let batch): nodeCount += batch.count
+            case .nodesIndexed(let count): nodeCount += count
             case .complete(let index): completed = true; nodeCount = index.entries.count
             case .error(let e): XCTFail("unexpected error: \(e)")
             case .warning: break

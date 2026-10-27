@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Large files used far more memory than their data needed.** Opening a
+  400,000-row CSV (8 MB) took 1.7 GB, and the same rows as JSON (20 MB)
+  took 1.8 GB. They now take about 720 MB and 680 MB. The index of a
+  large file is smaller, and building it no longer makes temporary copies
+  of it: progress was reported with a copy of every entry, and JSON files
+  were parsed up to five times while a buffer grew. Large JSON files also
+  open faster as a result. (#62)
 - **VoiceOver read every search result control as "Previous search match".**
   The match counter and the next-match button now read as "Match 1 of 11"
   and "Next search match". (#64)

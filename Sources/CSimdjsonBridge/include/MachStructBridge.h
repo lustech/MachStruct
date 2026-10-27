@@ -63,6 +63,27 @@ int64_t ms_build_structural_index(
     uint64_t      max_entries
 );
 
+// ---------------------------------------------------------------------------
+// ms_build_structural_index_alloc
+//
+// Like ms_build_structural_index, but sizes the output itself, so the document
+// is parsed once whatever its size.
+//
+// @param out_entries  Receives a malloc'd array of the entries on success,
+//                     which the caller releases with ms_free_entries.
+//                     Set to NULL on failure.
+//
+// @return  Number of entries on success, or MS_ERROR_PARSE_FAILED.
+// ---------------------------------------------------------------------------
+int64_t ms_build_structural_index_alloc(
+    const char*    data,
+    uint64_t       length,
+    MSIndexEntry** out_entries
+);
+
+// Releases an array returned by ms_build_structural_index_alloc.
+void ms_free_entries(MSIndexEntry* entries);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

@@ -183,9 +183,9 @@ final class ParseBenchmarks: XCTestCase {
 
         for await progress in parser.parseProgressively(file: file) {
             switch progress {
-            case .nodesIndexed(let entries):
+            case .nodesIndexed(let count):
                 batches    += 1
-                totalNodes += entries.count
+                totalNodes += count
             case .complete:
                 completed = true
             case .error(let e):

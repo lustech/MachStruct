@@ -41,32 +41,7 @@ public actor XMLParser: StructParser {
     // MARK: - Progressive streaming
 
     public nonisolated func parseProgressively(file: MappedFile) -> AsyncStream<ParseProgress> {
-        AsyncStream { continuation in
-            Task {
-                do {
-                    let parser = XMLParser()
-                    let index = try await parser.buildIndex(from: file)
-                    let batchSize = 1_000
-                    var batch: [IndexEntry] = []
-                    batch.reserveCapacity(batchSize)
-                    for entry in index.entries {
-                        batch.append(entry)
-                        if batch.count == batchSize {
-                            continuation.yield(.nodesIndexed(batch))
-                            batch.removeAll(keepingCapacity: true)
-                        }
-                    }
-                    if !batch.isEmpty {
-                        continuation.yield(.nodesIndexed(batch))
-                    }
-                    continuation.yield(.complete(index))
-                    continuation.finish()
-                } catch {
-                    continuation.yield(.error(error))
-                    continuation.finish()
-                }
-            }
-        }
+        ParseProgress.stream { try await XMLParser().buildIndex(from: file) }
     }
 
     // MARK: - Phase 2
