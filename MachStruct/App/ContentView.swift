@@ -163,7 +163,7 @@ struct ContentView: View {
     /// Source node IDs for a path-only query, aligned with `queryResults`.
     @State private var querySourceIDs: [NodeID]? = nil
     /// The document the last query ran on; its source IDs refer to it.
-    @State private var queryDocument: StructDocument.WholeDocument? = nil
+    @State private var querySnapshot: StructDocument.QuerySnapshot? = nil
     /// In-flight query task, cancelled when a new query runs.
     @State private var queryTask: Task<Void, Never>? = nil
 
@@ -184,11 +184,6 @@ struct ContentView: View {
     var body: some View {
         mainContent
         .frame(minWidth: 400, minHeight: 300)
-        // A large file's whole document is built for queries; free it once
-        // neither the bar nor its results need it.
-        .onChange(of: showQueryBar || queryResults != nil) { _, inUse in
-            if !inUse { document.releaseWholeDocument() }
-        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             workbenchPanel
         }
@@ -456,7 +451,7 @@ struct ContentView: View {
     private func clearResults() {
         queryResults = nil
         querySourceIDs = nil
-        queryDocument = nil
+        querySnapshot = nil
     }
 
     /// Run the current jq query through `QueryEngine` on a background actor.
@@ -470,12 +465,12 @@ struct ContentView: View {
         queryTask = Task {   // inherits the view's MainActor context
             let engine = QueryEngine()
             do {
-                guard let whole = await document.wholeDocument() else { return }
-                try Task.checkCancellation()
-                let result = try await engine.run(q, on: whole.index)
+                // A large file is read through its source, not built whole.
+                guard let snapshot = document.querySnapshot() else { return }
+                let result = try await engine.run(q, on: snapshot.document)
                 queryResults = result.values
                 querySourceIDs = result.sourceNodeIDs
-                queryDocument = whole
+                querySnapshot = snapshot
                 queryError = nil
                 QueryStore.addRecent(q)
             } catch QueryEngine.QueryError.parse(let e) {
@@ -496,37 +491,42 @@ struct ContentView: View {
     /// For object members the enclosing key-value pair is removed (so the key
     /// disappears), not just its value.
     private func applyDelete() {
-        guard let whole = queryDocument, let ids = querySourceIDs else { return }
-        let index = whole.index
-        let targets: [NodeID] = ids.map { id in
-            if let node = index.node(for: id), let pid = node.parentID,
-               index.node(for: pid)?.type == .keyValue {
-                return pid
+        guard let snapshot = querySnapshot, let ids = querySourceIDs else { return }
+        commitQueryEdit(touching: ids, subtrees: true, since: snapshot) { index in
+            let targets: [NodeID] = ids.map { id in
+                if let node = index.node(for: id), let pid = node.parentID,
+                   index.node(for: pid)?.type == .keyValue {
+                    return pid
+                }
+                return id
             }
-            return id
-        }
-        if let tx = EditTransaction.batchRemove(targets, in: index) {
-            commitQueryEdit(tx, over: whole)
+            return EditTransaction.batchRemove(targets, in: index)
         }
         clearResults()
     }
 
     /// Set every matched scalar to the given value (type inferred from the text).
     private func applySetValue(_ text: String) {
-        guard let whole = queryDocument, let ids = querySourceIDs else { return }
+        guard let snapshot = querySnapshot, let ids = querySourceIDs else { return }
         let value = parseScalarValue(text)
-        if let tx = EditTransaction.batchSetValue(ofScalars: ids, to: value,
-                                                  description: "Set value via query",
-                                                  in: whole.index) {
-            commitQueryEdit(tx, over: whole)
+        commitQueryEdit(touching: ids, subtrees: false, since: snapshot) { index in
+            EditTransaction.batchSetValue(ofScalars: ids, to: value,
+                                          description: "Set value via query", in: index)
         }
         clearResults()
     }
 
-    private func commitQueryEdit(_ tx: EditTransaction, over whole: StructDocument.WholeDocument) {
-        if !document.commitEdit(tx, over: whole, undoManager: undoManager,
-                                expandedIDs: expandedIDs, selectedID: selectedNodeID) {
-            queryError = "The document changed after this query ran. Run it again."
+    private func commitQueryEdit(touching ids: [NodeID], subtrees: Bool,
+                                 since snapshot: StructDocument.QuerySnapshot,
+                                 _ edit: @escaping (NodeIndex) -> EditTransaction?) {
+        Task {
+            let committed = await document.commitEdit(touching: ids, subtrees: subtrees,
+                                                      since: snapshot, undoManager: undoManager,
+                                                      expandedIDs: expandedIDs,
+                                                      selectedID: selectedNodeID, edit)
+            if !committed {
+                queryError = "The document changed after this query ran. Run it again."
+            }
         }
     }
 
