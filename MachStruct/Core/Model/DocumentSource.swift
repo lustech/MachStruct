@@ -33,9 +33,25 @@ public protocol DocumentSource: Sendable {
     /// True when the root is an array of objects with the same keys, sampled
     /// from its first items.
     func looksTabular() -> Bool
+
+    /// Search the subtrees at `ids` — consecutive siblings no index holds —
+    /// for `query` (lowercased), reporting each match in document order as
+    /// the row showing it, the field matched and the matched text. Return
+    /// `false` from `match` to stop.
+    ///
+    /// Returns how many of `ids`, from the first, it searched. The caller
+    /// builds the nodes of the next one itself, so a source can decline any
+    /// subtree it can't search from its bytes.
+    func searchUnloaded(_ ids: ArraySlice<NodeID>, query: String,
+                        _ match: (NodeID, SearchMatch.Field, String) -> Bool) -> Int
 }
 
 extension DocumentSource {
+
+    public func searchUnloaded(_ ids: ArraySlice<NodeID>, query: String,
+                               _ match: (NodeID, SearchMatch.Field, String) -> Bool) -> Int {
+        0
+    }
 
     public func node(for id: NodeID, parent: DocumentNode?) -> DocumentNode? {
         node(for: id, parent: parent, internKeys: true)
@@ -55,13 +71,14 @@ extension DocumentSource {
     /// Nodes in `index` reflect the user's edits; a subtree missing from it is
     /// unedited, so the source describes it correctly.
     ///
-    /// `unloaded`, if given, is offered each node missing from `index` (with
-    /// its parent) before it is built; returning `true` means it has handled
-    /// that subtree, which is then not built or visited.
+    /// `unloaded`, if given, is offered each run of consecutive siblings
+    /// missing from `index` (with their parent) before they are built. It
+    /// returns how many of them, from the first, it has handled; those
+    /// subtrees are then not built or visited.
     public func traverse(overlaying index: NodeIndex,
                          from start: NodeID? = nil,
                          internKeys: Bool = false,
-                         unloaded: ((NodeID, DocumentNode) -> Bool)? = nil,
+                         unloaded: ((ArraySlice<NodeID>, DocumentNode) -> Int)? = nil,
                          _ visit: (DocumentNode, DocumentNode?) -> Bool) {
         let startID = start ?? index.rootID
         guard let first = index.node(for: startID)
@@ -77,12 +94,23 @@ extension DocumentSource {
                 frames.removeLast()
                 continue
             }
-            let childID = top.node.childIDs[top.next]
-            frames[frames.count - 1].next += 1
+            let childIDs = top.node.childIDs
+            let childID = childIDs[top.next]
             visited += 1
             if visited & 0x3FFF == 0, Task.isCancelled { return }
             let loaded = index.node(for: childID)
-            if loaded == nil, let unloaded, unloaded(childID, top.node) { continue }
+            if loaded == nil, let unloaded {
+                var end = top.next + 1
+                while end < childIDs.count, end - top.next < 4_096,
+                      index.node(for: childIDs[end]) == nil { end += 1 }
+                let handled = unloaded(childIDs[top.next ..< end], top.node)
+                if handled > 0 {
+                    frames[frames.count - 1].next += handled
+                    visited += handled - 1
+                    continue
+                }
+            }
+            frames[frames.count - 1].next += 1
             guard let child = loaded
                     ?? node(for: childID, parent: top.node, internKeys: internKeys) else { continue }
             if visit(child, top.node), !child.childIDs.isEmpty { frames.append((child, 0)) }

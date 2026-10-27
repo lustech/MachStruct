@@ -8,12 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- **Large JSON files open with a fraction of the memory.** A file of 5 MB or
-  more is now read straight from its bytes: opening it checks it in one pass
-  and keeps only where each top-level item starts, and every other node is
-  read when it is shown. A 100 MB file with 12.8 million nodes now takes
-  about 65 MB after opening instead of 2.1 GB. Searching it takes about a
-  second, and X-Ray now includes unsaved edits. Large CSV files will follow.
+- **Large JSON and CSV files open with a fraction of the memory.** A file of
+  5 MB or more is now read straight from its bytes: opening it checks it in
+  one pass and keeps only where each top-level item or row starts, and every
+  other node is read when it is shown. A 100 MB JSON file with 12.8 million
+  nodes now takes about 65 MB after opening instead of 2.1 GB, and a 100 MB
+  CSV with 1.2 million rows about 70 MB instead of 3.4 GB. Searching either
+  takes under a second, and X-Ray now includes unsaved edits.
 
 ### Fixed
 - **Large files used far more memory than their data needed.** Opening a
