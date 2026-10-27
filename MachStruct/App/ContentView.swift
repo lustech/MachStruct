@@ -780,9 +780,9 @@ struct ContentView: View {
                 HStack(spacing: 4) {
                     Button(action: previousMatch) {
                         Image(systemName: "chevron.up")
+                            .accessibilityLabel("Previous search match")
                     }
                     .help("Previous match (⇧↩)")
-                    .accessibilityLabel("Previous search match")
                     .buttonStyle(.borderless)
 
                     Text("\(activeMatchIndex + 1) of \(searchMatches.count)")
@@ -794,14 +794,16 @@ struct ContentView: View {
 
                     Button(action: advanceMatch) {
                         Image(systemName: "chevron.down")
+                            .accessibilityLabel("Next search match")
                     }
                     .help("Next match (↩)")
-                    .accessibilityLabel("Next search match")
                     .buttonStyle(.borderless)
                 }
                 .padding(.horizontal, 4)
                 .padding(.vertical, 2)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Search results")
             }
         }
     }

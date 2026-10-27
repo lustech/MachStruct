@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **VoiceOver read every search result control as "Previous search match".**
+  The match counter and the next-match button now read as "Match 1 of 11"
+  and "Next search match". (#64)
 - **The toolbar search ignored edits in files of 5 MB or more.** It searched
   the file as it was opened, so an edited value couldn't be found by its new
   text, its old text still matched, and deleted entries could still be found.
