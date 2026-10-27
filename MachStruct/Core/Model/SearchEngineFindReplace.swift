@@ -122,25 +122,117 @@ public extension SearchEngine {
         var updated: [NodeID: DocumentNode] = [:]
 
         for match in matches(pattern: pattern, options: options, in: index) {
-            guard var node = index.node(for: match.nodeID) else { continue }
-            let newText = matcher.replacingMatches(in: match.originalText, with: replacement)
-            guard newText != match.originalText else { continue }
-
-            switch match.field {
-            case .key:
-                node.key = newText
-            case .value:
-                if case .scalar(.string) = node.value {
-                    node.value = .scalar(.string(newText))
-                } else {
-                    node.value = .scalar(parseScalarValue(newText))
-                }
-            }
-            updated[match.nodeID] = node
+            guard let node = index.node(for: match.nodeID),
+                  let edited = replacing(match.field, of: node, matcher: matcher,
+                                         replacement: replacement) else { continue }
+            updated[match.nodeID] = edited
         }
 
         guard !updated.isEmpty else { return nil }
         return EditTransaction.batchUpdate(updated, description: "Replace All", in: index)
+    }
+
+    /// Replace All in a large document, and the nodes it must load first.
+    struct LazyReplaceAll: Sendable {
+        /// The edit, as `replaceAll(pattern:replacement:options:in:)` would
+        /// make it on the whole document.
+        public let transaction: EditTransaction
+        /// Every ancestor of the edited nodes, as `index` or the source had
+        /// it. Those the index lacks when the edit is applied must be loaded
+        /// first: saving copies the original bytes of any container the index
+        /// lacks, which would drop the edits inside it.
+        public let ancestors: [NodeID: DocumentNode]
+
+        /// `index` with the ancestors it lacks loaded, ready for the edit.
+        /// `index` must not have been edited since the walk.
+        public func loadingAncestors(into index: NodeIndex) -> NodeIndex {
+            var index = index
+            index.applySnapshot(ancestors.filter { index.node(for: $0.key) == nil })
+            return index
+        }
+
+        /// `index` with the missing ancestors loaded and the edit applied.
+        public func applying(to index: NodeIndex) -> NodeIndex {
+            transaction.applying(to: loadingAncestors(into: index))
+        }
+    }
+
+    /// Replace All over a large document as edited, in one pass over it:
+    /// nodes in `index` are read from there and the rest built from `source`
+    /// as they are reached, keeping only those an edit needs.
+    static func replaceAll(pattern: String,
+                           replacement: String,
+                           options: FindOptions,
+                           in index: NodeIndex,
+                           source: any DocumentSource) -> LazyReplaceAll? {
+        guard !pattern.isEmpty,
+              let matcher = TextMatcher(pattern: pattern, options: options) else { return nil }
+
+        var before: [NodeID: DocumentNode] = [:]
+        var after: [NodeID: DocumentNode] = [:]
+        var ancestors: [NodeID: DocumentNode] = [:]
+        // The nodes from the root down to the one being visited.
+        var path: [DocumentNode] = []
+
+        func edit(_ field: SearchMatch.Field, of node: DocumentNode) {
+            let current = after[node.id] ?? node
+            guard let edited = replacing(field, of: current, matcher: matcher,
+                                         replacement: replacement) else { return }
+            if before[node.id] == nil { before[node.id] = node }
+            after[node.id] = edited
+            for ancestor in path.reversed() {
+                guard ancestors.updateValue(ancestor, forKey: ancestor.id) == nil else { break }
+            }
+        }
+
+        source.traverse(overlaying: index) { node, parent in
+            while let last = path.last, last.id != parent?.id { path.removeLast() }
+            if options.matchesKeys, node.type == .keyValue, let key = node.key,
+               matcher.matches(key) {
+                edit(.key, of: node)
+            }
+            if options.matchesValues, node.type == .scalar,
+               case .scalar(let sv) = node.value, matcher.matches(sv.searchableText) {
+                edit(.value, of: node)
+            }
+            path.append(node)
+            return true
+        }
+
+        guard !after.isEmpty, !Task.isCancelled else { return nil }
+        let transaction = EditTransaction(description: "Replace All",
+                                          affectedNodeIDs: Set(after.keys),
+                                          beforeSnapshot: before,
+                                          afterSnapshot: after)
+        return LazyReplaceAll(transaction: transaction, ancestors: ancestors)
+    }
+
+    /// `node` with the matches in its key or value replaced, or `nil` if
+    /// that changes nothing.
+    ///
+    /// A replaced value's scalar type is inferred again (replacing inside the
+    /// integer `30` yields an integer), but a string stays a string.
+    private static func replacing(_ field: SearchMatch.Field, of node: DocumentNode,
+                                  matcher: TextMatcher, replacement: String) -> DocumentNode? {
+        var node = node
+        switch field {
+        case .key:
+            guard let key = node.key else { return nil }
+            let newText = matcher.replacingMatches(in: key, with: replacement)
+            guard newText != key else { return nil }
+            node.key = newText
+        case .value:
+            guard case .scalar(let sv) = node.value else { return nil }
+            let text = sv.searchableText
+            let newText = matcher.replacingMatches(in: text, with: replacement)
+            guard newText != text else { return nil }
+            if case .string = sv {
+                node.value = .scalar(.string(newText))
+            } else {
+                node.value = .scalar(parseScalarValue(newText))
+            }
+        }
+        return node
     }
 
     // MARK: Private
