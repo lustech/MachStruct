@@ -372,8 +372,8 @@ final class StructDocument: ReferenceFileDocument {
                 // tree becomes visible as quickly as possible.
                 for await progress in parser.parseProgressively(file: file) {
                     switch progress {
-                    case .nodesIndexed(let batch):
-                        indexedNodeCount += batch.count
+                    case .nodesIndexed(let count):
+                        indexedNodeCount += count
 
                     case .complete(let si):
                         // Phase 1 done — switch mmap advice to random-access for Phase 2.
