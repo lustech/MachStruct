@@ -184,9 +184,9 @@ struct ContentView: View {
     var body: some View {
         mainContent
         .frame(minWidth: 400, minHeight: 300)
-        // A large file's whole document is built for these bars; free it
-        // once none of them needs it.
-        .onChange(of: showFindReplace || showQueryBar || queryResults != nil) { _, inUse in
+        // A large file's whole document is built for queries; free it once
+        // neither the bar nor its results need it.
+        .onChange(of: showQueryBar || queryResults != nil) { _, inUse in
             if !inUse { document.releaseWholeDocument() }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -567,17 +567,12 @@ struct ContentView: View {
         let options = currentFindOptions()
         findMatchCount = nil
         findTask = Task {
-            guard let whole = await document.wholeDocument() else { return }
-            let tx = await Task.detached(priority: .userInitiated) {
-                SearchEngine.replaceAll(pattern: pattern, replacement: replacement,
-                                        options: options, in: whole.index)
-            }.value
-            if let tx {
-                // Refused if the document was edited meanwhile; the fresh
-                // count below then shows what is left to replace.
-                document.commitEdit(tx, over: whole, undoManager: undoManager,
-                                    expandedIDs: expandedIDs, selectedID: selectedNodeID)
-            }
+            // Refused if the document was edited meanwhile; the fresh count
+            // below then shows what is left to replace.
+            await document.replaceAll(pattern: pattern, replacement: replacement,
+                                      options: options, undoManager: undoManager,
+                                      expandedIDs: expandedIDs, selectedID: selectedNodeID)
+            guard !Task.isCancelled else { return }
             updateFindCount()   // also clears "Counting…" when nothing changed
         }
     }

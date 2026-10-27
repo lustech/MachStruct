@@ -230,7 +230,7 @@ final class StructDocument: ReferenceFileDocument {
     // MARK: - Whole-document operations
 
     /// The whole document at a given edit, for operations that must see every
-    /// node: Find & Replace and queries. `nodeIndex` holds only what has been
+    /// node: queries. `nodeIndex` holds only what has been
     /// expanded in a large file, so working on it misses the rest.
     struct WholeDocument {
         let index: NodeIndex
@@ -289,6 +289,42 @@ final class StructDocument: ReferenceFileDocument {
             return SearchEngine.matches(pattern: pattern, options: options, in: current).count
         }
         return Task.isCancelled ? nil : count
+    }
+
+    /// Replace All across the document as edited, as one undoable edit.
+    /// Returns `false`, changing nothing, if nothing matched or the document
+    /// was edited meanwhile.
+    ///
+    /// A large file's matches are found in one pass over its source; only the
+    /// edited nodes and their ancestors are loaded, not the whole document.
+    @MainActor
+    @discardableResult
+    func replaceAll(pattern: String, replacement: String, options: SearchEngine.FindOptions,
+                    undoManager: UndoManager?,
+                    expandedIDs: Set<NodeID>, selectedID: NodeID?) async -> Bool {
+        guard let current = nodeIndex else { return false }
+        let edits = editCount
+        // Not cancelled with the caller: once asked for, it is done.
+        guard let source else {
+            let tx = await Task.detached(priority: .userInitiated) {
+                SearchEngine.replaceAll(pattern: pattern, replacement: replacement,
+                                        options: options, in: current)
+            }.value
+            guard let tx, edits == editCount else { return false }
+            commitEdit(tx, undoManager: undoManager)
+            return true
+        }
+        let result = await Task.detached(priority: .userInitiated) {
+            SearchEngine.replaceAll(pattern: pattern, replacement: replacement,
+                                    options: options, in: current, source: source)
+        }.value
+        guard let result, edits == editCount, let latest = nodeIndex else { return false }
+        // Loading the ancestors is not an edit: commitEdit records the
+        // transaction's nodes only. Eviction keeps the edits' ancestors.
+        nodeIndex = result.loadingAncestors(into: latest)
+        commitEdit(result.transaction, undoManager: undoManager)
+        evictIfNeeded(expandedIDs: expandedIDs, selectedID: selectedID)
+        return true
     }
 
     /// Runs `work` off the main actor, cancelling it if the caller is
