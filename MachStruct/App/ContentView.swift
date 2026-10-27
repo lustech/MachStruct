@@ -198,10 +198,14 @@ struct ContentView: View {
             }
         }
         .toolbar { toolbarContent }
-        .sheet(isPresented: $showCSVStats) {
-            if let index = document.nodeIndex {
-                CSVStatsPanel(nodeIndex: index)
+        .sheet(isPresented: $showCSVStats, onDismiss: {
+            if !(showFindReplace || showQueryBar || queryResults != nil) {
+                document.releaseWholeDocument()
             }
+        }) {
+            // A large file's rows aren't all loaded, so the statistics are
+            // computed from the whole document.
+            CSVStatsPanel { await document.wholeDocument()?.index }
         }
         .sheet(isPresented: $showXRay) {
             XRaySchemaPanel(structuralIndex: document.structuralIndex,
@@ -358,15 +362,24 @@ struct ContentView: View {
             }
 
         case .table:
-            TableView(nodeIndex: index, selection: $selectedNodeID)
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    StatusBar(
-                        nodeIndex: index,
-                        selectedID: selectedNodeID,
-                        fileSize: document.fileSize,
-                        formatName: document.formatName
-                    )
-                }
+            // Stacked rather than inset: the AppKit table doesn't take the
+            // safe-area inset, so its last row would sit under the status bar.
+            VStack(spacing: 0) {
+                TableView(nodeIndex: index, selection: $selectedNodeID,
+                          loadRows: { [weak document] rows in
+                              // Keep the tree's open rows as well as the table's.
+                              await document?.materializeChildrenIfNeeded(
+                                  of: Array(rows),
+                                  expandedIDs: expandedIDs.union(rows),
+                                  selectedID: selectedNodeID)
+                          })
+                StatusBar(
+                    nodeIndex: index,
+                    selectedID: selectedNodeID,
+                    fileSize: document.fileSize,
+                    formatName: document.formatName
+                )
+            }
 
         case .raw:
             rawView
