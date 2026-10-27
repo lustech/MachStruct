@@ -103,7 +103,7 @@ struct CSVStatsPanel: View {
         isLoading = false
     }
 
-    private static func compute(nodeIndex: NodeIndex) -> [ColumnStats] {
+    nonisolated private static func compute(nodeIndex: NodeIndex) -> [ColumnStats] {
         let columns = nodeIndex.tabularColumns
         guard !columns.isEmpty, let root = nodeIndex.root else { return [] }
 
