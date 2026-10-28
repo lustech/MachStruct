@@ -48,6 +48,11 @@ final class LazyQueryTests: XCTestCase {
     private func run<Lookup: NodeLookup>(_ query: String, _ document: Lookup) async -> Outcome {
         do {
             let result = try await QueryEngine().run(query, on: document)
+            // Each output's node is that output: the order matters, which
+            // the comparison with the old engine (as sets) doesn't check.
+            if let ids = result.sourceNodeIDs {
+                XCTAssertEqual(ids.map { JQValue(node: $0, in: document) }, result.values, query)
+            }
             return .values(result.values, result.sourceNodeIDs.map(Set.init))
         } catch QueryEngine.QueryError.parse {
             return .parseError
@@ -84,6 +89,10 @@ final class LazyQueryTests: XCTestCase {
         ".users[].tags[]", ".users[0].tags", ".meta.count", ".empty[]", ".empty[] | .x",
         ".a.b.c", ".a.b.c[]", ".a.b.c[2].d", ".a | .b", ".[", "nonsense(",
         ".[][.name]", ".[][\"name\"]", ".a", ".[2].name", ".[2][\"name\"]",
+        ".[0,1]", ".[1,0] | .name", ".[] | .tags[-1]", ".[] | .tags[0,1]", "(.[0], .[1]) | .name",
+        ".[] | values | .name?", ".[] | select(.age) | .age",
+        ".users[] | select(.name == \"bob\") | .tags[]", ".users[1:]", ".[]?.name?", ".[] | .[]?",
+        ".users | .[] | .name, .tags", ".meta | .count, .missing", ".a.b | .c | .[-2]",
     ]
 
     private func assertMatchesReference<Lookup: NodeLookup>(_ document: Lookup, full: NodeIndex,
@@ -156,6 +165,22 @@ final class LazyQueryTests: XCTestCase {
         XCTAssertNil(JQPath.splitAtIteration(try expr("map(.name)"), in: document))
     }
 
+    /// `select` outputs its input once for each true result, and each output
+    /// is that node. The old resolver kept it once, so the counts differed
+    /// and no nodes were found.
+    func testRepeatedSelectOutputsAreEachTheirNode() async throws {
+        let src = try source(documents[1].1)
+        let document = DocumentOverlay(index: try rootOnly(src), source: src)
+        let result = try await QueryEngine().run(".[] | select(true, true) | .name", on: document)
+        XCTAssertEqual(result.values, [.string("alice"), .string("alice"), .string("bob"), .string("bob")])
+        let ids = try XCTUnwrap(result.sourceNodeIDs)
+        XCTAssertEqual(ids.count, 4)
+        XCTAssertEqual(ids[0], ids[1])
+        XCTAssertEqual(ids[2], ids[3])
+        XCTAssertEqual(ids.compactMap { document.node(for: $0) }.map { JQValue(node: $0.id, in: document) },
+                       result.values)
+    }
+
     // MARK: - Loading for an edit
 
     func testLoadingBringsAncestorsAndSubtreesAsParsed() throws {
@@ -199,5 +224,122 @@ final class LazyQueryTests: XCTestCase {
 
         XCTAssertNotNil(evicted.node(for: array))
         XCTAssertEqual(Set(evicted.allNodeIDs), [opened.rootID, users.id, array, first])
+    }
+}
+
+// MARK: - Reference
+
+/// How the engine found a path-only query's nodes before it located them
+/// while evaluating: by walking the query again from its input.
+extension JQPath {
+
+    /// Resolve the node IDs selected by a path-only `expr`, starting from
+    /// `nodeIDs`, in document order.
+    static func resolve<Lookup: NodeLookup>(_ expr: JQExpr, from nodeIDs: [NodeID],
+                                            in index: Lookup) throws -> [NodeID] {
+        switch expr {
+        case .identity:
+            return nodeIDs
+
+        case .field(let base, let name, let optional):
+            let bases = try resolve(base, from: nodeIDs, in: index)
+            var out: [NodeID] = []
+            for baseID in bases {
+                guard let node = index.node(for: baseID) else { continue }
+                if node.type == .object {
+                    if let kvID = node.childIDs.first(where: { index.node(for: $0)?.key == name }),
+                       let valueID = index.node(for: kvID)?.childIDs.first {
+                        out.append(valueID)
+                    }
+                    // Missing key → null with no node; skip (can't map back).
+                } else if !optional {
+                    throw JQRuntimeError("Cannot index \(jqTypeName(node)) with \"\(name)\"")
+                }
+            }
+            return out
+
+        case .index(let base, let idxExpr, let optional):
+            let bases = try resolve(base, from: nodeIDs, in: index)
+            // Constant index resolved against null input.
+            let idxValues = try JQEvaluator.evaluate(idxExpr, against: .null)
+            var out: [NodeID] = []
+            for baseID in bases {
+                guard let node = index.node(for: baseID) else { continue }
+                for idxValue in idxValues {
+                    if node.type == .array, case .int(let i) = idxValue {
+                        let n = node.childIDs.count
+                        let pos = i < 0 ? Int(i) + n : Int(i)
+                        if pos >= 0 && pos < n { out.append(node.childIDs[pos]) }
+                    } else if node.type == .object, case .string(let key) = idxValue {
+                        if let kvID = node.childIDs.first(where: { index.node(for: $0)?.key == key }),
+                           let valueID = index.node(for: kvID)?.childIDs.first {
+                            out.append(valueID)
+                        }
+                    } else if !optional {
+                        throw JQRuntimeError("Cannot index \(jqTypeName(node))")
+                    }
+                }
+            }
+            return out
+
+        case .iterate(let base, let optional):
+            let bases = try resolve(base, from: nodeIDs, in: index)
+            var out: [NodeID] = []
+            for baseID in bases {
+                guard let node = index.node(for: baseID) else { continue }
+                switch node.type {
+                case .array:
+                    out.append(contentsOf: node.childIDs)
+                case .object:
+                    for kvID in node.childIDs {
+                        if let valueID = index.node(for: kvID)?.childIDs.first {
+                            out.append(valueID)
+                        }
+                    }
+                default:
+                    if !optional { throw JQRuntimeError("Cannot iterate over \(jqTypeName(node))") }
+                }
+            }
+            return out
+
+        case .pipe(let a, let b):
+            return try resolve(b, from: resolve(a, from: nodeIDs, in: index), in: index)
+
+        case .comma(let a, let b):
+            return try resolve(a, from: nodeIDs, in: index) + resolve(b, from: nodeIDs, in: index)
+
+        case .call("select", let args) where args.count == 1:
+            var out: [NodeID] = []
+            for nodeID in nodeIDs {
+                let projection = JQValue(node: nodeID, in: index)
+                let results = try JQEvaluator.evaluate(args[0], against: projection)
+                if results.contains(where: { truthy($0) }) { out.append(nodeID) }
+            }
+            return out
+
+        case .call("values", let args) where args.isEmpty:
+            return nodeIDs.filter { JQValue(node: $0, in: index) != .null }
+
+        default:
+            throw JQRuntimeError("Query is not a path expression")
+        }
+    }
+
+    private static func truthy(_ v: JQValue) -> Bool {
+        switch v {
+        case .null, .bool(false): return false
+        default:                  return true
+        }
+    }
+
+    private static func jqTypeName(_ node: DocumentNode) -> String {
+        switch node.type {
+        case .object:   return "object"
+        case .array:    return "array"
+        case .keyValue: return "object"
+        case .scalar:
+            if case .scalar(let sv) = node.value { return JQValue(scalar: sv).typeName }
+            return "null"
+        }
     }
 }
