@@ -17,17 +17,26 @@ import Yams
 /// do safely — inserted, deleted or moved nodes, block scalars, a change that
 /// would also alter an alias — returns `nil`, and the caller falls back to
 /// the serializer.
+///
+/// A large file's index holds only what was expanded, edited or above an
+/// edit; with its `DocumentSource`, a node the index lacks is unedited and its
+/// subtree is skipped, so saving never builds the whole document.
 public enum YAMLSourcePatcher {
 
     /// The original text with the edits applied, or `nil` when they can't be
     /// expressed as in-place replacements.
-    public static func patch(source: String, edited index: NodeIndex) -> String? {
+    ///
+    /// - Parameter documentSource: a large file's source, which holds the
+    ///   nodes `index` lacks.
+    public static func patch(source: String, edited index: NodeIndex,
+                             documentSource: (any DocumentSource)? = nil) -> String? {
         guard let root = index.root,
               let original = try? YAMLParser.documents(in: source) else { return nil }
 
+        let tree = Tree(index: index, source: documentSource)
         let text = SourceText(source)
         var patches: [Patch] = []
-        guard collect(original, root, in: index, text: text, into: &patches) else { return nil }
+        guard collect(original, root, in: tree, text: text, into: &patches) else { return nil }
         if patches.isEmpty { return source }
 
         // Apply back to front so earlier offsets stay valid. An anchored node
@@ -50,7 +59,7 @@ public enum YAMLSourcePatcher {
         let patched = String(decoding: bytes, as: UTF8.self)
         guard let reparsed = try? YAMLParser.documents(in: patched) else { return nil }
         var remaining: [Patch] = []
-        guard collect(reparsed, root, in: index, text: SourceText(patched), into: &remaining),
+        guard collect(reparsed, root, in: tree, text: SourceText(patched), into: &remaining),
               remaining.isEmpty else { return nil }
         return patched
     }
@@ -64,19 +73,36 @@ public enum YAMLSourcePatcher {
 
     private static let parser = YAMLParser()
 
+    /// The edited tree: `index`, with `source` behind it for a large file.
+    private struct Tree {
+        let index: NodeIndex
+        let source: (any DocumentSource)?
+
+        /// Whether `node` may differ from the source text. A node only the
+        /// source has was never loaded, so neither it nor anything below it
+        /// was edited: edits stay in the index along with their ancestors.
+        func mayBeEdited(_ node: DocumentNode) -> Bool {
+            source == nil || index.node(for: node.id) != nil
+        }
+
+        func children(of node: DocumentNode) -> [DocumentNode] {
+            Array(index.children(of: node, source: source))
+        }
+    }
+
     /// Pair the source's documents with the edited tree: each with an item of
     /// a document-stream root, or a single one with the root itself.
     private static func collect(_ documents: [Yams.Node], _ root: DocumentNode,
-                                in index: NodeIndex, text: SourceText,
+                                in tree: Tree, text: SourceText,
                                 into patches: inout [Patch]) -> Bool {
         guard YAMLDocumentSerializer.isDocumentStream(root) else {
             guard documents.count == 1 else { return false }
-            return collect(documents[0], root, in: index, text: text, into: &patches)
+            return collect(documents[0], root, in: tree, text: text, into: &patches)
         }
-        let items = index.children(of: root.id)
+        let items = tree.children(of: root)
         guard items.count == documents.count else { return false }
         for (document, item) in zip(documents, items) {
-            guard collect(document, item, in: index, text: text, into: &patches) else { return false }
+            guard collect(document, item, in: tree, text: text, into: &patches) else { return false }
         }
         return true
     }
@@ -85,29 +111,31 @@ public enum YAMLSourcePatcher {
     /// every scalar or key that differs. `false` when the shapes differ or a
     /// changed token can't be located.
     private static func collect(_ node: Yams.Node, _ edited: DocumentNode,
-                                in index: NodeIndex, text: SourceText,
+                                in tree: Tree, text: SourceText,
                                 into patches: inout [Patch]) -> Bool {
-        let children = index.children(of: edited.id)
+        guard tree.mayBeEdited(edited) else { return true }
+        let children = tree.children(of: edited)
         switch node {
         case .mapping(let mapping):
             guard edited.type == .object, children.count == mapping.count else { return false }
             for ((keyNode, valueNode), kv) in zip(mapping, children) {
+                guard tree.mayBeEdited(kv) else { continue }
                 guard kv.type == .keyValue, let key = kv.key,
-                      let value = index.children(of: kv.id).first else { return false }
+                      let value = tree.children(of: kv).first else { return false }
                 if key != parser.keyText(keyNode) {
                     guard case .scalar(let scalar) = keyNode,
                           let range = text.range(of: scalar) else { return false }
                     patches.append(Patch(range: range,
                                          text: YAMLDocumentSerializer.quoteKeyIfNeeded(key)))
                 }
-                guard collect(valueNode, value, in: index, text: text, into: &patches) else { return false }
+                guard collect(valueNode, value, in: tree, text: text, into: &patches) else { return false }
             }
             return true
 
         case .sequence(let sequence):
             guard edited.type == .array, children.count == sequence.count else { return false }
             for (item, child) in zip(sequence, children) {
-                guard collect(item, child, in: index, text: text, into: &patches) else { return false }
+                guard collect(item, child, in: tree, text: text, into: &patches) else { return false }
             }
             return true
 

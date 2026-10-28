@@ -164,12 +164,13 @@ final class StructDocument: ReferenceFileDocument {
         } else if Self.yamlTypes.contains(where: { type.conforms(to: $0) }) {
             // Patch the original text where possible: regenerating it drops
             // comments, anchors and quoting.
-            let index = Self.completeIndex(of: snapshot)
-            if let source = Self.sourceText(of: snapshot),
-               let patched = YAMLSourcePatcher.patch(source: source, edited: index) {
+            if let text = Self.sourceText(of: snapshot),
+               let patched = YAMLSourcePatcher.patch(source: text, edited: snapshot.index,
+                                                     documentSource: snapshot.source) {
                 data = Data(patched.utf8)
             } else {
-                data = try YAMLDocumentSerializer(index: index).serialize()
+                data = try YAMLDocumentSerializer(index: snapshot.index, source: snapshot.source)
+                    .serialize()
             }
         } else {
             throw StructDocumentError.unsupportedSaveFormat
@@ -177,23 +178,11 @@ final class StructDocument: ReferenceFileDocument {
         return FileWrapper(regularFileWithContents: data)
     }
 
-    /// The whole document with the user's edits applied, for YAML saving:
-    /// its source patcher needs every node. The serializers take the source
-    /// instead and build what the index lacks as they write.
-    static func completeIndex(_ current: NodeIndex,
-                              source: (any DocumentSource)?) -> NodeIndex {
-        source?.completeNodeIndex(overlaying: current) ?? current
-    }
-
     /// The file as it was opened, as UTF-8 text.
     private static func sourceText(of snapshot: DocumentSnapshot) -> String? {
         guard let file = snapshot.mappedFile, file.fileSize > 0, file.fileSize <= UInt64(UInt32.max),
               let data = try? file.data(offset: 0, length: UInt32(file.fileSize)) else { return nil }
         return String(data: data, encoding: .utf8)
-    }
-
-    private static func completeIndex(of snapshot: DocumentSnapshot) -> NodeIndex {
-        completeIndex(snapshot.index, source: snapshot.source)
     }
 
     // MARK: - Edit API (P2-05)
