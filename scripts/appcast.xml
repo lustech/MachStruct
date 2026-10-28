@@ -24,6 +24,58 @@
     <description>Most recent releases of MachStruct</description>
     <language>en</language>
 
+    <!-- ── v2.3.0 ───────────────────────────────────────────────── -->
+    <item>
+      <title>MachStruct 2.3.0</title>
+      <description><![CDATA[
+        <p>Large files, fast. JSON, CSV and YAML files of 5&nbsp;MB or more are
+        read straight from disk instead of being loaded whole, so they open in
+        a fraction of the memory, and every feature works on them without
+        building them in memory.</p>
+        <h3>Changed</h3>
+        <ul>
+          <li><b>Large JSON and CSV files open with a fraction of the
+              memory.</b> A 100&nbsp;MB JSON file takes about 65&nbsp;MB after
+              opening instead of 2.1&nbsp;GB, and a 100&nbsp;MB CSV about
+              70&nbsp;MB instead of 3.4&nbsp;GB.</li>
+          <li><b>Large YAML files open seven times faster</b> with a tenth of
+              the memory: 2 seconds instead of 14 for a 100&nbsp;MB file.</li>
+          <li><b>Queries, Find &amp; Replace and Column Stats on large files
+              are several times faster.</b> Counting matches in a 100&nbsp;MB
+              CSV file takes 1.2 seconds instead of 31.</li>
+          <li><b>Saving or exporting a large file</b> writes it to disk as it is
+              produced instead of holding it in memory.</li>
+        </ul>
+        <h3>Fixed</h3>
+        <ul>
+          <li><b>Saving a CSV file could split a row in two</b> when a field
+              held a Windows line break, as multi-line notes from spreadsheets
+              do.</li>
+          <li><b>The table view and Column Stats were empty</b> for CSV files
+              of 5&nbsp;MB or more. The table is now the native macOS table,
+              and VoiceOver reads it as one.</li>
+          <li><b>The toolbar search ignored edits</b> in large files.</li>
+          <li><b>Array items kept their old index</b> after a delete or move,
+              and a CSV cell's path left out its row.</li>
+          <li><b>Bookmarks inside nested objects</b> weren't found again when
+              the file was reopened.</li>
+          <li><b>The YAML anchor badge</b> now appears on nodes that declare
+              an anchor.</li>
+          <li><b>VoiceOver</b> read every search result control as
+              &ldquo;Previous search match&rdquo;.</li>
+        </ul>
+      ]]></description>
+      <pubDate>Wed, 28 Oct 2026 19:29:26 +0000</pubDate>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <sparkle:version>10</sparkle:version>
+      <sparkle:shortVersionString>2.3.0</sparkle:shortVersionString>
+      <enclosure
+        url="https://github.com/lustech/MachStruct/releases/download/v2.3.0/MachStruct.dmg"
+        sparkle:edSignature="RQjVO4b4ptyTua9dXPAasMGuHzVDNZ7Z1AWeMAWPpN0+d6WoQMapPXhjm/jdOBwkVlO027s2CUtl68X7jBVnCQ=="
+        length="3884607"
+        type="application/octet-stream"/>
+    </item>
+
     <!-- ── v2.2.0 ───────────────────────────────────────────────── -->
     <item>
       <title>MachStruct 2.2.0</title>
