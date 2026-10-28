@@ -34,6 +34,9 @@ struct ContentView: View {
     @AppStorage(AppSettings.Keys.rawFontSize)
     private var rawFontSize = AppSettings.Defaults.rawFontSize
 
+    @AppStorage(AppSettings.Keys.colorTheme)
+    private var colorTheme = ColorTheme.standard
+
     @AppStorage(AppSettings.Keys.treeFontSize)
     private var treeFontSize = AppSettings.Defaults.treeFontSize
 
@@ -713,6 +716,7 @@ struct ContentView: View {
                 .help(rawPretty ? "Switch to minified output" : "Switch to pretty-printed output")
                 .disabled(isSerializingRaw)
                 .onChange(of: rawPretty) { _, _ in refreshRawText() }
+                .onChange(of: colorTheme) { _, _ in refreshRawText() }
             }
         }
 
@@ -811,7 +815,8 @@ struct ContentView: View {
         HighlightedTextView(
             attributedText: highlightedRawText,
             plainText:      rawText,
-            fontSize:       rawFontSize
+            fontSize:       rawFontSize,
+            theme:          colorTheme
         )
     }
 
@@ -827,6 +832,7 @@ struct ContentView: View {
         let pretty     = rawPretty
         let formatName = document.formatName
         let fontSize   = rawFontSize
+        let theme      = colorTheme
         Task {
             do {
                 let text = try await document.serializeDocument(pretty: pretty)
@@ -839,7 +845,8 @@ struct ContentView: View {
                     struct Box: @unchecked Sendable { let value: NSAttributedString }
                     let box = await Task.detached(priority: .utility) {
                         Box(value: SyntaxHighlighter.highlightNS(text, format: fmt,
-                                                                  fontSize: fontSize))
+                                                                  fontSize: fontSize,
+                                                                  theme: theme))
                     }.value
                     highlightedRawText = box.value
                 }

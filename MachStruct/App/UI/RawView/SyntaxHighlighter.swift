@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import MachStructCore
 
 // MARK: - SyntaxHighlighter
 
@@ -45,18 +46,21 @@ struct SyntaxHighlighter {
     ///
     /// Safe to call from any thread.
     static func highlightNS(_ text: String, format: Format,
-                             fontSize: CGFloat = 13) -> NSAttributedString {
+                             fontSize: CGFloat = 13,
+                             theme: ColorTheme = .standard) -> NSAttributedString {
         let mono = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
         let ns   = NSMutableAttributedString(string: text)
-        ns.addAttribute(.font, value: mono,
-                        range: NSRange(location: 0, length: ns.length))
+        // Punctuation and anything else left unpainted take the text colour
+        // of the appearance; without one it drew black, even in dark mode.
+        ns.addAttributes([.font: mono, .foregroundColor: NSColor.textColor],
+                         range: NSRange(location: 0, length: ns.length))
 
         if text.count <= limit {
             switch format {
-            case .json: applyJSON(to: ns)
-            case .xml:  applyXML(to: ns)
-            case .yaml: applyYAML(to: ns)
-            case .csv:  applyCSV(to: ns)
+            case .json: applyJSON(to: ns, theme)
+            case .xml:  applyXML(to: ns, theme)
+            case .yaml: applyYAML(to: ns, theme)
+            case .csv:  applyCSV(to: ns, theme)
             }
         }
 
@@ -68,37 +72,40 @@ struct SyntaxHighlighter {
     /// Thin wrapper around `highlightNS` for call sites that still need
     /// `AttributedString` (e.g. legacy `Text` usage).
     static func highlight(_ text: String, format: Format,
-                          fontSize: CGFloat = 13) -> AttributedString {
-        let ns = highlightNS(text, format: format, fontSize: fontSize)
+                          fontSize: CGFloat = 13,
+                          theme: ColorTheme = .standard) -> AttributedString {
+        let ns = highlightNS(text, format: format, fontSize: fontSize, theme: theme)
         return (try? AttributedString(ns, including: \.appKit)) ?? AttributedString(text)
     }
 
     // MARK: - JSON
 
-    private static func applyJSON(to ns: NSMutableAttributedString) {
+    private static func applyJSON(to ns: NSMutableAttributedString, _ theme: ColorTheme) {
         let src = ns.string
 
         // 1. Numbers (lowest priority — overwritten by later passes)
         paint(pattern: #"-?\b\d+(\.\d+)?([eE][+-]?\d+)?\b"#,
-              color: .systemPurple, in: ns, source: src)
+              color: theme.nsColor(\.number), in: ns, source: src)
 
         // 2. Keywords
-        paint(pattern: #"\b(true|false|null)\b"#,
-              color: .systemRed, in: ns, source: src)
+        paint(pattern: #"\b(true|false)\b"#,
+              color: theme.nsColor(\.boolean), in: ns, source: src)
+        paint(pattern: #"\bnull\b"#,
+              color: theme.nsColor(\.null), in: ns, source: src)
 
         // 3. All quoted strings → orange (value colour)
         paint(pattern: #""(?:[^"\\]|\\.)*""#,
-              color: .systemOrange, in: ns, source: src)
+              color: theme.nsColor(\.string), in: ns, source: src)
 
         // 4. Object keys (quoted string immediately before a colon) → blue
         //    Paint range includes the trailing colon — we strip it below.
-        paintKeys(in: ns, source: src)
+        paintKeys(in: ns, source: src, color: theme.nsColor(\.key))
     }
 
     /// Paints JSON object keys blue.  Matches `"key"\s*:` but colours only
     /// the string portion, not the colon.
     private static func paintKeys(in ns: NSMutableAttributedString,
-                                  source: String) {
+                                  source: String, color: NSColor) {
         guard let rx = cachedRegex(#""(?:[^"\\]|\\.)*"\s*:"#) else { return }
         let nsSource = source as NSString
         rx.enumerateMatches(in: source, range: NSRange(location: 0, length: nsSource.length)) { m, _, _ in
@@ -109,76 +116,76 @@ struct SyntaxHighlighter {
                                                range: matchStr.index(after: matchStr.startIndex)..<matchStr.endIndex) {
                 let keyLen = matchStr.distance(from: matchStr.startIndex, to: closeQuote.upperBound)
                 let keyRange = NSRange(location: m.range.location, length: keyLen)
-                ns.addAttribute(.foregroundColor, value: NSColor.systemBlue, range: keyRange)
+                ns.addAttribute(.foregroundColor, value: color, range: keyRange)
             }
         }
     }
 
     // MARK: - XML
 
-    private static func applyXML(to ns: NSMutableAttributedString) {
+    private static func applyXML(to ns: NSMutableAttributedString, _ theme: ColorTheme) {
         let src = ns.string
 
         // Attribute values (before attr names so names can overwrite the = sign)
         paint(pattern: #""[^"]*"|'[^']*'"#,
-              color: .systemOrange, in: ns, source: src)
+              color: theme.nsColor(\.string), in: ns, source: src)
 
         // Attribute names (word before `=`)
         paint(pattern: #"\b([\w:.-]+)\s*="#,
-              color: .systemTeal, in: ns, source: src, captureGroup: 1)
+              color: theme.nsColor(\.attribute), in: ns, source: src, captureGroup: 1)
 
         // Tag names (`<word` or `</word` or `<word/`)
         paint(pattern: #"</?([A-Za-z][\w:.-]*)"#,
-              color: .systemBlue, in: ns, source: src, captureGroup: 1)
+              color: theme.nsColor(\.tag), in: ns, source: src, captureGroup: 1)
 
         // Comments (overwrite anything inside <!--…-->)
         paint(pattern: #"<!--[\s\S]*?-->"#,
-              color: .secondaryLabelColor, in: ns, source: src,
+              color: theme.nsColor(\.comment), in: ns, source: src,
               options: [.dotMatchesLineSeparators])
 
         // CDATA
         paint(pattern: #"<!\[CDATA\[[\s\S]*?\]\]>"#,
-              color: .secondaryLabelColor, in: ns, source: src,
+              color: theme.nsColor(\.comment), in: ns, source: src,
               options: [.dotMatchesLineSeparators])
     }
 
     // MARK: - YAML
 
-    private static func applyYAML(to ns: NSMutableAttributedString) {
+    private static func applyYAML(to ns: NSMutableAttributedString, _ theme: ColorTheme) {
         let src = ns.string
 
         // Numbers
         paint(pattern: #"-?\b\d+(\.\d+)?([eE][+-]?\d+)?\b"#,
-              color: .systemPurple, in: ns, source: src)
+              color: theme.nsColor(\.number), in: ns, source: src)
 
         // Keywords (YAML-specific booleans)
         paint(pattern: #"\b(true|false|null|yes|no|on|off|~)\b"#,
-              color: .systemRed, in: ns, source: src)
+              color: theme.nsColor(\.boolean), in: ns, source: src)
 
         // Quoted strings
         paint(pattern: #""(?:[^"\\]|\\.)*"|'[^']*'"#,
-              color: .systemOrange, in: ns, source: src)
+              color: theme.nsColor(\.string), in: ns, source: src)
 
         // Mapping keys: text before `:` at start of a content line
         paint(pattern: #"^(\s*[\w. -]+)\s*:"#,
-              color: .systemBlue, in: ns, source: src,
+              color: theme.nsColor(\.key), in: ns, source: src,
               captureGroup: 1,
               options: [.anchorsMatchLines])
 
         // Block sequence dashes
         paint(pattern: #"^\s*-(?=\s)"#,
-              color: .secondaryLabelColor, in: ns, source: src,
+              color: theme.nsColor(\.muted), in: ns, source: src,
               options: [.anchorsMatchLines])
 
         // Comments (highest priority — overwrite everything)
         paint(pattern: #"#[^\n]*"#,
-              color: NSColor.systemGreen.withAlphaComponent(0.8),
+              color: theme.nsColor(\.comment),
               in: ns, source: src)
     }
 
     // MARK: - CSV
 
-    private static func applyCSV(to ns: NSMutableAttributedString) {
+    private static func applyCSV(to ns: NSMutableAttributedString, _ theme: ColorTheme) {
         let src    = ns.string
         let nsStr  = src as NSString
 
@@ -191,12 +198,12 @@ struct SyntaxHighlighter {
             let headerRange = NSRange(location: 0, length: headerEnd)
             let boldMono    = NSFont.monospacedSystemFont(ofSize: 13, weight: .bold)
             ns.addAttribute(.font,            value: boldMono,           range: headerRange)
-            ns.addAttribute(.foregroundColor, value: NSColor.systemBlue, range: headerRange)
+            ns.addAttribute(.foregroundColor, value: theme.nsColor(\.key), range: headerRange)
         }
 
         // Numbers in data rows
         paint(pattern: #"(?<=,|\t|^)\s*-?\d+(\.\d+)?\s*(?=,|\t|$)"#,
-              color: .systemPurple, in: ns, source: src,
+              color: theme.nsColor(\.number), in: ns, source: src,
               options: [.anchorsMatchLines])
     }
 

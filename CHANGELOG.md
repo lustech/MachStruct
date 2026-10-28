@@ -7,7 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Colour themes.** Settings → Appearance has a theme picker: Dark+ (the
+  new default, after Visual Studio Code), Xcode and One Dark. Each has a
+  light and a dark version that follow the system appearance, and the
+  tree, table and raw views all use it.
+
+### Changed
+- **Documents are much easier to read in dark mode.** The tree drew on a
+  translucent grey with orange text values, at a contrast of about 2:1.
+  Documents now sit on a dark editor background, keys are coloured, and
+  every theme colour has at least the 4.5:1 contrast recommended for text.
+
 ### Fixed
+- **The raw view showed no syntax colours, and its text was near-black in
+  dark mode.** The coloured text arrived after the plain text and was
+  never shown, and punctuation had no colour of its own. (#94)
 - **The current search match was hard to read when it was a text or
   true/false value.** Its row was filled orange, the colour those values
   are drawn in, so the matched text all but disappeared in dark mode. The

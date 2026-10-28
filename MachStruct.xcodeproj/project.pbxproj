@@ -35,6 +35,7 @@
 		BCDE12345678901234567890 /* HighlightedTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABCD12345678901234567890 /* HighlightedTextView.swift */; };
 		C3E931F208144FD3BAE73A9C /* StatusBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B2FF72DBCCACDFFD557BEA1 /* StatusBar.swift */; };
 		D5FCDEBF1E2BA97433571E31 /* NodeRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E2A1954BB8FAB2DB8414E1 /* NodeRow.swift */; };
+		7CEF087D8EE12B18D1E0EB7C /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A4316ED879C125CD4AE70FA /* Theme.swift */; };
 		DB84E405504F101A1388C27C /* CommitEditEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 348283C44F1319245138E09C /* CommitEditEnvironment.swift */; };
 		DCF4C947182864AFF783951B /* FindReplaceBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD1AED5FC09F9D81BC3932C3 /* FindReplaceBar.swift */; };
 		DF7905565F078EAE2DD504B4 /* StructDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE7DD0EE277E26A835C94C4E /* StructDocument.swift */; };
@@ -104,6 +105,7 @@
 		B57E14B5C1240002AABB0002 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		C71A27CD196545979BECEE6E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		C9E2A1954BB8FAB2DB8414E1 /* NodeRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeRow.swift; sourceTree = "<group>"; };
+		8A4316ED879C125CD4AE70FA /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		CD1AED5FC09F9D81BC3932C3 /* FindReplaceBar.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FindReplaceBar.swift; sourceTree = "<group>"; };
 		D0602134A05D09E35C9F3987 /* QueryStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QueryStore.swift; sourceTree = "<group>"; };
 		D817BE60797A41BDB6931DA1 /* BookmarkEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkEnvironment.swift; sourceTree = "<group>"; };
@@ -279,6 +281,7 @@
 				C886E16F4A0E423E9E2FD8A3 /* CSV */,
 				1D94133E764AA1F23D57C5E2 /* Editing */,
 				F1A2B3C4D5E6F7A8B9C0D1E3 /* MachStructIcon.swift */,
+				8A4316ED879C125CD4AE70FA /* Theme.swift */,
 				1F567F378083477FAA7FB068 /* Onboarding */,
 				64E087749F6A48EBB64321E1 /* RawView */,
 				684F1164AE9A4D818D53CB45 /* Search */,
@@ -512,6 +515,7 @@
 				5B683CF7AA4D92E9350EB2C5 /* TableView.swift in Sources */,
 				C3E931F208144FD3BAE73A9C /* StatusBar.swift in Sources */,
 				D5FCDEBF1E2BA97433571E31 /* NodeRow.swift in Sources */,
+				7CEF087D8EE12B18D1E0EB7C /* Theme.swift in Sources */,
 				5260B3B31AF06EA038B1220B /* TreeNode.swift in Sources */,
 				E5F816D860AB21053742EC1E /* TreeView.swift in Sources */,
 				3AA47E46E2EB9C60F011A5D4 /* TypeBadge.swift in Sources */,

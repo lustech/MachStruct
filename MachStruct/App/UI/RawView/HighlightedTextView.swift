@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import MachStructCore
 
 /// A read-only, syntax-coloured text view backed by `NSTextView`.
 ///
@@ -22,6 +23,16 @@ struct HighlightedTextView: NSViewRepresentable {
     /// Point size for the monospaced font (used for the plain-text fallback and
     /// passed through to `SyntaxHighlighter` when building `attributedText`).
     let fontSize: CGFloat
+    /// Its background; the text's colours come with `attributedText`.
+    var theme: ColorTheme = .standard
+
+    final class Coordinator {
+        var theme: ColorTheme?
+        /// The highlighted text on screen, to tell when a new one arrives.
+        weak var shown: NSAttributedString?
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
 
     // MARK: - NSViewRepresentable
 
@@ -35,7 +46,7 @@ struct HighlightedTextView: NSViewRepresentable {
         textView.setAccessibilityLabel("Raw text")
         textView.isSelectable                   = true
         textView.drawsBackground                = true
-        textView.backgroundColor                = .textBackgroundColor
+        textView.backgroundColor                = theme.nsColor(\.background)
         textView.textContainerInset             = NSSize(width: 8, height: 8)
         textView.usesFontPanel                  = false
         textView.usesRuler                      = false
@@ -66,11 +77,20 @@ struct HighlightedTextView: NSViewRepresentable {
         } else {
             let mono = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
             newContent = NSAttributedString(string: plainText,
-                                             attributes: [.font: mono])
+                                             attributes: [.font: mono, .foregroundColor: NSColor.textColor])
         }
 
-        // Avoid resetting the scroll position when the content hasn't changed.
-        guard textView.textStorage?.string != newContent.string else { return }
+        // Avoid resetting the scroll position when the content hasn't
+        // changed. The highlighted text arrives after the plain text with
+        // the same string, and a new theme repaints it, so either replaces
+        // what is shown even though the string is the same (#94).
+        let coordinator = context.coordinator
+        let themeChanged = coordinator.theme != theme
+        coordinator.theme = theme
+        if themeChanged { textView.backgroundColor = theme.nsColor(\.background) }
+        let newHighlight = attributedText != nil && attributedText !== coordinator.shown
+        guard themeChanged || newHighlight || textView.textStorage?.string != newContent.string else { return }
+        coordinator.shown = attributedText
         textView.textStorage?.setAttributedString(newContent)
     }
 }

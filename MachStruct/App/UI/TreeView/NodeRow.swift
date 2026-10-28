@@ -23,6 +23,7 @@ struct NodeRow: View {
     @Environment(\.commitEdit)          private var commitEdit
     @Environment(\.serializeNode)       private var serializeNode
     @Environment(\.searchMatchIDs)      private var searchMatchIDs
+    @Environment(\.colorTheme)          private var colorTheme
     @Environment(\.activeSearchMatchID) private var activeSearchMatchID
     @Environment(\.bookmarkedNodeIDs)   private var bookmarkedNodeIDs
     @Environment(\.toggleBookmark)      private var toggleBookmark
@@ -166,7 +167,7 @@ struct NodeRow: View {
             if xmlElementMeta != nil {
                 // XML element: display as <tagName> in teal — no quotes, no colon.
                 Text("<\(key)>")
-                    .foregroundStyle(Color(red: 0.15, green: 0.60, blue: 0.55))
+                    .foregroundStyle(colorTheme.color(\.tag))
             } else if editingField == .key {
                 TextField("Key", text: $editText)
                     .textFieldStyle(.plain)
@@ -182,13 +183,13 @@ struct NodeRow: View {
                         Text("\"\(key)\"")
                     }
                 }
-                .foregroundStyle(.secondary)
+                .foregroundStyle(colorTheme.color(\.key))
                 .onTapGesture(count: 2) {
                     if node.documentNode.type == .keyValue { startKeyEdit(key) }
                 }
 
                 Text(":")
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(colorTheme.color(\.muted))
             }
         }
     }
@@ -219,7 +220,7 @@ struct NodeRow: View {
 
             case .container, .unparsed:
                 Text(node.displayValue)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(colorTheme.color(\.muted))
 
             case .error(let msg):
                 Label(msg, systemImage: "exclamationmark.triangle.fill")
@@ -296,12 +297,7 @@ struct NodeRow: View {
     }
 
     private func scalarColor(_ sv: ScalarValue) -> Color {
-        switch sv {
-        case .string:          return Color(red: 0.8, green: 0.3, blue: 0.1)
-        case .integer, .float: return .blue
-        case .boolean:         return .orange
-        case .null:            return .secondary
-        }
+        colorTheme.color(for: sv)
     }
 
     private func rawText(for sv: ScalarValue) -> String {
