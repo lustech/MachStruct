@@ -44,14 +44,20 @@ public struct JSONDocumentSerializer {
     /// A trailing newline is appended so files match the convention used by
     /// most editors.
     public func serialize(pretty: Bool = true) throws -> Data {
+        var out = ""
+        out.reserveCapacity(4096)
+        try write(to: &out, pretty: pretty)
+        return Data(out.utf8)
+    }
+
+    /// Serialize the entire document into `out`, such as a `FileTextStream`
+    /// for a large document, whose text is then never held whole.
+    public func write<Out: TextOutputStream>(to out: inout Out, pretty: Bool = true) throws {
         guard let root = index.root else {
             throw JSONSerializerError.emptyDocument
         }
-        var out = ""
-        out.reserveCapacity(4096)
         emit(root, into: &out, depth: 0, pretty: pretty)
-        out += "\n"
-        return Data(out.utf8)
+        out.write("\n")
     }
 
     /// Serialize the subtree rooted at a specific node.
@@ -72,7 +78,7 @@ public struct JSONDocumentSerializer {
 
     // MARK: - Emission
 
-    private func emit(_ node: DocumentNode, into out: inout String,
+    private func emit<Out: TextOutputStream>(_ node: DocumentNode, into out: inout Out,
                       depth: Int, pretty: Bool) {
         switch node.type {
         case .object, .array:
@@ -83,15 +89,15 @@ public struct JSONDocumentSerializer {
             if let valueChild = index.children(of: node.id).first {
                 emit(valueChild, into: &out, depth: depth, pretty: pretty)
             } else {
-                out += "null"
+                out.write("null")
             }
 
         case .scalar:
-            out += scalarLiteral(node)
+            out.write(scalarLiteral(node))
         }
     }
 
-    private func emitContainer(_ node: DocumentNode, into out: inout String,
+    private func emitContainer<Out: TextOutputStream>(_ node: DocumentNode, into out: inout Out,
                                depth: Int, pretty: Bool) {
         let isObject = (node.type == .object)
         let open = isObject ? "{" : "["
@@ -109,22 +115,22 @@ public struct JSONDocumentSerializer {
         // never been expanded, and its original bytes are the best available.
         if source != nil {
             if index.node(for: node.id) == nil, let raw = rawSource(of: node) {
-                out += raw
+                out.write(raw)
                 return
             }
         } else if index.children(of: node.id).count < node.childIDs.count,
                   let raw = rawSource(of: node) {
-            out += raw
+            out.write(raw)
             return
         }
         let children = node.childIDs.compactMap { resolve($0, parent: node) }
 
         guard !children.isEmpty else {
-            out += open + close
+            out.write(open + close)
             return
         }
 
-        out += open
+        out.write(open)
         let inner = depth + 1
         var first = true
         for child in children {
@@ -132,32 +138,32 @@ public struct JSONDocumentSerializer {
                 // Skip anything that is not a key/value pair; an object cannot
                 // represent it.
                 guard child.type == .keyValue, let key = resolvedKey(of: child) else { continue }
-                if !first { out += "," }
+                if !first { out.write(",") }
                 first = false
-                if pretty { out += "\n" + indent(inner) }
-                out += jsonString(key)
-                out += pretty ? " : " : ":"
+                if pretty { out.write("\n" + indent(inner)) }
+                out.write(jsonString(key))
+                out.write(pretty ? " : " : ":")
                 if let valueID = child.childIDs.first,
                    let valueChild = resolve(valueID, parent: child) {
                     emit(valueChild, into: &out, depth: inner, pretty: pretty)
                 } else {
-                    out += "null"
+                    out.write("null")
                 }
             } else {
-                if !first { out += "," }
+                if !first { out.write(",") }
                 first = false
-                if pretty { out += "\n" + indent(inner) }
+                if pretty { out.write("\n" + indent(inner)) }
                 emit(child, into: &out, depth: inner, pretty: pretty)
             }
         }
 
         if first {
             // Every child was skipped.
-            out += close
+            out.write(close)
             return
         }
-        if pretty { out += "\n" + indent(depth) }
-        out += close
+        if pretty { out.write("\n" + indent(depth)) }
+        out.write(close)
     }
 
     // MARK: - Node helpers

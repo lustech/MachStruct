@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nodes now takes about 65 MB after opening instead of 2.1 GB, and a 100 MB
   CSV with 1.2 million rows about 70 MB instead of 3.4 GB. Searching either
   takes under a second, and X-Ray now includes unsaved edits.
+- **Saving or exporting a large file no longer holds the output in
+  memory.** It is written to disk as it is produced: saving a 100 MB CSV
+  file peaks at about 26 MB instead of 325 MB.
 - **Large YAML files open seven times faster with a tenth of the memory.**
   They are read straight from the parser's events instead of building a
   tree of the whole file first, and a file of 5 MB or more keeps a compact

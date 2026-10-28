@@ -870,13 +870,13 @@ struct ContentView: View {
                 do {
                     // A large file's index holds only what has been expanded;
                     // the rest is built from the source as it is written.
-                    let data = try FormatConverter().convert(
+                    try FormatConverter().convert(
                         index: index,
                         mappedFile: mappedFile,
                         source: source,
-                        to: format
+                        to: format,
+                        writingTo: url
                     )
-                    try data.write(to: url, options: .atomic)
                 } catch {
                     await MainActor.run {
                         exportError = error.localizedDescription

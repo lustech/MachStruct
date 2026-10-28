@@ -31,20 +31,26 @@ public struct YAMLDocumentSerializer {
 
     /// Serialize the entire document to YAML bytes (UTF-8).
     public func serialize() throws -> Data {
+        var out = ""
+        try write(to: &out)
+        return Data(out.utf8)
+    }
+
+    /// Serialize the document into `out`, such as a `FileTextStream` for a
+    /// large document, whose text is then never held whole.
+    public func write<Out: TextOutputStream>(to out: inout Out) throws {
         guard let root = index.root else {
             throw YAMLSerializerError.emptyDocument
         }
-        var out = ""
         if Self.isDocumentStream(root) {
             for document in children(of: root) {
-                out += "---\n"
+                out.write("---\n")
                 appendNode(document, indent: 0, to: &out)
             }
         } else {
-            out += "---\n"
+            out.write("---\n")
             appendNode(root, indent: 0, to: &out)
         }
-        return Data(out.utf8)
     }
 
     /// Whether `root` stands for a file of several documents, each of its
@@ -57,12 +63,12 @@ public struct YAMLDocumentSerializer {
     // MARK: - Recursive node rendering
 
     /// Appends the full block representation of `node` at `indent` spaces.
-    private func appendNode(_ node: DocumentNode, indent: Int, to out: inout String) {
+    private func appendNode<Out: TextOutputStream>(_ node: DocumentNode, indent: Int, to out: inout Out) {
         switch node.type {
         case .object:
             let kvChildren = children(of: node)
             if kvChildren.isEmpty {
-                out += String(repeating: " ", count: indent) + "{}\n"
+                out.write(String(repeating: " ", count: indent) + "{}\n")
                 return
             }
             for kv in kvChildren {
@@ -72,11 +78,11 @@ public struct YAMLDocumentSerializer {
         case .array:
             let items = children(of: node)
             if items.isEmpty {
-                out += String(repeating: " ", count: indent) + "[]\n"
+                out.write(String(repeating: " ", count: indent) + "[]\n")
                 return
             }
             for item in items {
-                out += String(repeating: " ", count: indent) + "-"
+                out.write(String(repeating: " ", count: indent) + "-")
                 appendInlineOrBlock(item, indent: indent + 2, to: &out)
             }
 
@@ -85,35 +91,35 @@ public struct YAMLDocumentSerializer {
             appendKeyValue(node, indent: indent, to: &out)
 
         case .scalar:
-            out += String(repeating: " ", count: indent) + scalarText(node) + "\n"
+            out.write(String(repeating: " ", count: indent) + scalarText(node) + "\n")
         }
     }
 
     /// Outputs a `keyValue` node as `key: value\n` (or `key:\n  block`).
-    private func appendKeyValue(_ kv: DocumentNode, indent: Int, to out: inout String) {
+    private func appendKeyValue<Out: TextOutputStream>(_ kv: DocumentNode, indent: Int, to out: inout Out) {
         guard let key = kv.key else { return }
         let spaces = String(repeating: " ", count: indent)
-        out += spaces + Self.quoteKeyIfNeeded(key) + ":"
+        out.write(spaces + Self.quoteKeyIfNeeded(key) + ":")
         if let valueNode = children(of: kv).first {
             appendInlineOrBlock(valueNode, indent: indent + 2, to: &out)
         } else {
-            out += " null\n"
+            out.write(" null\n")
         }
     }
 
     /// For scalars: appends ` value\n` (inline after `key:` or `-`).
     /// For containers: appends `\n` then the block at `indent`.
-    private func appendInlineOrBlock(_ node: DocumentNode, indent: Int, to out: inout String) {
+    private func appendInlineOrBlock<Out: TextOutputStream>(_ node: DocumentNode, indent: Int, to out: inout Out) {
         switch node.type {
         case .scalar:
-            out += " \(scalarText(node))\n"
+            out.write(" \(scalarText(node))\n")
 
         case .object:
             let kvChildren = children(of: node)
             if kvChildren.isEmpty {
-                out += " {}\n"
+                out.write(" {}\n")
             } else {
-                out += "\n"
+                out.write("\n")
                 for kv in kvChildren {
                     appendKeyValue(kv, indent: indent, to: &out)
                 }
@@ -122,18 +128,18 @@ public struct YAMLDocumentSerializer {
         case .array:
             let items = children(of: node)
             if items.isEmpty {
-                out += " []\n"
+                out.write(" []\n")
             } else {
-                out += "\n"
+                out.write("\n")
                 for item in items {
-                    out += String(repeating: " ", count: indent) + "-"
+                    out.write(String(repeating: " ", count: indent) + "-")
                     appendInlineOrBlock(item, indent: indent + 2, to: &out)
                 }
             }
 
         case .keyValue:
             // Defensive: treat as a block.
-            out += "\n"
+            out.write("\n")
             appendKeyValue(node, indent: indent, to: &out)
         }
     }
