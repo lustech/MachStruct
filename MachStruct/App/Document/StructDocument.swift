@@ -434,6 +434,21 @@ final class StructDocument: ReferenceFileDocument {
                 nodeIndex = NodeIndex(root: root)
                 indexedNodeCount = source.nodeCount
 
+            } else if useLazy, setup.detected == .yaml,
+                      let source = await Task.detached(priority: .userInitiated, operation: {
+                          YAMLSource(file: file)
+                      }).value {
+                // Step 3a — Large YAML: one compact record per node, from
+                // which nodes are built when shown. A file that needs
+                // composing (aliases, say) is indexed node by node below.
+                file.adviseRandom()
+                guard let root = source.node(for: source.rootID, parent: nil) else {
+                    throw StructDocumentError.noContent
+                }
+                self.source = source
+                nodeIndex = NodeIndex(root: root)
+                indexedNodeCount = source.nodeCount
+
             } else if useLazy {
                 // Step 3a — Other large files: index node by node, consuming
                 // the progressive stream so the loading UI can show a count.

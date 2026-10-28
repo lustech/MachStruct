@@ -79,7 +79,7 @@ public struct IndexEntry: Sendable {
         childCount: UInt32 = 0,
         key: String? = nil,
         parsedValue: ScalarValue? = nil,
-        sharedMetadata: MetadataBox
+        sharedMetadata: MetadataBox?
     ) {
         self.init(id: id, nodeType: nodeType, depth: depth, parentID: parentID,
                   childCount: childCount, key: key, parsedValue: parsedValue)
