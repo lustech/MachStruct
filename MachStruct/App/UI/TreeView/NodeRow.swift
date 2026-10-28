@@ -141,18 +141,21 @@ struct NodeRow: View {
     // MARK: - Search highlight (P4-01)
 
     /// A subtle rounded background applied when this row is a search match.
-    /// The active (currently navigated-to) match gets a stronger amber fill;
-    /// other matches get a lighter yellow fill.
+    /// Every match gets a faint yellow fill; the active (currently
+    /// navigated-to) match is also outlined in amber. An outline rather than
+    /// a stronger fill: string and boolean values are drawn in orange, and
+    /// an orange fill hid the very text that matched (#91).
     @ViewBuilder
     private var searchHighlight: some View {
         let isActive = node.id == activeSearchMatchID
         let isMatch  = searchMatchIDs.contains(node.id)
         if isActive {
             RoundedRectangle(cornerRadius: 4)
-                .fill(Color.orange.opacity(0.30))
+                .fill(Color.yellow.opacity(0.12))
+                .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Color.orange, lineWidth: 1.5))
         } else if isMatch {
             RoundedRectangle(cornerRadius: 4)
-                .fill(Color.yellow.opacity(0.22))
+                .fill(Color.yellow.opacity(0.12))
         }
     }
 

@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The raw view showed no syntax colours, and its text was near-black in
   dark mode.** The coloured text arrived after the plain text and was
   never shown, and punctuation had no colour of its own. (#94)
+- **The current search match was hard to read when it was a text or
+  true/false value.** Its row was filled orange, the colour those values
+  are drawn in, so the matched text all but disappeared in dark mode. The
+  current match is now outlined instead, over the same faint fill as the
+  other matches. (#91)
 
 ## [2.3.1] — 2026-10-28
 
