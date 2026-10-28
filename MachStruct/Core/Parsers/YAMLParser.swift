@@ -40,39 +40,54 @@ public actor YAMLParser: StructParser {
         }
 
         let length = UInt32(min(file.fileSize, UInt64(UInt32.max)))
+        if let entries = YAMLEventIndexer.entries(file.rawPointer, count: Int(length)) {
+            return StructuralIndex(entries: entries)
+        }
+
+        // Compose the documents: the events had something the indexer leaves
+        // to the composer, such as an alias or an error.
         let data = try file.data(offset: 0, length: length)
         guard let yamlString = String(data: data, encoding: .utf8) else {
             throw YAMLParserError.encodingError
         }
 
-        var entries: [IndexEntry] = []
-        entries.reserveCapacity(256)
-
-        // Whitespace-only content holds no documents.
-        let documents: [Yams.Node]
         do {
-            documents = try Self.documents(in: yamlString)
+            return StructuralIndex(entries: try indexEntries(composing: yamlString))
         } catch let error as YamlError {
             throw data.withUnsafeBytes { YAMLParser.parseError(from: error, in: $0) }
         }
-        switch documents.count {
-        case 0:
-            entries.append(IndexEntry(id: .generate(), nodeType: .object, depth: 0, parentID: nil))
-        case 1:
-            entries.append(contentsOf: indexEntries(for: documents[0]))
-        default:
-            entries.append(contentsOf: indexEntries(forDocuments: documents))
+    }
+
+    /// The entries of `yaml`, composed and walked.
+    nonisolated func indexEntries(composing yaml: String) throws -> [IndexEntry] {
+        // A node's anchor is held weakly; its parser holds it, so walk the
+        // documents while that is alive (#79).
+        try Self.withDocuments(in: yaml) { documents in
+            switch documents.count {
+            case 0:
+                // Whitespace-only content holds no documents.
+                return [IndexEntry(id: .generate(), nodeType: .object, depth: 0, parentID: nil)]
+            case 1:
+                return indexEntries(for: documents[0])
+            default:
+                return indexEntries(forDocuments: documents)
+            }
         }
-        return StructuralIndex(entries: entries)
     }
 
     /// Every document in `yaml`, in order, including an error in a later one.
     nonisolated static func documents(in yaml: String) throws -> [Yams.Node] {
+        try withDocuments(in: yaml) { $0 }
+    }
+
+    /// `body` on every document in `yaml`, while their anchors are alive.
+    nonisolated static func withDocuments<T>(in yaml: String,
+                                             _ body: ([Yams.Node]) throws -> T) throws -> T {
         var stream = try Yams.compose_all(yaml: yaml)
         var documents: [Yams.Node] = []
         while let document = stream.next() { documents.append(document) }
         if let error = stream.error { throw error }
-        return documents
+        return try withExtendedLifetime(stream) { try body(documents) }
     }
 
     /// Flatten a composed Yams tree into `IndexEntry` values in pre-order.
@@ -199,7 +214,6 @@ extension YAMLParser {
 
         case .mapping(let mapping):
             let nodeID = NodeID.generate()
-            let meta = YAMLMetadata(anchor: mapping.anchor?.rawValue, scalarStyle: .plain)
             entries.append(IndexEntry(
                 id: nodeID,
                 nodeType: .object,
@@ -207,7 +221,8 @@ extension YAMLParser {
                 parentID: parentID,
                 childCount: UInt32(mapping.count),
                 key: key,
-                metadata: .yaml(meta)
+                sharedMetadata: YAMLEventIndexer.metadata(anchor: mapping.anchor?.rawValue,
+                                                          tag: nil, style: .plain)
             ))
             for (keyNode, valueNode) in mapping {
                 let kvID = NodeID.generate()
@@ -226,7 +241,6 @@ extension YAMLParser {
 
         case .sequence(let sequence):
             let nodeID = NodeID.generate()
-            let meta = YAMLMetadata(anchor: sequence.anchor?.rawValue, scalarStyle: .plain)
             entries.append(IndexEntry(
                 id: nodeID,
                 nodeType: .array,
@@ -234,7 +248,8 @@ extension YAMLParser {
                 parentID: parentID,
                 childCount: UInt32(sequence.count),
                 key: key,
-                metadata: .yaml(meta)
+                sharedMetadata: YAMLEventIndexer.metadata(anchor: sequence.anchor?.rawValue,
+                                                          tag: nil, style: .plain)
             ))
             for (i, item) in sequence.enumerated() {
                 walkNode(item, parentID: nodeID, depth: depth + 1, key: String(i), into: &entries)
@@ -247,7 +262,6 @@ extension YAMLParser {
             let sv = inferType(scalar)
             let style = mapStyle(scalar.style)
             let customTag = nonStandardTag(scalar.tag)
-            let meta = YAMLMetadata(anchor: scalar.anchor?.rawValue, tag: customTag, scalarStyle: style)
             entries.append(IndexEntry(
                 id: nodeID,
                 nodeType: .scalar,
@@ -256,7 +270,8 @@ extension YAMLParser {
                 childCount: 0,
                 key: key,
                 parsedValue: sv,
-                metadata: .yaml(meta)
+                sharedMetadata: YAMLEventIndexer.metadata(anchor: scalar.anchor?.rawValue,
+                                                          tag: customTag, style: style)
             ))
 
         // MARK: Alias → .scalar placeholder
@@ -304,13 +319,15 @@ extension YAMLParser {
     /// Uses the resolved YAML tag when available, then falls back to heuristic
     /// string matching (same rules as YAML 1.1 implicit resolution).
     nonisolated func inferType(_ scalar: Yams.Node.Scalar) -> ScalarValue {
-        let tag = scalar.tag.description
-        let str = scalar.string
+        Self.inferType(scalar.string, tag: scalar.tag.description,
+                       quoted: scalar.style == .singleQuoted || scalar.style == .doubleQuoted)
+    }
 
+    /// `inferType` from a scalar's text, its tag as written (empty when it
+    /// has none) and whether it was quoted.
+    nonisolated static func inferType(_ str: String, tag: String, quoted: Bool) -> ScalarValue {
         // Quoted strings are always strings regardless of content.
-        if scalar.style == .singleQuoted || scalar.style == .doubleQuoted {
-            return .string(str)
-        }
+        if quoted { return .string(str) }
 
         // Explicit tag takes priority.
         if tag.hasSuffix(":str")  { return .string(str) }
@@ -319,23 +336,27 @@ extension YAMLParser {
         if tag.hasSuffix(":int")  { return intValue(str) }
         if tag.hasSuffix(":float") { return floatValue(str) }
 
-        // Implicit resolution.
-        if str.isEmpty || str == "~" || str.lowercased() == "null" { return .null }
-        switch str.lowercased() {
-        case "true", "yes", "on":  return .boolean(true)
-        case "false", "no", "off": return .boolean(false)
-        default: break
+        // Implicit resolution. The keywords are five letters at most, and
+        // lowercasing a longer string would allocate for nothing.
+        if str.isEmpty || str == "~" { return .null }
+        if str.utf8.count <= 5 {
+            switch str.lowercased() {
+            case "null":               return .null
+            case "true", "yes", "on":  return .boolean(true)
+            case "false", "no", "off": return .boolean(false)
+            default: break
+            }
         }
         if let i = Int64(str)   { return .integer(i) }
         if let f = Double(str)  { return .float(f) }
         return .string(str)
     }
 
-    nonisolated func boolValue(_ str: String) -> ScalarValue {
+    nonisolated static func boolValue(_ str: String) -> ScalarValue {
         .boolean(["true", "yes", "on", "1"].contains(str.lowercased()))
     }
 
-    nonisolated func intValue(_ str: String) -> ScalarValue {
+    nonisolated static func intValue(_ str: String) -> ScalarValue {
         if str.hasPrefix("0x") || str.hasPrefix("0X") {
             return .integer(Int64(str.dropFirst(2), radix: 16) ?? 0)
         }
@@ -345,7 +366,7 @@ extension YAMLParser {
         return .integer(Int64(str) ?? 0)
     }
 
-    nonisolated func floatValue(_ str: String) -> ScalarValue {
+    nonisolated static func floatValue(_ str: String) -> ScalarValue {
         switch str {
         case ".inf", "+.inf": return .float(.infinity)
         case "-.inf":         return .float(-.infinity)
@@ -370,7 +391,10 @@ extension YAMLParser {
 
     /// Returns the tag string only when it's a custom/explicit tag (not a standard yaml.org tag).
     nonisolated func nonStandardTag(_ tag: Yams.Tag) -> String? {
-        let desc = tag.description
+        Self.nonStandardTag(tag.description)
+    }
+
+    nonisolated static func nonStandardTag(_ desc: String) -> String? {
         guard !desc.isEmpty,
               !desc.hasPrefix("tag:yaml.org"),
               desc != "!" else { return nil }
