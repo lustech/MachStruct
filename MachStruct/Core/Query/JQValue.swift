@@ -166,11 +166,10 @@ extension JQValue {
 extension JQValue {
     /// Project the document subtree rooted at `id` onto a `JQValue`.
     ///
-    /// Reads already-materialised values from the `NodeIndex`.  A scalar that
-    /// has not been materialised (`.unparsed`) projects to `.null` rather than
-    /// failing — the lazy-materialisation path in `QueryEngine` is responsible
-    /// for parsing values before querying large files.
-    public init(node id: NodeID, in index: NodeIndex) {
+    /// Reads values from `index`: a `NodeIndex`, or a `DocumentOverlay` that
+    /// builds a large file's nodes from its source. A scalar that has not
+    /// been parsed (`.unparsed`) projects to `.null` rather than failing.
+    public init<Lookup: NodeLookup>(node id: NodeID, in index: Lookup) {
         guard let node = index.node(for: id) else { self = .null; return }
         switch node.type {
         case .scalar:

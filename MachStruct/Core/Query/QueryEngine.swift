@@ -37,8 +37,15 @@ public actor QueryEngine {
 
     // MARK: Run
 
-    /// Run `query` against the fully- or partially-materialised `index`.
-    public func run(_ query: String, on index: NodeIndex) async throws -> Result {
+    /// Run `query` against `document`: a `NodeIndex`, or a large file's
+    /// `DocumentOverlay`.
+    ///
+    /// The whole document is projected onto a `JQValue` only when it has to
+    /// be. A query that navigates to one node (`.a[0].b`) reads just that
+    /// node, and one that iterates a container it navigates to and goes on
+    /// from each item (`.[] | select(.x > 1)`, `.rows[].name`) projects one
+    /// item at a time, keeping only the outputs.
+    public func run<Lookup: NodeLookup>(_ query: String, on document: Lookup) async throws -> Result {
         let expr: JQExpr
         do {
             expr = try JQParser.parse(query)
@@ -48,29 +55,43 @@ public actor QueryEngine {
 
         try Task.checkCancellation()
 
-        let input = JQValue(node: index.rootID, in: index)
-
-        let values: [JQValue]
+        let pathOnly = JQPath.isPathOnly(expr)
+        var values: [JQValue] = []
+        // Resolve source nodes only for path-only queries, and only when the
+        // resolved count matches the evaluated output (a safety check that the
+        // two traversals stayed aligned).
+        var ids: [NodeID]? = pathOnly ? [] : nil
         do {
-            values = try JQEvaluator.evaluate(expr, against: input)
+            if let target = JQPath.navigate(expr, in: document) {
+                values = [JQValue(node: target, in: document)]
+                ids = pathOnly ? [target] : nil
+            } else if let (items, rest) = JQPath.splitAtIteration(expr, in: document) {
+                // `expr` is `P | .[] | rest`, and jq runs `rest` on each item
+                // in turn, so the outputs are each item's, in order.
+                for (n, item) in items.enumerated() {
+                    if n & 0x3FF == 0 { try Task.checkCancellation() }
+                    values += try JQEvaluator.evaluate(rest, against: JQValue(node: item, in: document))
+                    if ids != nil {
+                        if let found = try? JQPath.resolve(rest, from: [item], in: document) {
+                            ids! += found
+                        } else {
+                            ids = nil
+                        }
+                    }
+                }
+            } else {
+                values = try JQEvaluator.evaluate(expr, against: JQValue(node: document.rootID,
+                                                                           in: document))
+                try Task.checkCancellation()
+                ids = pathOnly ? (try? JQPath.resolve(expr, from: [document.rootID], in: document)) : nil
+            }
         } catch let e as JQRuntimeError {
             throw QueryError.runtime(e)
         }
 
         try Task.checkCancellation()
-
-        // Resolve source nodes only for path-only queries, and only when the
-        // resolved count matches the evaluated output (a safety check that the
-        // two traversals stayed aligned).
-        var sourceNodeIDs: [NodeID]? = nil
-        if JQPath.isPathOnly(expr) {
-            let ids = (try? JQPath.resolve(expr, from: [index.rootID], in: index)) ?? []
-            if ids.count == values.count {
-                sourceNodeIDs = ids
-            }
-        }
-
-        return Result(values: values, sourceNodeIDs: sourceNodeIDs)
+        if let found = ids, found.count != values.count { ids = nil }
+        return Result(values: values, sourceNodeIDs: ids)
     }
 }
 
@@ -113,7 +134,8 @@ enum JQPath {
 
     /// Resolve the node IDs selected by a path-only `expr`, starting from
     /// `nodeIDs`, in document order.
-    static func resolve(_ expr: JQExpr, from nodeIDs: [NodeID], in index: NodeIndex) throws -> [NodeID] {
+    static func resolve<Lookup: NodeLookup>(_ expr: JQExpr, from nodeIDs: [NodeID],
+                                            in index: Lookup) throws -> [NodeID] {
         switch expr {
         case .identity:
             return nodeIDs
@@ -202,9 +224,106 @@ enum JQPath {
         }
     }
 
+    // MARK: Navigation
+
+    /// The node `expr` selects when it only navigates down from the root by
+    /// field names and constant indices (`.a[0].b`), and every step finds a
+    /// member or item; otherwise `nil`, and the query is evaluated as usual.
+    static func navigate<Lookup: NodeLookup>(_ expr: JQExpr, in document: Lookup) -> NodeID? {
+        switch expr {
+        case .identity:
+            return document.rootID
+
+        case .field(let base, let name, _):
+            guard let id = navigate(base, in: document) else { return nil }
+            return member(name, of: id, in: document)
+
+        case .index(let base, let indexExpr, _):
+            guard isConstant(indexExpr), let id = navigate(base, in: document),
+                  let node = document.node(for: id),
+                  let indices = try? JQEvaluator.evaluate(indexExpr, against: .null),
+                  indices.count == 1 else { return nil }
+            switch (node.type, indices[0]) {
+            case (.array, .int(let i)):
+                let n = node.childIDs.count
+                let pos = i < 0 ? Int(i) + n : Int(i)
+                return pos >= 0 && pos < n ? node.childIDs[pos] : nil
+            case (.object, .string(let key)):
+                return member(key, of: id, in: document)
+            default:
+                return nil
+            }
+
+        default:
+            return nil
+        }
+    }
+
+    /// The value of the first member named `name` of the object `id`, as
+    /// `.name` reads it.
+    private static func member<Lookup: NodeLookup>(_ name: String, of id: NodeID,
+                                                    in document: Lookup) -> NodeID? {
+        guard let node = document.node(for: id), node.type == .object,
+              let kvID = node.childIDs.first(where: { document.node(for: $0)?.key == name })
+        else { return nil }
+        return document.node(for: kvID)?.childIDs.first
+    }
+
+    /// Splits `expr` into `P | .[] | rest`, where `P` navigates to a container
+    /// (see `navigate`), returning the container's items — what `.[]` yields —
+    /// and `rest`. `nil` if `expr` doesn't have that shape.
+    static func splitAtIteration<Lookup: NodeLookup>(_ expr: JQExpr, in document: Lookup)
+        -> (items: [NodeID], rest: JQExpr)? {
+        switch expr {
+        case .iterate(let base, let optional):
+            if let id = navigate(base, in: document), let items = items(of: id, in: document) {
+                return (items, .identity)
+            }
+            return splitAtIteration(base, in: document)
+                .map { ($0.items, .iterate(base: $0.rest, optional: optional)) }
+
+        // Each of these runs on every output of its base in turn, as a pipe's
+        // right side does.
+        case .pipe(let lhs, let rhs):
+            return splitAtIteration(lhs, in: document).map { ($0.items, .pipe($0.rest, rhs)) }
+        case .field(let base, let name, let optional):
+            return splitAtIteration(base, in: document)
+                .map { ($0.items, .field(base: $0.rest, name: name, optional: optional)) }
+        case .index(let base, let indexExpr, let optional)
+            where isConstant(indexExpr) && (try? JQEvaluator.evaluate(indexExpr, against: .null)) != nil:
+            // A constant index doesn't depend on the input it's evaluated on,
+            // and evaluates without error even when there are no items.
+            return splitAtIteration(base, in: document)
+                .map { ($0.items, .index(base: $0.rest, index: indexExpr, optional: optional)) }
+
+        default:
+            return nil
+        }
+    }
+
+    /// What `.[]` yields for the node `id`: an array's items or an object's
+    /// member values. `nil` for anything else, or a member without a value.
+    private static func items<Lookup: NodeLookup>(of id: NodeID, in document: Lookup) -> [NodeID]? {
+        guard let node = document.node(for: id) else { return nil }
+        switch node.type {
+        case .array:
+            return node.childIDs
+        case .object:
+            var values: [NodeID] = []
+            values.reserveCapacity(node.childIDs.count)
+            for kvID in node.childIDs {
+                guard let valueID = document.node(for: kvID)?.childIDs.first else { return nil }
+                values.append(valueID)
+            }
+            return values
+        default:
+            return nil
+        }
+    }
+
     // MARK: Helpers
 
-    private static func isConstant(_ expr: JQExpr) -> Bool {
+    static func isConstant(_ expr: JQExpr) -> Bool {
         switch expr {
         case .literal:               return true
         case .negate(let e):         return isConstant(e)

@@ -105,12 +105,9 @@ final class StructDocument: ReferenceFileDocument {
     /// node is rebuilt from the source file, which no longer matches.
     private var editedIDs = Set<NodeID>()
 
-    /// Bumped by every edit, undo and redo, so a `WholeDocument` can tell it
+    /// Bumped by every edit, undo and redo, so a `QuerySnapshot` can tell it
     /// is out of date and the find bar can recount.
     @Published private(set) var editCount = 0
-
-    /// The last `wholeDocument()` result, while it is current.
-    private var wholeDocumentCache: WholeDocument?
 
     // MARK: - Tabular heuristic
 
@@ -227,38 +224,19 @@ final class StructDocument: ReferenceFileDocument {
 
     // MARK: - Whole-document operations
 
-    /// The whole document at a given edit, for operations that must see every
-    /// node: queries. `nodeIndex` holds only what has been
-    /// expanded in a large file, so working on it misses the rest.
-    struct WholeDocument {
-        let index: NodeIndex
+    /// The document as it is at one edit, for a query: its index with the
+    /// source behind it, so a large file's query reads what isn't loaded from
+    /// the file instead of building the whole document.
+    struct QuerySnapshot: Sendable {
+        let document: DocumentOverlay
         fileprivate let editCount: Int
     }
 
-    /// Builds the whole document in the background for a large file, and keeps
-    /// it until the next edit or `releaseWholeDocument()`.
     @MainActor
-    func wholeDocument() async -> WholeDocument? {
-        while true {
-            guard let current = nodeIndex else { return nil }
-            guard let source else {
-                return WholeDocument(index: current, editCount: editCount)
-            }
-            if let cached = wholeDocumentCache, cached.editCount == editCount { return cached }
-            let edits = editCount
-            let full = await Task.detached(priority: .userInitiated) { [current] in
-                source.completeNodeIndex(overlaying: current)
-            }.value
-            // An edit made meanwhile isn't in `full`: build again.
-            guard edits == editCount else { continue }
-            wholeDocumentCache = WholeDocument(index: full, editCount: edits)
-            return wholeDocumentCache
-        }
-    }
-
-    /// Free the whole document built by `wholeDocument()`.
-    func releaseWholeDocument() {
-        wholeDocumentCache = nil
+    func querySnapshot() -> QuerySnapshot? {
+        guard let current = nodeIndex else { return nil }
+        return QuerySnapshot(document: DocumentOverlay(index: current, source: source),
+                             editCount: editCount)
     }
 
     /// Column Stats of the document as edited. A large file's is computed in
@@ -332,29 +310,32 @@ final class StructDocument: ReferenceFileDocument {
         return await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
     }
 
-    /// Commit an edit computed on `base`, which may touch nodes that were
-    /// never expanded. Returns `false`, changing nothing, if the document has
-    /// been edited since `base` was built.
+    /// Commit the edit `edit` makes, on the index with `targets` and their
+    /// ancestors loaded — and, with `subtrees`, everything below them — for an
+    /// edit to nodes a query found, which may never have been expanded.
+    /// Returns `false`, changing nothing, if the document has been edited
+    /// since `snapshot`.
     ///
-    /// The whole document becomes the index first, so those nodes arrive with
-    /// their ancestors and siblings: saving JSON copies the original bytes of
-    /// any container with a child missing, which would drop the edit.
-    /// Eviction then trims it back, keeping the edits and what surrounds them.
+    /// The nodes are gathered in the background and loaded only if missing:
+    /// loading is not an edit, and eviction keeps the edits' ancestors.
     @MainActor
     @discardableResult
-    func commitEdit(_ tx: EditTransaction, over base: WholeDocument,
+    func commitEdit(touching targets: [NodeID], subtrees: Bool, since snapshot: QuerySnapshot,
                     undoManager: UndoManager?,
-                    expandedIDs: Set<NodeID>, selectedID: NodeID?) -> Bool {
-        guard base.editCount == editCount else { return false }
-        guard source != nil else {
-            commitEdit(tx, undoManager: undoManager)
-            return true
+                    expandedIDs: Set<NodeID>, selectedID: NodeID?,
+                    _ edit: (NodeIndex) -> EditTransaction?) async -> Bool {
+        guard snapshot.editCount == editCount, let current = nodeIndex else { return false }
+        var nodes = [NodeID: DocumentNode]()
+        if let source {
+            nodes = await Task.detached(priority: .userInitiated) {
+                source.nodesToLoad(for: targets, subtrees: subtrees, in: current)
+            }.value
         }
-        nodeIndex = base.index
+        guard snapshot.editCount == editCount, var index = nodeIndex else { return false }
+        index.load(nodes)
+        guard let tx = edit(index) else { return true }
+        nodeIndex = index
         commitEdit(tx, undoManager: undoManager)
-        if let full = nodeIndex {
-            wholeDocumentCache = WholeDocument(index: full, editCount: editCount)
-        }
         evictIfNeeded(expandedIDs: expandedIDs, selectedID: selectedID)
         return true
     }
