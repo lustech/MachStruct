@@ -25,6 +25,8 @@ struct TableView: NSViewRepresentable {
     /// is every row on screen, so loading can keep them all in memory.
     var loadRows: ((Set<NodeID>) async -> Void)? = nil
 
+    @AppStorage(AppSettings.Keys.colorTheme) private var colorTheme = ColorTheme.standard
+
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -54,7 +56,7 @@ struct TableView: NSViewRepresentable {
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         context.coordinator.update(nodeIndex: nodeIndex, selection: $selection,
-                                   loadRows: loadRows)
+                                   loadRows: loadRows, theme: colorTheme)
     }
 
     // MARK: - Coordinator
@@ -73,14 +75,20 @@ struct TableView: NSViewRepresentable {
         /// Set while the table's selection is changed to match `selection`,
         /// so the change isn't reported back.
         private var isSyncingSelection = false
+        private var theme = ColorTheme.standard
 
         private static let columnWidth: CGFloat = 160
 
         func update(nodeIndex: NodeIndex, selection: Binding<NodeID?>,
-                    loadRows: ((Set<NodeID>) async -> Void)?) {
+                    loadRows: ((Set<NodeID>) async -> Void)?, theme: ColorTheme) {
             self.selection = selection
             self.loadRows = loadRows
             guard let table else { return }
+
+            if theme != self.theme {
+                self.theme = theme
+                table.reloadData()
+            }
 
             if generation != nodeIndex.generation {
                 generation = nodeIndex.generation
@@ -167,7 +175,7 @@ struct TableView: NSViewRepresentable {
                 ?? Self.makeCell(identifier: id)
             let value = scalarValue(row: rowIDs[row], column: columns[col])
             cell.textField?.stringValue = value?.displayText ?? ""
-            cell.textField?.textColor = value.map(Self.color) ?? .secondaryLabelColor
+            cell.textField?.textColor = value.map(theme.nsColor(for:)) ?? theme.nsColor(\.muted)
             return cell
         }
 
@@ -203,16 +211,6 @@ struct TableView: NSViewRepresentable {
                   let scalar = nodeIndex.children(of: kv.id).first,
                   case .scalar(let sv) = scalar.value else { return nil }
             return sv
-        }
-
-        /// Per-type text colors matching the palette used in `NodeRow`.
-        private static func color(_ sv: ScalarValue) -> NSColor {
-            switch sv {
-            case .string:          return NSColor(red: 0.8, green: 0.3, blue: 0.1, alpha: 1)
-            case .integer, .float: return .systemBlue
-            case .boolean:         return .systemOrange
-            case .null:            return .secondaryLabelColor
-            }
         }
     }
 }

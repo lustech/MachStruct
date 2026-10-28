@@ -1,4 +1,5 @@
 import SwiftUI
+import MachStructCore
 
 // MARK: - AppSettings
 
@@ -15,6 +16,7 @@ enum AppSettings {
         static let showWelcomeOnLaunch  = "showWelcomeOnLaunch"
         static let hasSeenOnboarding    = "hasSeenOnboarding"
         static let singleClickExpand    = "singleClickExpand"
+        static let colorTheme           = "colorTheme"
     }
     enum Defaults {
         static let rawFontSize: Double  = 13
@@ -103,10 +105,28 @@ private struct AppearanceTab: View {
     @AppStorage(AppSettings.Keys.treeFontSize)
     private var treeFontSize = AppSettings.Defaults.treeFontSize
 
+    @AppStorage(AppSettings.Keys.colorTheme)
+    private var colorTheme = ColorTheme.standard
+
     private let treeSizes: [Double] = [11, 12, 13, 14]
 
     var body: some View {
         Form {
+            Section {
+                Picker("Theme", selection: $colorTheme) {
+                    ForEach(ColorTheme.allCases) { theme in
+                        Text(theme.displayName).tag(theme)
+                    }
+                }
+                ThemeSample(theme: colorTheme)
+            } header: {
+                Text("Colours")
+            } footer: {
+                Text("Colours for keys and values in the tree, table and raw views. Each theme has a light and a dark version that follow the system appearance.")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+            }
+
             Section {
                 Picker("Tree view font size", selection: $treeFontSize) {
                     ForEach(treeSizes, id: \.self) { size in
@@ -124,6 +144,31 @@ private struct AppearanceTab: View {
         }
         .formStyle(.grouped)
         .padding()
+    }
+}
+
+/// A line of JSON in `theme`'s colours, to preview it in Settings.
+private struct ThemeSample: View {
+    let theme: ColorTheme
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Text("\"city\"").foregroundStyle(theme.color(\.key))
+            Text(": ").foregroundStyle(theme.color(\.muted))
+            Text("\"Oslo\"").foregroundStyle(theme.color(\.string))
+            Text(", ").foregroundStyle(theme.color(\.muted))
+            Text("59.33").foregroundStyle(theme.color(\.number))
+            Text(", ").foregroundStyle(theme.color(\.muted))
+            Text("true").foregroundStyle(theme.color(\.boolean))
+            Spacer(minLength: 0)
+        }
+        .font(.system(.body, design: .monospaced))
+        .lineLimit(1)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(theme.color(\.background), in: RoundedRectangle(cornerRadius: 6))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Sample of the \(theme.displayName) theme")
     }
 }
 

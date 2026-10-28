@@ -113,6 +113,7 @@ struct ExpandedTreeView: View {
     @State private var revealTarget: NodeID? = nil
     /// Bumped to scroll to `scrollRow` once it is in the list.
     @State private var scrollRequest = 0
+    @AppStorage(AppSettings.Keys.colorTheme) private var colorTheme = ColorTheme.standard
     @State private var scrollRow: NodeID? = nil
 
     // MARK: - Body
@@ -133,6 +134,11 @@ struct ExpandedTreeView: View {
                 .onMove { handleDragMove(from: $0, to: $1) }
             }
             .listStyle(.sidebar)
+            // The theme's document background, not the sidebar material:
+            // its translucent grey left the value colours hard to read.
+            .scrollContentBackground(.hidden)
+            .background(colorTheme.color(\.background))
+            .environment(\.colorTheme, colorTheme)
             .accessibilityLabel("Document tree")
             .onAppear { rebuildFlatRows() }
             .onChange(of: expandedIDs) { _, _ in rebuildFlatRows() }
