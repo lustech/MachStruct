@@ -34,12 +34,19 @@ public struct CSVDocumentSerializer {
     ///
     /// - Parameter delimiter: Field delimiter character (default `,`).
     public func serialize(delimiter: Character = ",") throws -> Data {
+        var text = ""
+        try write(to: &text, delimiter: delimiter)
+        return Data(text.utf8)
+    }
+
+    /// `serialize(delimiter:)` into `text`, such as a `FileTextStream` for a
+    /// large document, whose text is then never held whole.
+    public func write<Out: TextOutputStream>(to text: inout Out, delimiter: Character = ",") throws {
         guard let root = index.root, isTabular(root) else {
             throw CSVSerializerError.notTabular
         }
 
         let columns = allColumns(under: root)
-        var text = ""
 
         // Header row
         appendRow(columns, delimiter: delimiter, to: &text)
@@ -48,8 +55,6 @@ public struct CSVDocumentSerializer {
         for rowNode in children(of: root) {
             appendRow(cells(of: rowNode, columns: columns), delimiter: delimiter, to: &text)
         }
-
-        return Data(text.utf8)
     }
 
     /// Serialize a document that was opened from a CSV file, for saving it
@@ -60,6 +65,14 @@ public struct CSVDocumentSerializer {
     /// its delimiter, and no header row when the file had none. Rows need not
     /// share a key set; a row missing a column gets an empty cell.
     public func serializeInSourceLayout() throws -> Data {
+        var text = ""
+        try writeInSourceLayout(to: &text)
+        return Data(text.utf8)
+    }
+
+    /// `serializeInSourceLayout()` into `text`, such as a `FileTextStream`
+    /// for a large document, whose text is then never held whole.
+    public func writeInSourceLayout<Out: TextOutputStream>(to text: inout Out) throws {
         guard let root = index.root else {
             throw CSVSerializerError.emptyDocument
         }
@@ -83,7 +96,6 @@ public struct CSVDocumentSerializer {
             if allObjects { columns.add(keysOf: rowNode, from: self) }
         }
 
-        var text = ""
         if allArrays {
             // No header: each row is a positional array of scalars.
             for rowNode in children(of: root) {
@@ -96,8 +108,6 @@ public struct CSVDocumentSerializer {
                 appendRow(cells(of: rowNode, columns: columns), delimiter: delimiter, to: &text)
             }
         }
-
-        return Data(text.utf8)
     }
 
     // MARK: - Private helpers
@@ -158,9 +168,10 @@ public struct CSVDocumentSerializer {
         }
     }
 
-    private func appendRow(_ cells: [String], delimiter: Character, to text: inout String) {
-        text += row(cells: cells, delimiter: delimiter)
-        text += "\n"
+    private func appendRow<Out: TextOutputStream>(_ cells: [String], delimiter: Character,
+                                                  to text: inout Out) {
+        text.write(row(cells: cells, delimiter: delimiter))
+        text.write("\n")
     }
 
     private func row(cells: [String], delimiter: Character) -> String {

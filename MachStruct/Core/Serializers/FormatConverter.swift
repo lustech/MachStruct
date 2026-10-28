@@ -80,6 +80,41 @@ public struct FormatConverter: Sendable {
         }
     }
 
+    /// `convert(index:mappedFile:source:to:)` written to `url` as it is
+    /// produced, so a large document's output is never held whole. `url` is
+    /// replaced only once all of it is written.
+    public func convert(
+        index: NodeIndex,
+        mappedFile: MappedFile? = nil,
+        source: (any DocumentSource)? = nil,
+        to format: TargetFormat,
+        writingTo url: URL
+    ) throws {
+        try FileTextStream.write(to: url) { stream in
+            var out = stream
+            try write(index: index, mappedFile: mappedFile, source: source, to: format, into: &out)
+        }
+    }
+
+    /// The conversion written into `out`.
+    func write<Out: TextOutputStream>(
+        index: NodeIndex,
+        mappedFile: MappedFile?,
+        source: (any DocumentSource)?,
+        to format: TargetFormat,
+        into out: inout Out
+    ) throws {
+        switch format {
+        case .json:
+            try JSONDocumentSerializer(index: index, mappedFile: mappedFile, source: source)
+                .write(to: &out, pretty: true)
+        case .yaml:
+            try YAMLDocumentSerializer(index: index, source: source).write(to: &out)
+        case .csv:
+            try CSVDocumentSerializer(index: index, source: source).write(to: &out)
+        }
+    }
+
     /// Returns `true` if `index` can be converted to `format`.
     ///
     /// JSON and YAML accept any document; CSV requires `isTabular()`.

@@ -154,13 +154,19 @@ final class StructDocument: ReferenceFileDocument {
         let type = configuration.contentType
         let data: Data
         if type.conforms(to: .json) {
-            data = try JSONDocumentSerializer(index: snapshot.index,
-                                              mappedFile: snapshot.mappedFile,
-                                              source: snapshot.source)
-                .serialize(pretty: true)
+            let serializer = JSONDocumentSerializer(index: snapshot.index,
+                                                    mappedFile: snapshot.mappedFile,
+                                                    source: snapshot.source)
+            guard snapshot.source == nil else {
+                return try Self.streamed { try serializer.write(to: &$0, pretty: true) }
+            }
+            data = try serializer.serialize(pretty: true)
         } else if type.conforms(to: .commaSeparatedText) {
-            data = try CSVDocumentSerializer(index: snapshot.index, source: snapshot.source)
-                .serializeInSourceLayout()
+            let serializer = CSVDocumentSerializer(index: snapshot.index, source: snapshot.source)
+            guard snapshot.source == nil else {
+                return try Self.streamed { try serializer.writeInSourceLayout(to: &$0) }
+            }
+            data = try serializer.serializeInSourceLayout()
         } else if Self.yamlTypes.contains(where: { type.conforms(to: $0) }) {
             // Patch the original text where possible: regenerating it drops
             // comments, anchors and quoting.
@@ -169,13 +175,25 @@ final class StructDocument: ReferenceFileDocument {
                                                      documentSource: snapshot.source) {
                 data = Data(patched.utf8)
             } else {
-                data = try YAMLDocumentSerializer(index: snapshot.index, source: snapshot.source)
-                    .serialize()
+                let serializer = YAMLDocumentSerializer(index: snapshot.index, source: snapshot.source)
+                guard snapshot.source == nil else {
+                    return try Self.streamed { try serializer.write(to: &$0) }
+                }
+                data = try serializer.serialize()
             }
         } else {
             throw StructDocumentError.unsupportedSaveFormat
         }
         return FileWrapper(regularFileWithContents: data)
+    }
+
+    /// A large file's text written to a file as it is produced and saved
+    /// from there, rather than held whole in memory.
+    private static func streamed(_ write: (inout FileTextStream) throws -> Void) throws -> FileWrapper {
+        try FileTextStream.fileWrapper { stream in
+            var out = stream
+            try write(&out)
+        }
     }
 
     /// The file as it was opened, as UTF-8 text.
