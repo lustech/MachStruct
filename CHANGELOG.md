@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] — 2026-10-28
+
+Large files, fast. JSON, CSV and YAML files of 5 MB or more are read
+straight from disk instead of being loaded whole, so a 100 MB file opens in
+a fraction of the memory, and searching, querying, Find & Replace, Column
+Stats, saving and exporting all work on it without building it in memory.
+
 ### Changed
 - **Large JSON and CSV files open with a fraction of the memory.** A file of
   5 MB or more is now read straight from its bytes: opening it checks it in
@@ -15,6 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nodes now takes about 65 MB after opening instead of 2.1 GB, and a 100 MB
   CSV with 1.2 million rows about 70 MB instead of 3.4 GB. Searching either
   takes under a second, and X-Ray now includes unsaved edits.
+- **Queries, Find & Replace and Column Stats on large files are several
+  times faster and use far less memory.** They read the file instead of
+  building the whole document first, and a query reads only the fields it
+  uses. On a 100 MB file, `.[] | select(.city == "Stockholm") | .name` takes
+  1.5 seconds instead of 6.4, counting matches in a CSV file 1.2 seconds
+  instead of 31, and Column Stats 2.6 seconds. "Delete matched" and "Set
+  value" load only the matched entries.
 - **Saving or exporting a large file no longer holds the output in
   memory.** It is written to disk as it is produced: saving a 100 MB CSV
   file peaks at about 26 MB instead of 325 MB.
@@ -26,6 +40,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   420 MB instead of 4 GB.
 
 ### Fixed
+- **Saving a CSV file could split a row in two.** A field holding a Windows
+  line break (`\r\n`), as multi-line notes exported from spreadsheets do,
+  or a delimiter followed by a combining accent, was written without quotes,
+  so reading the file again broke the row apart. Such fields are now
+  quoted. (#75)
 - **The YAML anchor badge never appeared.** Anchors (`&name`) were lost
   while a file was indexed, so the tree never marked the nodes that declare
   them. (#79)
@@ -399,7 +418,8 @@ Initial public release. Full feature set:
 - **Drag-and-drop reordering** of array elements in the tree.
 - **GitHub Actions release pipeline** — notarise, DMG, GitHub Release.
 
-[Unreleased]: https://github.com/lustech/MachStruct/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/lustech/MachStruct/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/lustech/MachStruct/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/lustech/MachStruct/compare/v2.1.3...v2.2.0
 [2.1.3]: https://github.com/lustech/MachStruct/compare/v2.1.2...v2.1.3
 [2.1.2]: https://github.com/lustech/MachStruct/compare/v2.1.1...v2.1.2
