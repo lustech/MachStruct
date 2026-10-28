@@ -60,8 +60,9 @@ public actor QueryEngine {
         // The nodes of a path-only query's outputs, when each output is one.
         var ids: [NodeID]? = pathOnly ? [] : nil
         var locating = pathOnly
-        func run(_ expr: JQExpr, on node: NodeID) throws {
-            let input = JQValue(node: node, in: document)
+        // Project only what the query reads of its input.
+        func run(_ expr: JQExpr, on node: NodeID, demand: JQDemand) throws {
+            let input = JQValue(node: node, in: document, demand: demand)
             guard pathOnly else {
                 values += try JQEvaluator.evaluate(expr, against: input)
                 return
@@ -79,12 +80,13 @@ public actor QueryEngine {
             } else if let (items, rest) = JQPath.splitAtIteration(expr, in: document) {
                 // `expr` is `P | .[] | rest`, and jq runs `rest` on each item
                 // in turn, so the outputs are each item's, in order.
+                let demand = JQDemand.of(rest)
                 for (n, item) in items.enumerated() {
                     if n & 0x3FF == 0 { try Task.checkCancellation() }
-                    try run(rest, on: item)
+                    try run(rest, on: item, demand: demand)
                 }
             } else {
-                try run(expr, on: document.rootID)
+                try run(expr, on: document.rootID, demand: JQDemand.of(expr))
             }
             if !locating { ids = nil }
         } catch let e as JQRuntimeError {

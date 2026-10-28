@@ -203,6 +203,48 @@ extension JQValue {
     }
 }
 
+extension JQValue {
+
+    /// The node's value, as far as `demand` reads it: an object keeps only
+    /// the members it names (or all, for `each`), and an array keeps its
+    /// items only for `each`. Every value keeps its type.
+    init<Lookup: NodeLookup>(node id: NodeID, in index: Lookup, demand: JQDemand) {
+        guard case .parts(let fields, let each) = demand,
+              let node = index.node(for: id) else {
+            self = JQValue(node: id, in: index)
+            return
+        }
+        switch node.type {
+        case .scalar:
+            self = JQValue(node: id, in: index)
+
+        case .keyValue:
+            self = node.childIDs.first.map { JQValue(node: $0, in: index, demand: demand) } ?? .null
+
+        case .array:
+            self = .array(each.map { each in node.childIDs.map { JQValue(node: $0, in: index, demand: each) } } ?? [])
+
+        case .object:
+            var members: [(key: String, value: JQValue)] = []
+            for kvID in node.childIDs {
+                guard let kv = index.node(for: kvID) else { continue }
+                let key = kv.key ?? ""
+                let field = fields[key]
+                let memberDemand: JQDemand? = switch (field, each) {
+                case let (f?, e?): f.union(e)
+                case let (f?, nil): f
+                case let (nil, e): e
+                }
+                guard let memberDemand else { continue }
+                members.append((key, kv.childIDs.first.map {
+                    JQValue(node: $0, in: index, demand: memberDemand)
+                } ?? .null))
+            }
+            self = .object(members)
+        }
+    }
+}
+
 // MARK: - JQValue → DocumentNode
 
 extension JQValue {
