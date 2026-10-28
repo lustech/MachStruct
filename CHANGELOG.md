@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.1] — 2026-10-28
+
+Large XML files join JSON, CSV and YAML in being read from disk.
+
 ### Changed
 - **Large XML files open with a fraction of the memory.** A file of 5 MB or
   more keeps a compact record of each element and text run, building nodes
@@ -425,7 +429,8 @@ Initial public release. Full feature set:
 - **Drag-and-drop reordering** of array elements in the tree.
 - **GitHub Actions release pipeline** — notarise, DMG, GitHub Release.
 
-[Unreleased]: https://github.com/lustech/MachStruct/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/lustech/MachStruct/compare/v2.3.1...HEAD
+[2.3.1]: https://github.com/lustech/MachStruct/compare/v2.3.0...v2.3.1
 [2.3.0]: https://github.com/lustech/MachStruct/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/lustech/MachStruct/compare/v2.1.3...v2.2.0
 [2.1.3]: https://github.com/lustech/MachStruct/compare/v2.1.2...v2.1.3
