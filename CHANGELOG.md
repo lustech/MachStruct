@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Large XML files open with a fraction of the memory.** A file of 5 MB or
+  more keeps a compact record of each element and text run, building nodes
+  from it when they are shown, as large JSON, CSV and YAML files already
+  do. A 100 MB XML file now peaks at about 440 MB while opening instead of
+  2.6 GB, and takes about 260 MB once open.
+
 ## [2.3.0] — 2026-10-28
 
 Large files, fast. JSON, CSV and YAML files of 5 MB or more are read

@@ -452,6 +452,20 @@ final class StructDocument: ReferenceFileDocument {
                 nodeIndex = NodeIndex(root: root)
                 indexedNodeCount = source.nodeCount
 
+            } else if useLazy, setup.detected == .xml {
+                // Step 3a — Large XML: one compact record per node, from
+                // which nodes are built when shown.
+                let source = try await Task.detached(priority: .userInitiated) {
+                    try XMLSource(file: file)
+                }.value
+                file.adviseRandom()
+                guard let root = source.node(for: source.rootID, parent: nil) else {
+                    throw StructDocumentError.noContent
+                }
+                self.source = source
+                nodeIndex = NodeIndex(root: root)
+                indexedNodeCount = source.nodeCount
+
             } else if useLazy, setup.detected == .yaml,
                       let source = await Task.detached(priority: .userInitiated, operation: {
                           YAMLSource(file: file)
