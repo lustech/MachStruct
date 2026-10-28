@@ -57,10 +57,21 @@ public actor QueryEngine {
 
         let pathOnly = JQPath.isPathOnly(expr)
         var values: [JQValue] = []
-        // Resolve source nodes only for path-only queries, and only when the
-        // resolved count matches the evaluated output (a safety check that the
-        // two traversals stayed aligned).
+        // The nodes of a path-only query's outputs, when each output is one.
         var ids: [NodeID]? = pathOnly ? [] : nil
+        var locating = pathOnly
+        func run(_ expr: JQExpr, on node: NodeID) throws {
+            let input = JQValue(node: node, in: document)
+            guard pathOnly else {
+                values += try JQEvaluator.evaluate(expr, against: input)
+                return
+            }
+            for output in try JQPath.evaluate(expr, on: .init(value: input, node: node),
+                                              locating: &locating, in: document) {
+                values.append(output.value)
+                if let node = output.node { ids?.append(node) } else { locating = false }
+            }
+        }
         do {
             if let target = JQPath.navigate(expr, in: document) {
                 values = [JQValue(node: target, in: document)]
@@ -70,21 +81,12 @@ public actor QueryEngine {
                 // in turn, so the outputs are each item's, in order.
                 for (n, item) in items.enumerated() {
                     if n & 0x3FF == 0 { try Task.checkCancellation() }
-                    values += try JQEvaluator.evaluate(rest, against: JQValue(node: item, in: document))
-                    if ids != nil {
-                        if let found = try? JQPath.resolve(rest, from: [item], in: document) {
-                            ids! += found
-                        } else {
-                            ids = nil
-                        }
-                    }
+                    try run(rest, on: item)
                 }
             } else {
-                values = try JQEvaluator.evaluate(expr, against: JQValue(node: document.rootID,
-                                                                           in: document))
-                try Task.checkCancellation()
-                ids = pathOnly ? (try? JQPath.resolve(expr, from: [document.rootID], in: document)) : nil
+                try run(expr, on: document.rootID)
             }
+            if !locating { ids = nil }
         } catch let e as JQRuntimeError {
             throw QueryError.runtime(e)
         }
@@ -132,95 +134,105 @@ enum JQPath {
         }
     }
 
-    /// Resolve the node IDs selected by a path-only `expr`, starting from
-    /// `nodeIDs`, in document order.
-    static func resolve<Lookup: NodeLookup>(_ expr: JQExpr, from nodeIDs: [NodeID],
-                                            in index: Lookup) throws -> [NodeID] {
+    // MARK: Values with their nodes
+
+    /// A value a path-only query outputs, with the node it is, or `nil` when
+    /// it isn't one (a missing member reads as `null`) or that is unknown.
+    struct Located {
+        let value: JQValue
+        let node: NodeID?
+    }
+
+    /// Evaluates the path-only `expr` on `input` as `JQEvaluator` does, with
+    /// each output's node: one pass where evaluating and then resolving the
+    /// nodes took two. Each step's outputs come from the evaluator itself,
+    /// so they and any error are exactly its; this only pairs them with the
+    /// nodes they came from.
+    ///
+    /// Once one of the query's outputs has no node they can't all be mapped
+    /// back, and the caller sets `locating` false so that nodes are no longer
+    /// looked up. A value with no node that leads to no output is harmless.
+    static func evaluate<Lookup: NodeLookup>(_ expr: JQExpr, on input: Located,
+                                             locating: inout Bool,
+                                             in document: Lookup) throws -> [Located] {
+        func lookup(_ node: NodeID?, _ find: (DocumentNode) -> NodeID?) -> NodeID? {
+            guard locating, let node else { return nil }
+            return document.node(for: node).flatMap(find)
+        }
+        func located(_ values: [JQValue], _ node: NodeID?) -> [Located] {
+            values.map { Located(value: $0, node: node) }
+        }
+
         switch expr {
         case .identity:
-            return nodeIDs
+            return [input]
 
         case .field(let base, let name, let optional):
-            let bases = try resolve(base, from: nodeIDs, in: index)
-            var out: [NodeID] = []
-            for baseID in bases {
-                guard let node = index.node(for: baseID) else { continue }
-                if node.type == .object {
-                    if let kvID = node.childIDs.first(where: { index.node(for: $0)?.key == name }),
-                       let valueID = index.node(for: kvID)?.childIDs.first {
-                        out.append(valueID)
-                    }
-                    // Missing key → null with no node; skip (can't map back).
-                } else if !optional {
-                    throw JQRuntimeError("Cannot index \(jqTypeName(node)) with \"\(name)\"")
-                }
+            let step = JQExpr.field(base: .identity, name: name, optional: optional)
+            return try evaluate(base, on: input, locating: &locating, in: document).flatMap { b -> [Located] in
+                let values = try JQEvaluator.evaluate(step, against: b.value)
+                guard !values.isEmpty else { return [] }
+                return located(values, lookup(b.node) { member(name, of: $0, in: document) })
             }
-            return out
 
-        case .index(let base, let idxExpr, let optional):
-            let bases = try resolve(base, from: nodeIDs, in: index)
-            // Constant index resolved against null input.
-            let idxValues = try JQEvaluator.evaluate(idxExpr, against: .null)
-            var out: [NodeID] = []
-            for baseID in bases {
-                guard let node = index.node(for: baseID) else { continue }
-                for idxValue in idxValues {
-                    if node.type == .array, case .int(let i) = idxValue {
-                        let n = node.childIDs.count
-                        let pos = i < 0 ? Int(i) + n : Int(i)
-                        if pos >= 0 && pos < n { out.append(node.childIDs[pos]) }
-                    } else if node.type == .object, case .string(let key) = idxValue {
-                        if let kvID = node.childIDs.first(where: { index.node(for: $0)?.key == key }),
-                           let valueID = index.node(for: kvID)?.childIDs.first {
-                            out.append(valueID)
+        case .index(let base, let indexExpr, let optional):
+            // As the evaluator: the bases, then the indices from this step's
+            // input, then each index of each base.
+            let bases = try evaluate(base, on: input, locating: &locating, in: document)
+            let indices = try JQEvaluator.evaluate(indexExpr, against: input.value)
+            var out: [Located] = []
+            for b in bases {
+                for idx in indices {
+                    let step = JQExpr.index(base: .identity, index: .literal(idx), optional: optional)
+                    let values = try JQEvaluator.evaluate(step, against: b.value)
+                    guard !values.isEmpty else { continue }
+                    out += located(values, lookup(b.node) { node in
+                        switch (node.type, idx) {
+                        case (.array, .int(let i)):
+                            let n = node.childIDs.count
+                            let pos = i < 0 ? Int(i) + n : Int(i)
+                            return pos >= 0 && pos < n ? node.childIDs[pos] : nil
+                        case (.object, .string(let key)):
+                            return member(key, of: node, in: document)
+                        default:
+                            return nil
                         }
-                    } else if !optional {
-                        throw JQRuntimeError("Cannot index \(jqTypeName(node))")
-                    }
+                    })
                 }
             }
             return out
 
         case .iterate(let base, let optional):
-            let bases = try resolve(base, from: nodeIDs, in: index)
-            var out: [NodeID] = []
-            for baseID in bases {
-                guard let node = index.node(for: baseID) else { continue }
-                switch node.type {
-                case .array:
-                    out.append(contentsOf: node.childIDs)
-                case .object:
-                    for kvID in node.childIDs {
-                        if let valueID = index.node(for: kvID)?.childIDs.first {
-                            out.append(valueID)
-                        }
-                    }
-                default:
-                    if !optional { throw JQRuntimeError("Cannot iterate over \(jqTypeName(node))") }
+            let step = JQExpr.iterate(base: .identity, optional: optional)
+            return try evaluate(base, on: input, locating: &locating, in: document).flatMap { b -> [Located] in
+                let values = try JQEvaluator.evaluate(step, against: b.value)
+                guard locating, let id = b.node, let node = document.node(for: id) else {
+                    return located(values, nil)
                 }
+                // An array's items, or an object's members' values: the
+                // projection keeps every member, so they align.
+                let items = node.type == .object
+                    ? node.childIDs.compactMap { document.node(for: $0)?.childIDs.first }
+                    : node.childIDs
+                guard items.count == values.count else { return located(values, nil) }
+                return zip(values, items).map { Located(value: $0, node: $1) }
+            }
+
+        case .pipe(let lhs, let rhs):
+            var out: [Located] = []
+            for o in try evaluate(lhs, on: input, locating: &locating, in: document) {
+                out += try evaluate(rhs, on: o, locating: &locating, in: document)
             }
             return out
 
-        case .pipe(let a, let b):
-            return try resolve(b, from: resolve(a, from: nodeIDs, in: index), in: index)
-
-        case .comma(let a, let b):
-            return try resolve(a, from: nodeIDs, in: index) + resolve(b, from: nodeIDs, in: index)
-
-        case .call("select", let args) where args.count == 1:
-            var out: [NodeID] = []
-            for nodeID in nodeIDs {
-                let projection = JQValue(node: nodeID, in: index)
-                let results = try JQEvaluator.evaluate(args[0], against: projection)
-                if results.contains(where: { truthy($0) }) { out.append(nodeID) }
-            }
-            return out
-
-        case .call("values", let args) where args.isEmpty:
-            return nodeIDs.filter { JQValue(node: $0, in: index) != .null }
+        case .comma(let lhs, let rhs):
+            return try evaluate(lhs, on: input, locating: &locating, in: document)
+                + evaluate(rhs, on: input, locating: &locating, in: document)
 
         default:
-            throw JQRuntimeError("Query is not a path expression")
+            // `select` and `values` output their input, as many times as
+            // they output anything.
+            return located(try JQEvaluator.evaluate(expr, against: input.value), input.node)
         }
     }
 
@@ -263,7 +275,12 @@ enum JQPath {
     /// `.name` reads it.
     private static func member<Lookup: NodeLookup>(_ name: String, of id: NodeID,
                                                     in document: Lookup) -> NodeID? {
-        guard let node = document.node(for: id), node.type == .object,
+        document.node(for: id).flatMap { member(name, of: $0, in: document) }
+    }
+
+    private static func member<Lookup: NodeLookup>(_ name: String, of node: DocumentNode,
+                                                    in document: Lookup) -> NodeID? {
+        guard node.type == .object,
               let kvID = node.childIDs.first(where: { document.node(for: $0)?.key == name })
         else { return nil }
         return document.node(for: kvID)?.childIDs.first
@@ -329,24 +346,6 @@ enum JQPath {
         case .negate(let e):         return isConstant(e)
         case .binary(_, let l, let r): return isConstant(l) && isConstant(r)
         default:                     return false
-        }
-    }
-
-    private static func truthy(_ v: JQValue) -> Bool {
-        switch v {
-        case .null, .bool(false): return false
-        default:                  return true
-        }
-    }
-
-    private static func jqTypeName(_ node: DocumentNode) -> String {
-        switch node.type {
-        case .object:   return "object"
-        case .array:    return "array"
-        case .keyValue: return "object"
-        case .scalar:
-            if case .scalar(let sv) = node.value { return JQValue(scalar: sv).typeName }
-            return "null"
         }
     }
 }
