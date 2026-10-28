@@ -122,7 +122,24 @@ extension ColumnStats {
             seen.removeAll(keepingCapacity: true)
         }
 
-        source.traverse(overlaying: index) { node, parent in
+        // Unloaded rows are read from their bytes where the source can.
+        var scannedRow = -1
+        let unloaded = { (ids: ArraySlice<NodeID>, parent: DocumentNode) -> Int in
+            guard parent.id == index.rootID else { return 0 }
+            scannedRow = -1
+            return source.scanUnloaded(ids, skippingCellsWithout: [],
+                                       visitingColumns: { _ in false }) { row, name, value in
+                if row != scannedRow {
+                    finishRow()
+                    scannedRow = row
+                    rowID = ids[ids.startIndex + row]
+                }
+                if let name, let slots = positions[name], seen.insert(name).inserted {
+                    for i in slots { cells[i] = value }
+                }
+            }
+        }
+        source.traverse(overlaying: index, unloaded: unloaded) { node, parent in
             guard let parent else { return true }            // the root
             if parent.id == index.rootID {                    // a row
                 finishRow()

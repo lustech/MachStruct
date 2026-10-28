@@ -90,7 +90,18 @@ public extension SearchEngine {
             return 0
         }
         var count = 0
-        source.traverse(overlaying: index) { node, _ in
+        // Unloaded rows are counted from their bytes where the source can,
+        // skipping cells that can't match.
+        let rootID = index.rootID
+        let needle = matcher.prefilter
+        source.traverse(overlaying: index, unloaded: { ids, parent in
+            guard parent.id == rootID else { return 0 }
+            return source.scanUnloaded(ids, skippingCellsWithout: needle,
+                                       visitingColumns: { options.matchesKeys && matcher.matches($0) }) { _, key, value in
+                if options.matchesKeys, let key, matcher.matches(key) { count += 1 }
+                if options.matchesValues, matcher.matches(value.searchableText) { count += 1 }
+            }
+        }) { node, _ in
             if options.matchesKeys, node.type == .keyValue,
                let key = node.key, matcher.matches(key) {
                 count += 1
@@ -276,6 +287,13 @@ struct TextMatcher {
             self.asciiLiteral = !bytes.isEmpty && bytes.allSatisfy(Self.isPrintableASCII)
                 ? (options.caseSensitive ? bytes : bytes.map(Self.lowercased)) : nil
         }
+    }
+
+    /// Lowercased bytes that every text this matches contains, for a byte
+    /// filter: a printable-ASCII literal's; empty when there are none.
+    var prefilter: [UInt8] {
+        guard let asciiLiteral else { return [] }
+        return caseSensitive ? asciiLiteral.map(Self.lowercased) : asciiLiteral
     }
 
     func matches(_ text: String) -> Bool {

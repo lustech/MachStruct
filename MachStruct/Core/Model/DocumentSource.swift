@@ -44,12 +44,34 @@ public protocol DocumentSource: Sendable {
     /// subtree it can't search from its bytes.
     func searchUnloaded(_ ids: ArraySlice<NodeID>, query: String,
                         _ match: (NodeID, SearchMatch.Field, String) -> Bool) -> Int
+
+    /// Visit the cells of `ids` — consecutive rows of the root no index
+    /// holds — from the bytes, in document order, without building nodes. A
+    /// cell is a row's scalar: `visit` gets its row's position in `ids`, its
+    /// key (its column's name; `nil` when it has no key) and its value, as
+    /// the cell's nodes would have them.
+    ///
+    /// Cells whose text certainly doesn't contain `needle` (lowercased
+    /// printable ASCII; empty to visit every cell) may be skipped, except in
+    /// columns `visitingColumns` accepts.
+    ///
+    /// Returns how many of `ids`, from the first, it scanned; a source can
+    /// decline any it can't scan, and the caller builds those itself.
+    func scanUnloaded(_ ids: ArraySlice<NodeID>, skippingCellsWithout needle: [UInt8],
+                      visitingColumns: (String) -> Bool,
+                      _ visit: (Int, String?, ScalarValue) -> Void) -> Int
 }
 
 extension DocumentSource {
 
     public func searchUnloaded(_ ids: ArraySlice<NodeID>, query: String,
                                _ match: (NodeID, SearchMatch.Field, String) -> Bool) -> Int {
+        0
+    }
+
+    public func scanUnloaded(_ ids: ArraySlice<NodeID>, skippingCellsWithout needle: [UInt8],
+                             visitingColumns: (String) -> Bool,
+                             _ visit: (Int, String?, ScalarValue) -> Void) -> Int {
         0
     }
 

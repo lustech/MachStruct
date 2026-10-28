@@ -307,20 +307,10 @@ public final class CSVSource: DocumentSource, @unchecked Sendable {
     /// rows, and those are left to the caller.
     public func searchUnloaded(_ ids: ArraySlice<NodeID>, query: String,
                                _ match: (NodeID, SearchMatch.Field, String) -> Bool) -> Int {
-        guard let (first, kind) = locate(ids[ids.startIndex]), kind == .row,
-              var position = rowIndex(of: first) else { return 0 }
-        var count = 0
-        for id in ids {
-            guard position < rowOffsets.count, id == self.id(rowOffsets[position], .row) else { break }
-            count += 1
-            position += 1
-        }
-
+        guard let (first, count) = consecutiveRows(ids) else { return 0 }
         let prepared = prepare(query)
         let keyMatches = prepared.keyMatches
-
-        typealias Visit = (MSCSVField) -> Bool
-        withoutActuallyEscaping({ (field: MSCSVField) -> Bool in
+        visitFields(from: first, rows: count, needle: prepared.needle, columns: prepared.columns) { field in
             let column = Int(field.column)
             let cell = Field(start: field.start, end: field.end)
             let row = self.id(field.start, self.hasHeader ? .key : .value)
@@ -330,15 +320,60 @@ public final class CSVSource: DocumentSource, @unchecked Sendable {
                 .searchableText
             guard text.lowercased().contains(query) else { return true }
             return match(row, .value, text)
-        } as Visit) { body in
-            var box = body
+        }
+        return count
+    }
+
+    public func scanUnloaded(_ ids: ArraySlice<NodeID>, skippingCellsWithout needle: [UInt8],
+                             visitingColumns: (String) -> Bool,
+                             _ visit: (Int, String?, ScalarValue) -> Void) -> Int {
+        guard let (first, count) = consecutiveRows(ids),
+              var position = rowIndex(of: first) else { return 0 }
+        let start = position
+        // Without a header a cell's key is its position, on the cell itself
+        // rather than a pair; with one, a cell past the header has no node.
+        let columns: [UInt8] = hasHeader ? keys.map { visitingColumns($0) ? 1 : 0 } : []
+        visitFields(from: first, rows: count, needle: needle, columns: columns) { field in
+            while rowOffsets[position] != field.row { position += 1 }
+            let column = Int(field.column)
+            if hasHeader, column >= keys.count { return true }
+            let text = Self.text(of: Field(start: field.start, end: field.end), in: file, utf8: isUTF8)
+            visit(position - start, hasHeader ? keys[column] : nil, parseScalarValue(text))
+            return true
+        }
+        return count
+    }
+
+    /// The first of `ids` and how many of them, from the first, are
+    /// consecutive rows of the file; an edit can reorder or insert rows, and
+    /// those are left to the caller.
+    private func consecutiveRows(_ ids: ArraySlice<NodeID>) -> (first: UInt64, count: Int)? {
+        guard let (first, kind) = locate(ids[ids.startIndex]), kind == .row,
+              var position = rowIndex(of: first) else { return nil }
+        var count = 0
+        for id in ids {
+            guard position < rowOffsets.count, id == self.id(rowOffsets[position], .row) else { break }
+            count += 1
+            position += 1
+        }
+        return (first, count)
+    }
+
+    /// Calls `visit` on the fields of `rows` rows from the one at `first`,
+    /// skipping those whose bytes show they can't contain `needle`, except in
+    /// the columns marked in `columns`. Return `false` from `visit` to stop.
+    private func visitFields(from first: UInt64, rows: Int, needle: [UInt8], columns: [UInt8],
+                             _ visit: (MSCSVField) -> Bool) {
+        typealias Visit = (MSCSVField) -> Bool
+        withoutActuallyEscaping(visit) { body in
+            var box: Visit = body
             withUnsafeMutablePointer(to: &box) { context in
-                prepared.needle.withUnsafeBufferPointer { n in
+                needle.withUnsafeBufferPointer { n in
                     n.withMemoryRebound(to: CChar.self) { n in
-                        prepared.columns.withUnsafeBufferPointer { c in
+                        columns.withUnsafeBufferPointer { c in
                             ms_csv_search_rows(file.rawPointer.assumingMemoryBound(to: CChar.self),
                                                file.fileSize, CChar(bitPattern: delimiter),
-                                               first, UInt64(count),
+                                               first, UInt64(rows),
                                                n.baseAddress, UInt64(n.count),
                                                c.baseAddress, UInt64(c.count),
                                                { context, field in
@@ -350,7 +385,6 @@ public final class CSVSource: DocumentSource, @unchecked Sendable {
                 }
             }
         }
-        return count
     }
 
     /// The position of the row starting at `offset` among the data rows.

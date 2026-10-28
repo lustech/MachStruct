@@ -193,4 +193,73 @@ final class LazyWholeDocumentScanTests: XCTestCase {
         let (emptySource, emptyIndex) = try json("[]")
         XCTAssertEqual(ColumnStats.compute(in: emptyIndex, source: emptySource), [])
     }
+
+    // MARK: - Reading cells from the bytes
+
+    /// Random CSV files, with the cells whose displayed text isn't their
+    /// bytes, counted and summarised from the bytes and from the whole
+    /// document.
+    func testRandomCSVsCountAndSummariseLikeTheWholeDocument() throws {
+        var rng = SystemRandomNumberGenerator()
+        let cells = ["alice", "Bob", "ALICE", "McBob", "", " padded ", "\"quoted, comma\"", "\"say \"\"hi\"\"\"",
+                     "1e3", "1.50", "007", "-0", "42", "3.0", "inf", "-Infinity", "NaN", "nan",
+                     "null", "NULL", "true", "TRUE", "False", "héllo", "\u{212A}elvin", "x\ty", "0x1F",
+                     "\"multi\nline\"", "1_000", "+5", ".5", "5."]
+        let names = ["name", "age", "name", "Ölm", "k"]
+        let fragments = ["a", "al", "Bo", "AL", "cB", "Ice", "1", ".0", "e", "inf", "nul", "null", "tru", "TRUE", "nan", "Infinity",
+                         "000", "5", "0x", "é", "k", "\u{212A}", "name", "ag", "quoted, ", "\"", " ", "multi\nl"]
+        for round in 0..<60 {
+            let columns = Int.random(in: 1...4, using: &rng)
+            let header = Bool.random(using: &rng)
+            var lines: [String] = []
+            if header { lines.append((0..<columns).map { _ in names.randomElement(using: &rng)! }.joined(separator: ",")) }
+            for _ in 0..<Int.random(in: 1...12, using: &rng) {
+                let width = max(1, columns + Int.random(in: -1...1, using: &rng))
+                lines.append((0..<width).map { _ in cells.randomElement(using: &rng)! }.joined(separator: ","))
+                if Int.random(in: 0..<6, using: &rng) == 0 { lines.append("") }
+            }
+            let text = lines.joined(separator: "\n") + "\n"
+            let (source, index) = try csv(text)
+            let full = source.completeNodeIndex(overlaying: index)
+            for _ in 0..<8 {
+                let pattern = (0..<Int.random(in: 1...2, using: &rng)).map { _ in fragments.randomElement(using: &rng)! }.joined()
+                let options = SearchEngine.FindOptions(useRegex: Int.random(in: 0..<5, using: &rng) == 0,
+                                                       caseSensitive: Bool.random(using: &rng),
+                                                       scope: [.keys, .values, .both].randomElement(using: &rng)!)
+                XCTAssertEqual(SearchEngine.matchCount(pattern: pattern, options: options, in: index, source: source),
+                               SearchEngine.matches(pattern: pattern, options: options, in: full).count,
+                               "round \(round): \(pattern.debugDescription) \(options) in \(text.debugDescription)")
+            }
+            XCTAssertEqual(ColumnStats.compute(in: index, source: source), ColumnStats.compute(in: full),
+                           "round \(round): \(text.debugDescription)")
+        }
+    }
+
+    /// Unloaded rows are read from the bytes rather than built.
+    func testUnloadedRowsAreScannedFromTheBytes() throws {
+        let (source, index) = try csv(csvText)
+        let rows = try XCTUnwrap(index.root).childIDs
+        var visited: [(Int, String?, ScalarValue)] = []
+        XCTAssertEqual(source.scanUnloaded(rows[...], skippingCellsWithout: [], visitingColumns: { _ in false }) {
+            visited.append(($0, $1, $2))
+        }, rows.count)
+        XCTAssertEqual(visited.count, 16)
+        XCTAssertEqual(visited[4].0, 1)
+        XCTAssertEqual(visited[4].1, "name")
+        XCTAssertEqual(visited[4].2, .string("bob"))
+        XCTAssertEqual(visited[5].2, .string(""))
+
+        // Cells that can't hold the needle are skipped, except in the
+        // columns asked for.
+        var skipped: [ScalarValue] = []
+        _ = source.scanUnloaded(rows[...], skippingCellsWithout: Array("ali".utf8),
+                                visitingColumns: { $0 == "active" }) { skipped.append($2) }
+        XCTAssertEqual(skipped, [.string("alice"), .boolean(true), .boolean(false), .boolean(true),
+                                 .string("alice"), .string("")])
+
+        // Only rows of the root are scanned.
+        let first = try XCTUnwrap(source.node(for: rows[0], parent: index.root))
+        XCTAssertEqual(source.scanUnloaded(first.childIDs[...], skippingCellsWithout: [],
+                                           visitingColumns: { _ in false }) { _, _, _ in }, 0)
+    }
 }
