@@ -24,6 +24,30 @@
     <description>Most recent releases of MachStruct</description>
     <language>en</language>
 
+    <!-- ── v2.3.1 ───────────────────────────────────────────────── -->
+    <item>
+      <title>MachStruct 2.3.1</title>
+      <description><![CDATA[
+        <p>Large XML files join JSON, CSV and YAML in being read from disk.</p>
+        <h3>Changed</h3>
+        <ul>
+          <li><b>Large XML files open with a fraction of the memory.</b> A
+              100&nbsp;MB XML file peaks at about 440&nbsp;MB while opening
+              instead of 2.6&nbsp;GB, and takes about 260&nbsp;MB once
+              open.</li>
+        </ul>
+      ]]></description>
+      <pubDate>Wed, 28 Oct 2026 19:53:17 +0000</pubDate>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <sparkle:version>11</sparkle:version>
+      <sparkle:shortVersionString>2.3.1</sparkle:shortVersionString>
+      <enclosure
+        url="https://github.com/lustech/MachStruct/releases/download/v2.3.1/MachStruct.dmg"
+        sparkle:edSignature="4mUpVbdtsuPAHhEqpOPuZRICbpgBcE3nxXJPA/jRpVJ9E0nDGmgTTmQlmMQeLE1pvAzGptLfKFLGQEoRTSFPBg=="
+        length="3893637"
+        type="application/octet-stream"/>
+    </item>
+
     <!-- ── v2.3.0 ───────────────────────────────────────────────── -->
     <item>
       <title>MachStruct 2.3.0</title>
