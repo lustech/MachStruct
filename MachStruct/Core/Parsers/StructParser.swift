@@ -85,6 +85,19 @@ public struct IndexEntry: Sendable {
                   childCount: childCount, key: key, parsedValue: parsedValue)
         self.metadataBox = sharedMetadata
     }
+
+    /// This entry with its place in the tree or its child count changed,
+    /// for parsers that learn them after appending it.
+    func with(depth: UInt16? = nil, parentID: NodeID?? = nil, key: String?? = nil,
+              childCount: UInt32? = nil) -> IndexEntry {
+        var entry = IndexEntry(id: id, byteOffset: byteOffset, byteLength: byteLength,
+                               nodeType: nodeType, depth: depth ?? self.depth,
+                               parentID: parentID ?? self.parentID,
+                               childCount: childCount ?? self.childCount,
+                               key: key ?? self.key, parsedValue: parsedValue)
+        entry.metadataBox = metadataBox
+        return entry
+    }
 }
 
 // MARK: - StructuralIndex
