@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.0] — 2026-10-29
+
+Colour themes, and documents that are easy to read in dark mode.
+
 ### Added
 - **Colour themes.** Settings → Appearance has a theme picker: Dark+ (the
   new default, after Visual Studio Code), Xcode and One Dark. Each has a
@@ -34,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are drawn in, so the matched text all but disappeared in dark mode. The
   current match is now outlined instead, over the same faint fill as the
   other matches. (#91)
+- **Query results in JSON view sat in the middle of the pane.** They now
+  start at the top left, like the tree and raw views. (#93)
 
 ## [2.3.1] — 2026-10-28
 
@@ -457,7 +463,8 @@ Initial public release. Full feature set:
 - **Drag-and-drop reordering** of array elements in the tree.
 - **GitHub Actions release pipeline** — notarise, DMG, GitHub Release.
 
-[Unreleased]: https://github.com/lustech/MachStruct/compare/v2.3.1...HEAD
+[Unreleased]: https://github.com/lustech/MachStruct/compare/v2.4.0...HEAD
+[2.4.0]: https://github.com/lustech/MachStruct/compare/v2.3.1...v2.4.0
 [2.3.1]: https://github.com/lustech/MachStruct/compare/v2.3.0...v2.3.1
 [2.3.0]: https://github.com/lustech/MachStruct/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/lustech/MachStruct/compare/v2.1.3...v2.2.0
