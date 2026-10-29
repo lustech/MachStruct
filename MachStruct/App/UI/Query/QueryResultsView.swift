@@ -99,18 +99,15 @@ struct QueryResultsView: View {
             }
         case .json:
             // A ScrollView on both axes centres content smaller than itself,
-            // and `maxWidth: .infinity` doesn't stretch it there; a minimum
-            // of the visible size keeps short results at the top left (#93).
-            GeometryReader { viewport in
-                ScrollView([.horizontal, .vertical]) {
-                    Text(combined.jsonString(pretty: true))
-                        .font(.system(.body, design: .monospaced))
-                        .textSelection(.enabled)
-                        .padding(8)
-                        .frame(minWidth: viewport.size.width, minHeight: viewport.size.height,
-                               alignment: .topLeading)
-                }
+            // and `maxWidth: .infinity` doesn't stretch it there; anchoring
+            // it keeps short results at the top left (#93).
+            ScrollView([.horizontal, .vertical]) {
+                Text(combined.jsonString(pretty: true))
+                    .font(.system(.body, design: .monospaced))
+                    .textSelection(.enabled)
+                    .padding(8)
             }
+            .defaultScrollAnchor(.topLeading)
         }
     }
 
