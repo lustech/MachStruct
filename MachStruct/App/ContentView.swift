@@ -276,50 +276,9 @@ struct ContentView: View {
     private var mainContent: some View {
         Group {
             if let index = document.nodeIndex {
-                contentStack(index)
-                    .environment(\.commitEdit) { [weak document] tx in
-                        document?.commitEdit(tx, undoManager: undoManager)
-                    }
-                    .environment(\.serializeNode) { [weak document] nodeID, pretty in
-                        document?.serializeNode(nodeID, pretty: pretty)
-                    }
-                    .environment(\.searchMatchIDs,
-                                  Set(searchMatches.map(\.rowNodeID)))
-                    .environment(\.activeSearchMatchID,
-                                  searchMatches.isEmpty ? nil
-                                    : searchMatches[activeMatchIndex].rowNodeID)
-                    .environment(\.bookmarkedNodeIDs, Set(bookmarks))
-                    .environment(\.toggleBookmark, makeToggleBookmark($bookmarks))
-                    .onChange(of: viewMode) { _, mode in
-                        if mode == .raw {
-                            rawPretty = defaultRawPretty
-                            refreshRawText()
-                        }
-                    }
-                    .onChange(of: selectedNodeID) { _, newID in
-                        guard !isNavigatingHistory, let id = newID else { return }
-                        pushHistory(id)
-                    }
-                    .onChange(of: index.count) { _, _ in
-                        if viewMode == .raw { refreshRawText() }
-                    }
-                    .onChange(of: colorTheme) { _, _ in
-                        if viewMode == .raw { refreshRawText() }
-                    }
-                    .onChange(of: searchQuery) { _, query in
-                        scheduleSearch(query: query)
-                    }
-                    // Edits change what matches; refresh without moving.
-                    .onChange(of: document.editCount) { _, _ in
-                        scheduleSearch(query: searchQuery, navigate: false)
-                    }
-                    .onAppear { restorePersistedBookmarks(in: index) }
-                    .onChange(of: index.count) { _, _ in
-                        // Lazy-loaded files materialise children as the user
-                        // expands containers — retry resolution as the index grows.
-                        restorePersistedBookmarks(in: index)
-                    }
-                    .onChange(of: bookmarks) { _, _ in persistBookmarks(in: index) }
+                observingBookmarks(observingDocument(withDocumentEnvironment(contentStack(index)),
+                                                     index: index),
+                                   index: index)
             } else if document.isLoading {
                 loadingView
             } else if let error = document.loadError {
@@ -328,6 +287,69 @@ struct ContentView: View {
                 placeholderView
             }
         }
+    }
+
+    // The document view's environment and change handlers, split out of
+    // `mainContent`: as one modifier chain it took the type-checker longer
+    // than Xcode 16 allows.
+
+    private func withDocumentEnvironment<Content: View>(_ content: Content) -> some View {
+        content
+            .environment(\.commitEdit) { [weak document] tx in
+                document?.commitEdit(tx, undoManager: undoManager)
+            }
+            .environment(\.serializeNode) { [weak document] nodeID, pretty in
+                document?.serializeNode(nodeID, pretty: pretty)
+            }
+            .environment(\.searchMatchIDs,
+                          Set(searchMatches.map(\.rowNodeID)))
+            .environment(\.activeSearchMatchID,
+                          searchMatches.isEmpty ? nil
+                            : searchMatches[activeMatchIndex].rowNodeID)
+            .environment(\.bookmarkedNodeIDs, Set(bookmarks))
+            .environment(\.toggleBookmark, makeToggleBookmark($bookmarks))
+    }
+
+    /// Keeps the raw text, navigation history and search up to date.
+    private func observingDocument<Content: View>(_ content: Content,
+                                                  index: NodeIndex) -> some View {
+        content
+            .onChange(of: viewMode) { _, mode in
+                if mode == .raw {
+                    rawPretty = defaultRawPretty
+                    refreshRawText()
+                }
+            }
+            .onChange(of: selectedNodeID) { _, newID in
+                guard !isNavigatingHistory, let id = newID else { return }
+                pushHistory(id)
+            }
+            .onChange(of: index.count) { _, _ in
+                if viewMode == .raw { refreshRawText() }
+            }
+            .onChange(of: colorTheme) { _, _ in
+                if viewMode == .raw { refreshRawText() }
+            }
+            .onChange(of: searchQuery) { _, query in
+                scheduleSearch(query: query)
+            }
+            // Edits change what matches; refresh without moving.
+            .onChange(of: document.editCount) { _, _ in
+                scheduleSearch(query: searchQuery, navigate: false)
+            }
+    }
+
+    /// Restores and saves bookmarks.
+    private func observingBookmarks<Content: View>(_ content: Content,
+                                                   index: NodeIndex) -> some View {
+        content
+            .onAppear { restorePersistedBookmarks(in: index) }
+            .onChange(of: index.count) { _, _ in
+                // Lazy-loaded files materialise children as the user
+                // expands containers — retry resolution as the index grows.
+                restorePersistedBookmarks(in: index)
+            }
+            .onChange(of: bookmarks) { _, _ in persistBookmarks(in: index) }
     }
 
     // MARK: - Content stack
