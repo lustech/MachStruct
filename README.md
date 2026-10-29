@@ -9,7 +9,7 @@
 MachStruct opens, navigates, edits, and converts large JSON, XML, YAML, and CSV files in under a second. A 100 MB JSON file is structurally indexed in **under 500 ms** and displayed as a live, expandable, editable tree — no loading spinners, no frozen UI.
 
 <p align="center">
-  <img src="Screenshots/MS-json.png" alt="MachStruct — JSON tree view" width="720">
+  <img src="Screenshots/large-file.png" alt="MachStruct showing a 116 MB telemetry file with nearly 8 million nodes" width="720">
 </p>
 
 ---
@@ -53,9 +53,17 @@ MachStruct opens, navigates, edits, and converts large JSON, XML, YAML, and CSV 
 
 ### Screenshots
 
-| Welcome | Search | XML | YAML | CSV |
-|---|---|---|---|---|
-| ![Welcome](Screenshots/MS-welcome-screen.png) | ![Search](Screenshots/MS-json-search.png) | ![XML](Screenshots/MS-xml.png) | ![YAML](Screenshots/MS-yaml.png) | ![CSV](Screenshots/MS-csv-table-view.png) |
+| Search | Table view | Column Stats |
+|---|---|---|
+| ![Search across a 116 MB file](Screenshots/search.png) | ![Table view of a CSV file](Screenshots/table.png) | ![Column Stats](Screenshots/column-stats.png) |
+
+| jq query | XML | YAML |
+|---|---|---|
+| ![A jq query and its results](Screenshots/query.png) | ![XML tree](Screenshots/xml.png) | ![YAML tree](Screenshots/yaml.png) |
+
+| Welcome |
+|---|
+| ![Welcome window](Screenshots/MS-welcome-screen.png) |
 
 ---
 
