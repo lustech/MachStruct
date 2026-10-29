@@ -24,6 +24,45 @@
     <description>Most recent releases of MachStruct</description>
     <language>en</language>
 
+    <!-- ── v2.4.0 ───────────────────────────────────────────────── -->
+    <item>
+      <title>MachStruct 2.4.0</title>
+      <description><![CDATA[
+        <p>Colour themes, and documents that are easy to read in dark mode.</p>
+        <h3>Added</h3>
+        <ul>
+          <li><b>Colour themes.</b> Settings &rarr; Appearance has a theme
+              picker: Dark+ (the new default), Xcode and One Dark, each with a
+              light and a dark version. The tree, table and raw views all use
+              it.</li>
+        </ul>
+        <h3>Changed</h3>
+        <ul>
+          <li><b>Documents are much easier to read in dark mode.</b> They sit
+              on a dark editor background with coloured keys, and every colour
+              has at least the contrast recommended for text.</li>
+        </ul>
+        <h3>Fixed</h3>
+        <ul>
+          <li><b>The raw view</b> now shows syntax colours, shows XML files
+              instead of <code>{}</code>, and shows YAML and CSV files in their
+              own format.</li>
+          <li><b>The current search match</b> is outlined, so a matched text
+              value stays readable.</li>
+          <li><b>Query results in JSON view</b> start at the top left.</li>
+        </ul>
+      ]]></description>
+      <pubDate>Thu, 29 Oct 2026 11:37:31 +0000</pubDate>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <sparkle:version>12</sparkle:version>
+      <sparkle:shortVersionString>2.4.0</sparkle:shortVersionString>
+      <enclosure
+        url="https://github.com/lustech/MachStruct/releases/download/v2.4.0/MachStruct.dmg"
+        sparkle:edSignature="s9cTkKA8sjeMPJsDisEinTfJKKdasps/oifRW/7IfJk2XSpSDC8rEvovEJSyKTVxDk0uvmkTQxBRli+ezn8FCQ=="
+        length="3949471"
+        type="application/octet-stream"/>
+    </item>
+
     <!-- ── v2.3.1 ───────────────────────────────────────────────── -->
     <item>
       <title>MachStruct 2.3.1</title>
