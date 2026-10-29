@@ -303,6 +303,9 @@ struct ContentView: View {
                     .onChange(of: index.count) { _, _ in
                         if viewMode == .raw { refreshRawText() }
                     }
+                    .onChange(of: colorTheme) { _, _ in
+                        if viewMode == .raw { refreshRawText() }
+                    }
                     .onChange(of: searchQuery) { _, query in
                         scheduleSearch(query: query)
                     }
@@ -695,14 +698,15 @@ struct ContentView: View {
                     }
                 }
                 .toggleStyle(.button)
-                .help(viewMode == .raw ? "Switch to tree view" : "View raw JSON source")
+                .help(viewMode == .raw ? "Switch to tree view" : "View raw \(document.formatName) source")
                 .disabled(isSerializingRaw)
             }
         }
 
         // ── Pretty / Minify toggle (P4-04) — only visible in raw text view ──
+        // Only JSON has a minified form; other formats show as saved.
         ToolbarItem(placement: .primaryAction) {
-            if viewMode == .raw {
+            if viewMode == .raw, document.formatName == "JSON" {
                 Picker("Format", selection: $rawPretty) {
                     Image(systemName: "text.alignleft").tag(true)
                         .help("Pretty-print")
@@ -716,7 +720,6 @@ struct ContentView: View {
                 .help(rawPretty ? "Switch to minified output" : "Switch to pretty-printed output")
                 .disabled(isSerializingRaw)
                 .onChange(of: rawPretty) { _, _ in refreshRawText() }
-                .onChange(of: colorTheme) { _, _ in refreshRawText() }
             }
         }
 
@@ -835,7 +838,7 @@ struct ContentView: View {
         let theme      = colorTheme
         Task {
             do {
-                let text = try await document.serializeDocument(pretty: pretty)
+                let text = try await document.rawSource(pretty: pretty)
                 rawText = text
 
                 // Highlight on a utility-priority background thread.

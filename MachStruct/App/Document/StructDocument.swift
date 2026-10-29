@@ -198,7 +198,12 @@ final class StructDocument: ReferenceFileDocument {
 
     /// The file as it was opened, as UTF-8 text.
     private static func sourceText(of snapshot: DocumentSnapshot) -> String? {
-        guard let file = snapshot.mappedFile, file.fileSize > 0, file.fileSize <= UInt64(UInt32.max),
+        snapshot.mappedFile.flatMap(text(of:))
+    }
+
+    /// `file` as UTF-8 text, or `nil` if it isn't.
+    nonisolated private static func text(of file: MappedFile) -> String? {
+        guard file.fileSize > 0, file.fileSize <= UInt64(UInt32.max),
               let data = try? file.data(offset: 0, length: UInt32(file.fileSize)) else { return nil }
         return String(data: data, encoding: .utf8)
     }
@@ -358,18 +363,37 @@ final class StructDocument: ReferenceFileDocument {
             .serialize(nodeID: nodeID, pretty: pretty)
     }
 
-    /// Serialize the entire document to a UTF-8 JSON string.
+    /// The document as the raw view shows it: in its own format, as saving
+    /// writes it, so the view's highlighting matches the text (#95). JSON is
+    /// pretty-printed or minified; YAML keeps its comments where the edits
+    /// allow; CSV keeps its layout. XML has no writer and can't be saved, so
+    /// it is the file as opened.
     ///
-    /// This is an `async` throwing function so that callers can dispatch it
-    /// off the main thread for large documents.
-    func serializeDocument(pretty: Bool = true) async throws -> String {
-        guard let idx = nodeIndex else { return "{}" }
+    /// Runs off the main thread, for large documents.
+    func rawSource(pretty: Bool = true) async throws -> String {
+        guard let idx = nodeIndex else { return "" }
         let file = mappedFile
         let source = source
+        let format = formatName
         return try await Task.detached(priority: .userInitiated) {
-            let data = try JSONDocumentSerializer(index: idx, mappedFile: file, source: source)
-                .serialize(pretty: pretty)
-            return String(data: data, encoding: .utf8) ?? "{}"
+            switch format {
+            case "XML":
+                return file.flatMap(Self.text(of:)) ?? ""
+            case "YAML":
+                if let text = file.flatMap(Self.text(of:)),
+                   let patched = YAMLSourcePatcher.patch(source: text, edited: idx, documentSource: source) {
+                    return patched
+                }
+                let data = try YAMLDocumentSerializer(index: idx, source: source).serialize()
+                return String(decoding: data, as: UTF8.self)
+            case "CSV":
+                let data = try CSVDocumentSerializer(index: idx, source: source).serializeInSourceLayout()
+                return String(decoding: data, as: UTF8.self)
+            default:
+                let data = try JSONDocumentSerializer(index: idx, mappedFile: file, source: source)
+                    .serialize(pretty: pretty)
+                return String(decoding: data, as: UTF8.self)
+            }
         }.value
     }
 

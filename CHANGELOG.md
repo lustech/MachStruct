@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every theme colour has at least the 4.5:1 contrast recommended for text.
 
 ### Fixed
+- **The raw view of an XML file showed only `{}`.** The raw view always
+  showed a JSON rendering, which dropped XML elements, and highlighted
+  YAML and CSV files' JSON with their own format's rules. It now shows each
+  document in its own format, as saving would write it: XML as the file's
+  text, YAML with its comments, CSV in its layout. Pretty-print and minify
+  apply to JSON only. (#95)
 - **The raw view showed no syntax colours, and its text was near-black in
   dark mode.** The coloured text arrived after the plain text and was
   never shown, and punctuation had no colour of its own. (#94)
